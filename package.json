@@ -1,0 +1,20 @@
+{
+  "name": "dsh-graph",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "DeepSeek Harness 全量架构解构站 + 源码浏览器",
+  "scripts": {
+    "start": "node server.mjs",
+    "gen": "node scripts/extract.mjs && node scripts/enrich.mjs && node scripts/bundle.mjs",
+    "test:site": "node scripts/verify.mjs",
+    "test:src": "node scripts/verify-src.mjs",
+    "test:split": "node scripts/verify-split.mjs",
+    "test:api": "node scripts/api-test.mjs && node scripts/api-test2.mjs",
+    "shots:split": "node scripts/shots-split.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "_comment": "运行站点不需要任何依赖（server.mjs 零依赖，纯 Node 内置模块）。scripts/verify-*.mjs 需要 playwright，用 npm i -D playwright 单独装。"
+}

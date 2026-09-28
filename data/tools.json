@@ -1,0 +1,127 @@
+[
+ {
+  "pkg": "@deepseek-ai/dsh-tool-ask-user",
+  "names": "ask_user_question",
+  "requires": "ctx.tools, ctx.userQuestions"
+ },
+ {
+  "pkg": "@deepseek-ai/dsh-tools",
+  "names": "run_code",
+  "requires": "ctx.tools, ctx.codeRuntime (execution time), ctx.systemPrompt"
+ },
+ {
+  "pkg": "@deepseek-ai/dsh-plan-mode",
+  "names": "exit_plan_mode",
+  "requires": "ctx.tools, ctx.systemPrompt, ctx.userQuestions (execution time, opportunistic)"
+ },
+ {
+  "pkg": "@deepseek-ai/dsh-tool-bash",
+  "names": "bash",
+  "requires": "ctx.tools, ctx.shell, ctx.systemPrompt, ctx.shellEnv, ctx.jobs at call time for run_in_background"
+ },
+ {
+  "pkg": "@deepseek-ai/dsh-tool-pwsh",
+  "names": "pwsh",
+  "requires": "ctx.tools, ctx.shell, ctx.systemPrompt, ctx.shellEnv, ctx.jobs at call time for run_in_background"
+ },
+ {
+  "pkg": "@deepseek-ai/dsh-tool-cordis",
+  "names": "cordis_define, cordis_inspect_list, cordis_inspect_query, cordis_inspect_self, cordis_run, cordis_stop, cordis_undefine",
+  "requires": "ctx.tools, ctx.dynamicCordisRunner"
+ },
+ {
+  "pkg": "@deepseek-ai/dsh-tool-bash-persistent",
+  "names": "bash",
+  "requires": "ctx.tools, ctx.terminals, an owning Agent at execution time"
+ },
+ {
+  "pkg": "@deepseek-ai/dsh-tool-pwsh-persistent",
+  "names": "pwsh",
+  "requires": "ctx.tools, ctx.terminals, an owning Agent at execution time"
+ },
+ {
+  "pkg": "@deepseek-ai/dsh-tool-str-replace-editor",
+  "names": "str_replace_editor",
+  "requires": "ctx.tools, ctx.fs"
+ },
+ {
+  "pkg": "@deepseek-ai/dsh-tool-fs",
+  "names": "edit, read, read_image, write",
+  "requires": "ctx.tools, ctx.fs, ctx.systemPrompt, ctx.attachments (image-tool registration), ctx.llm + an image-capable route (image-tool execution)"
+ },
+ {
+  "pkg": "@deepseek-ai/dsh-tool-fs-search",
+  "names": "glob, grep",
+  "requires": "ctx.tools, ctx.subprocess, ctx.systemPrompt"
+ },
+ {
+  "pkg": "@deepseek-ai/dsh-tool-terminal",
+  "names": "terminal_close, terminal_list, terminal_open, terminal_read, terminal_send, terminal_signal",
+  "requires": "ctx.tools, ctx.terminals, ctx.systemPrompt, ctx.jobs at call time for run_in_background"
+ },
+ {
+  "pkg": "@deepseek-ai/dsh-tool-goal",
+  "names": "create_goal, get_goal, update_goal",
+  "requires": "ctx.tools, ctx.agents, ctx.goals, ctx.systemPrompt, a calling Agent in an authorized open turn"
+ },
+ {
+  "pkg": "@deepseek-ai/dsh-schedule",
+  "names": "schedule_create, schedule_delete, schedule_list",
+  "requires": "ctx.tools, ctx.sessions, Session persistence, a future live root Agent"
+ },
+ {
+  "pkg": "@deepseek-ai/dsh-tool-lsp",
+  "names": "lsp",
+  "requires": "ctx.tools, ctx.lsp, ctx.systemPrompt"
+ },
+ {
+  "pkg": "@deepseek-ai/dsh-tool-ralph",
+  "names": "ralph",
+  "requires": "ctx.tools, ctx.workflowEngine, ctx.subagents, ctx.systemPrompt, a calling Agent (exec.agent parents every fresh round)"
+ },
+ {
+  "pkg": "@deepseek-ai/dsh-tool-skill",
+  "names": "skill",
+  "requires": "ctx.tools, ctx.agents, ctx.skills"
+ },
+ {
+  "pkg": "@deepseek-ai/dsh-tool-session-query",
+  "names": "session_event_read, session_event_search, session_event_trace, session_search, session_trace",
+  "requires": "ctx.tools, ctx.systemPrompt, ctx.sessionQuery, a calling Agent for workspace authority"
+ },
+ {
+  "pkg": "@deepseek-ai/dsh-tool-subagent",
+  "names": "list_subagent_models, subagent",
+  "requires": "ctx.tools, ctx.subagents, ctx.systemPrompt, ctx.llm for model discovery and selected-route validation"
+ },
+ {
+  "pkg": "@deepseek-ai/dsh-tool-subagent-control",
+  "names": "interrupt_agent, list_agents, send_message",
+  "requires": "ctx.tools, ctx.subagents, ctx.agents and ctx.sessionProjections (list_agents only)"
+ },
+ {
+  "pkg": "@deepseek-ai/dsh-tool-jobs",
+  "names": "job_kill, job_list, job_output",
+  "requires": "ctx.tools, ctx.jobs, ctx.systemPrompt"
+ },
+ {
+  "pkg": "@deepseek-ai/dsh-experimental-tool-agent-team",
+  "names": "interrupt_agent, list_agents, send_message, spawn_teammate, team_task_create, team_task_get, team_task_list, team_task_update, wait_agent",
+  "requires": "ctx.tools, ctx.systemPrompt, ctx.agentTeams, an exact live Team member Agent"
+ },
+ {
+  "pkg": "@deepseek-ai/dsh-tool-todo",
+  "names": "todo_write",
+  "requires": "ctx.tools, owning Agent session"
+ },
+ {
+  "pkg": "@deepseek-ai/dsh-tool-workflow",
+  "names": "workflow",
+  "requires": "ctx.tools, ctx.workflowEngine, ctx.systemPrompt, a calling Agent (exec.agent parents the script children)"
+ },
+ {
+  "pkg": "@deepseek-ai/dsh-tool-web",
+  "names": "web_fetch, web_search",
+  "requires": "ctx.tools, ctx.web, ctx.systemPrompt"
+ }
+]

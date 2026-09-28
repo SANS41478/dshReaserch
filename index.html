@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DeepSeek Harness · 全量解构</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <div class="brand">
+      <div class="brand-logo">dsh</div>
+      <div class="brand-txt">
+        <strong>DeepSeek Harness</strong>
+        <span>全量架构解构 · v0.1.5-alpha.1</span>
+      </div>
+    </div>
+    <div class="search-wrap">
+      <input id="search" type="search" placeholder="搜索包 / 服务 / 事件 / 工具…" autocomplete="off">
+      <div id="search-results" class="search-results" hidden></div>
+    </div>
+    <nav id="nav"></nav>
+    <nav id="nav-src"></nav>
+    <div class="side-foot">
+      <a href="#/about">关于本站 · 数据来源</a>
+    </div>
+  </aside>
+
+  <main id="main">
+    <div id="content"></div>
+
+    <div id="pane-split" class="pane-split" role="separator" aria-label="拖动调整宽度" title="拖动调整宽度 · 双击恢复默认">
+      <span class="ps-grip"></span>
+    </div>
+
+    <aside id="pane" aria-label="源码侧栏">
+      <div class="pane-head">
+        <div class="pane-tabs" id="pane-tabs"></div>
+        <div class="pane-acts">
+          <button id="pane-wide" title="全屏（只看源码）">⤢</button>
+          <button id="pane-close" title="收起侧栏（Esc）">✕</button>
+        </div>
+      </div>
+      <div class="pane-body" id="pane-body"></div>
+    </aside>
+  </main>
+
+  <button id="menu-toggle" aria-label="目录">☰</button>
+</div>
+<script src="data/bundle.js"></script>
+<script src="assets/source.js"></script>
+<script src="assets/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,1010 @@
+[
+ {
+  "key": "attachments",
+  "desc": "Durable binary attachment storage",
+  "owners": [
+   "attachment",
+   "attachment-local"
+  ],
+  "definer": "attachment",
+  "providers": [
+   "attachment-local"
+  ],
+  "consumers": [
+   "api-session-controller",
+   "llm-deepseek",
+   "llm-pi-ai",
+   "tool-fs"
+  ]
+ },
+ {
+  "key": "fileUploads",
+  "desc": "Agent-scoped staged file uploads",
+  "owners": [
+   "client-file-upload"
+  ],
+  "definer": "client-file-upload",
+  "providers": [],
+  "consumers": [
+   "api-session-controller"
+  ]
+ },
+ {
+  "key": "llm",
+  "desc": "LLM adapter registry",
+  "owners": [
+   "llm",
+   "llm-deepseek",
+   "llm-pi-ai",
+   "llm-replay"
+  ],
+  "definer": "llm",
+  "providers": [
+   "llm-deepseek",
+   "llm-pi-ai",
+   "llm-replay"
+  ],
+  "consumers": [
+   "agent-loop",
+   "compaction-basic"
+  ]
+ },
+ {
+  "key": "deepseekLlmApiExtensions",
+  "desc": "Official DeepSeek request extensions",
+  "owners": [
+   "deepseek-llm-api-extensions",
+   "plugin-package-inventory-deepseek",
+   "session-log-deepseek"
+  ],
+  "definer": "deepseek-llm-api-extensions",
+  "providers": [
+   "plugin-package-inventory-deepseek",
+   "session-log-deepseek"
+  ],
+  "consumers": [
+   "llm-deepseek"
+  ]
+ },
+ {
+  "key": "tokenMeter",
+  "desc": "Replay token measurement",
+  "owners": [
+   "token-meter"
+  ],
+  "definer": "token-meter",
+  "providers": [],
+  "consumers": [
+   "compaction-basic"
+  ]
+ },
+ {
+  "key": "toolResultPruner",
+  "desc": "Model-free tool-result pruning",
+  "owners": [
+   "compaction-tool-result-pruner"
+  ],
+  "definer": "compaction-tool-result-pruner",
+  "providers": [],
+  "consumers": [
+   "compaction-basic"
+  ]
+ },
+ {
+  "key": "sessions",
+  "desc": "In-memory session store",
+  "owners": [
+   "session"
+  ],
+  "definer": "session",
+  "providers": [],
+  "consumers": [
+   "agent",
+   "agent-loop",
+   "invariants",
+   "message-feedback",
+   "session-persistence",
+   "session-query",
+   "session-query-sqlite",
+   "subagent-in-process-driver"
+  ]
+ },
+ {
+  "key": "sessionController",
+  "desc": "Host Session Remote controller",
+  "owners": [
+   "api-session-controller"
+  ],
+  "definer": "api-session-controller",
+  "providers": [],
+  "consumers": []
+ },
+ {
+  "key": "sessionFileReferences",
+  "desc": "Session-addressed file-reference Remote adapter",
+  "owners": [
+   "api-session-controller"
+  ],
+  "definer": "api-session-controller",
+  "providers": [],
+  "consumers": []
+ },
+ {
+  "key": "sessionSkillCatalog",
+  "desc": "Session-addressed skill Remote adapter",
+  "owners": [
+   "api-session-controller"
+  ],
+  "definer": "api-session-controller",
+  "providers": [],
+  "consumers": []
+ },
+ {
+  "key": "credentialsController",
+  "desc": "Host credential-surface Remote controller",
+  "owners": [
+   "api-settings-controller"
+  ],
+  "definer": "api-settings-controller",
+  "providers": [],
+  "consumers": []
+ },
+ {
+  "key": "settingsController",
+  "desc": "Host settings-surface Remote controller",
+  "owners": [
+   "api-settings-controller"
+  ],
+  "definer": "api-settings-controller",
+  "providers": [],
+  "consumers": []
+ },
+ {
+  "key": "workspaceFiles",
+  "desc": "Host workspace file Remote service",
+  "owners": [
+   "api-workspace-files"
+  ],
+  "definer": "api-workspace-files",
+  "providers": [],
+  "consumers": []
+ },
+ {
+  "key": "workspaceController",
+  "desc": "Host Workspace Remote controller",
+  "owners": [
+   "api-workspace-controller"
+  ],
+  "definer": "api-workspace-controller",
+  "providers": [],
+  "consumers": []
+ },
+ {
+  "key": "directoryPickerController",
+  "desc": "Host directory-picking Remote controller",
+  "owners": [
+   "api-workspace-controller"
+  ],
+  "definer": "api-workspace-controller",
+  "providers": [],
+  "consumers": []
+ },
+ {
+  "key": "invariants",
+  "desc": "Package-owned invariant registry",
+  "owners": [
+   "invariants"
+  ],
+  "definer": "invariants",
+  "providers": [],
+  "consumers": [
+   "agent",
+   "agent-loop",
+   "scope",
+   "session"
+  ]
+ },
+ {
+  "key": "typert",
+  "desc": "Runtime type registry",
+  "owners": [
+   "typert-registry"
+  ],
+  "definer": "typert-registry",
+  "providers": [],
+  "consumers": [
+   "api-gateway",
+   "typert-loader"
+  ]
+ },
+ {
+  "key": "typertGateway",
+  "desc": "Typert Host invocation gateway",
+  "owners": [
+   "api-gateway"
+  ],
+  "definer": "api-gateway",
+  "providers": [],
+  "consumers": []
+ },
+ {
+  "key": "sessionPersistence",
+  "desc": "Durable session persistence seam",
+  "owners": [
+   "session-persistence",
+   "session-persistence-jsonl"
+  ],
+  "definer": "session-persistence",
+  "providers": [
+   "session-persistence-jsonl"
+  ],
+  "consumers": [
+   "agent-loop",
+   "hooks-claude-code",
+   "hooks-codex",
+   "message-feedback",
+   "session-query",
+   "session-query-sqlite",
+   "tool-bash"
+  ]
+ },
+ {
+  "key": "settings",
+  "desc": "User-settings seam",
+  "owners": [
+   "settings",
+   "settings-file"
+  ],
+  "definer": "settings",
+  "providers": [
+   "settings-file"
+  ],
+  "consumers": [
+   "api-settings-controller",
+   "llm-deepseek",
+   "llm-pi-ai"
+  ]
+ },
+ {
+  "key": "subagentModelSelection",
+  "desc": "Subagent model-selection preference",
+  "owners": [
+   "tool-subagent"
+  ],
+  "definer": "tool-subagent",
+  "providers": [],
+  "consumers": [
+   "tool-subagent"
+  ]
+ },
+ {
+  "key": "credentials",
+  "desc": "Credential seam",
+  "owners": [
+   "credentials",
+   "credentials-local"
+  ],
+  "definer": "credentials",
+  "providers": [
+   "credentials-local"
+  ],
+  "consumers": [
+   "api-settings-controller",
+   "llm-deepseek",
+   "llm-pi-ai"
+  ]
+ },
+ {
+  "key": "authorization",
+  "desc": "Authorization flow registry",
+  "owners": [
+   "authorization"
+  ],
+  "definer": "authorization",
+  "providers": [],
+  "consumers": [
+   "llm-pi-ai"
+  ]
+ },
+ {
+  "key": "sessionTelemetry",
+  "desc": "Session telemetry seam",
+  "owners": [
+   "session-telemetry",
+   "session-telemetry-otel"
+  ],
+  "definer": "session-telemetry",
+  "providers": [
+   "session-telemetry-otel"
+  ],
+  "consumers": []
+ },
+ {
+  "key": "storage",
+  "desc": "Non-session storage hub",
+  "owners": [
+   "storage",
+   "storage-json",
+   "storage-sqlite"
+  ],
+  "definer": "storage",
+  "providers": [
+   "storage-json",
+   "storage-sqlite"
+  ],
+  "consumers": [
+   "storage-domain"
+  ]
+ },
+ {
+  "key": "storageDomain",
+  "desc": "Domain data facility",
+  "owners": [
+   "storage-domain"
+  ],
+  "definer": "storage-domain",
+  "providers": [],
+  "consumers": [
+   "workspace"
+  ]
+ },
+ {
+  "key": "messageFeedback",
+  "desc": "Lifecycle-bound message feedback",
+  "owners": [
+   "message-feedback"
+  ],
+  "definer": "message-feedback",
+  "providers": [],
+  "consumers": []
+ },
+ {
+  "key": "workspaceRegistry",
+  "desc": "Workspace entity registry",
+  "owners": [
+   "workspace"
+  ],
+  "definer": "workspace",
+  "providers": [],
+  "consumers": [
+   "api-session-controller",
+   "api-workspace-controller"
+  ]
+ },
+ {
+  "key": "sessionQuery",
+  "desc": "Session reads, traces, filters, and search",
+  "owners": [
+   "session-query",
+   "session-query-sqlite"
+  ],
+  "definer": "session-query",
+  "providers": [
+   "session-query-sqlite"
+  ],
+  "consumers": [
+   "session-reference",
+   "tool-session-query"
+  ]
+ },
+ {
+  "key": "fileReferences",
+  "desc": "File reference discovery",
+  "owners": [
+   "file-reference",
+   "file-reference-local"
+  ],
+  "definer": "file-reference",
+  "providers": [
+   "file-reference-local"
+  ],
+  "consumers": [
+   "api-session-controller"
+  ]
+ },
+ {
+  "key": "sessionReferenceResolver",
+  "desc": "Cross-session snapshot preparation",
+  "owners": [
+   "session-reference"
+  ],
+  "definer": "session-reference",
+  "providers": [],
+  "consumers": []
+ },
+ {
+  "key": "sessionTitle",
+  "desc": "Log-backed session titles",
+  "owners": [
+   "session-title",
+   "session-title-all-prompts-llm",
+   "session-title-first-prompt-llm"
+  ],
+  "definer": "session-title",
+  "providers": [
+   "session-title-all-prompts-llm",
+   "session-title-first-prompt-llm"
+  ],
+  "consumers": []
+ },
+ {
+  "key": "systemPrompt",
+  "desc": "System prompt assembly registry",
+  "owners": [
+   "system-prompt"
+  ],
+  "definer": "system-prompt",
+  "providers": [],
+  "consumers": [
+   "agent-loop",
+   "tool-fs",
+   "tool-terminal",
+   "tool-web",
+   "tools"
+  ]
+ },
+ {
+  "key": "tools",
+  "desc": "Tool registry and guarded execution pipeline",
+  "owners": [
+   "tools"
+  ],
+  "definer": "tools",
+  "providers": [],
+  "consumers": [
+   "agent-loop",
+   "tool-ask-user",
+   "tool-bash",
+   "tool-cordis",
+   "tool-fs",
+   "tool-skill",
+   "tool-subagent",
+   "tool-terminal",
+   "tool-todo",
+   "tool-web"
+  ]
+ },
+ {
+  "key": "userQuestions",
+  "desc": "Human question/answer seam",
+  "owners": [
+   "user-questions"
+  ],
+  "definer": "user-questions",
+  "providers": [],
+  "consumers": [
+   "tool-ask-user"
+  ]
+ },
+ {
+  "key": "planMode",
+  "desc": "Plan collaboration state",
+  "owners": [
+   "plan-mode"
+  ],
+  "definer": "plan-mode",
+  "providers": [],
+  "consumers": []
+ },
+ {
+  "key": "agentPresets",
+  "desc": "Per-session agent composition",
+  "owners": [
+   "agent-presets"
+  ],
+  "definer": "agent-presets",
+  "providers": [],
+  "consumers": []
+ },
+ {
+  "key": "commands",
+  "desc": "Human command registry",
+  "owners": [
+   "commands"
+  ],
+  "definer": "commands",
+  "providers": [],
+  "consumers": []
+ },
+ {
+  "key": "sessionProjections",
+  "desc": "Session projection units",
+  "owners": [
+   "session-projection"
+  ],
+  "definer": "session-projection",
+  "providers": [],
+  "consumers": [
+   "api-session-controller",
+   "session-title",
+   "tool-todo"
+  ]
+ },
+ {
+  "key": "sessionProjectionCache",
+  "desc": "Persisted projection cache",
+  "owners": [
+   "session-projection-cache"
+  ],
+  "definer": "session-projection-cache",
+  "providers": [],
+  "consumers": [
+   "api-session-controller",
+   "session-query",
+   "session-reference",
+   "subagent"
+  ]
+ },
+ {
+  "key": "skills",
+  "desc": "Skill provider registry",
+  "owners": [
+   "skill",
+   "skill-badge",
+   "skill-filesystem"
+  ],
+  "definer": "skill",
+  "providers": [
+   "skill-badge",
+   "skill-filesystem"
+  ],
+  "consumers": [
+   "tool-skill"
+  ]
+ },
+ {
+  "key": "agents",
+  "desc": "Agent service",
+  "owners": [
+   "agent"
+  ],
+  "definer": "agent",
+  "providers": [],
+  "consumers": [
+   "acp",
+   "agent-loop",
+   "subagent-in-process-driver"
+  ]
+ },
+ {
+  "key": "agentDefaultModel",
+  "desc": "Default Agent model selection",
+  "owners": [
+   "agent-default-model"
+  ],
+  "definer": "agent-default-model",
+  "providers": [],
+  "consumers": [
+   "api-session-controller",
+   "headless"
+  ]
+ },
+ {
+  "key": "agentLoop",
+  "desc": "Concrete loop driver",
+  "owners": [
+   "agent-loop"
+  ],
+  "definer": "agent-loop",
+  "providers": [],
+  "consumers": [
+   "base",
+   "sdk-minimal"
+  ]
+ },
+ {
+  "key": "goals",
+  "desc": "Same-session goal domain",
+  "owners": [
+   "goal"
+  ],
+  "definer": "goal",
+  "providers": [],
+  "consumers": []
+ },
+ {
+  "key": "e2b",
+  "desc": "E2B sandbox lifecycle owner",
+  "owners": [
+   "e2b"
+  ],
+  "definer": "e2b",
+  "providers": [],
+  "consumers": [
+   "fs-e2b",
+   "subprocess-e2b"
+  ]
+ },
+ {
+  "key": "subprocess",
+  "desc": "Subprocess seam",
+  "owners": [
+   "subprocess",
+   "subprocess-e2b",
+   "subprocess-local"
+  ],
+  "definer": "subprocess",
+  "providers": [
+   "subprocess-e2b",
+   "subprocess-local"
+  ],
+  "consumers": [
+   "bash-local",
+   "bash-sandbox",
+   "lsp-stdio",
+   "subagent-acp",
+   "subagent-claude-code",
+   "subagent-codex",
+   "terminal-bash"
+  ]
+ },
+ {
+  "key": "shell",
+  "desc": "Bash executor seam",
+  "owners": [
+   "bash-local",
+   "bash-sandbox",
+   "pwsh-local",
+   "shell"
+  ],
+  "definer": "shell",
+  "providers": [
+   "bash-local",
+   "bash-sandbox",
+   "pwsh-local"
+  ],
+  "consumers": [
+   "hooks-claude-code",
+   "hooks-codex",
+   "tool-bash",
+   "tool-pwsh"
+  ]
+ },
+ {
+  "key": "shellEnv",
+  "desc": "Managed bash environment registry",
+  "owners": [
+   "shell-env"
+  ],
+  "definer": "shell-env",
+  "providers": [],
+  "consumers": [
+   "tool-bash",
+   "tool-pwsh"
+  ]
+ },
+ {
+  "key": "terminals",
+  "desc": "Persistent PTY session registry",
+  "owners": [
+   "terminal",
+   "terminal-bash"
+  ],
+  "definer": "terminal",
+  "providers": [
+   "terminal-bash"
+  ],
+  "consumers": [
+   "tool-terminal"
+  ]
+ },
+ {
+  "key": "sandbox",
+  "desc": "Process-sandbox seam",
+  "owners": [
+   "sandbox",
+   "sandbox-local"
+  ],
+  "definer": "sandbox",
+  "providers": [
+   "sandbox-local"
+  ],
+  "consumers": [
+   "bash-sandbox",
+   "terminal-bash"
+  ]
+ },
+ {
+  "key": "sandboxPolicy",
+  "desc": "Sandbox policy home",
+  "owners": [
+   "sandbox-policy"
+  ],
+  "definer": "sandbox-policy",
+  "providers": [],
+  "consumers": [
+   "bash-sandbox",
+   "fs-sandbox",
+   "terminal-bash"
+  ]
+ },
+ {
+  "key": "approval",
+  "desc": "Approval seam",
+  "owners": [
+   "user-approval"
+  ],
+  "definer": "user-approval",
+  "providers": [],
+  "consumers": [
+   "acp",
+   "tool-bash",
+   "tools"
+  ]
+ },
+ {
+  "key": "permissionPresets",
+  "desc": "Permission presets",
+  "owners": [
+   "permission-presets"
+  ],
+  "definer": "permission-presets",
+  "providers": [],
+  "consumers": []
+ },
+ {
+  "key": "codeRuntime",
+  "desc": "Code-execution seam",
+  "owners": [
+   "code-runtime",
+   "code-runtime-worker-thread",
+   "experimental-code-runtime-python"
+  ],
+  "definer": "code-runtime",
+  "providers": [
+   "code-runtime-worker-thread",
+   "experimental-code-runtime-python"
+  ],
+  "consumers": [
+   "tools"
+  ]
+ },
+ {
+  "key": "fs",
+  "desc": "Filesystem provider seam",
+  "owners": [
+   "fs",
+   "fs-e2b",
+   "fs-local",
+   "fs-sandbox"
+  ],
+  "definer": "fs",
+  "providers": [
+   "fs-e2b",
+   "fs-local",
+   "fs-sandbox"
+  ],
+  "consumers": [
+   "tool-fs"
+  ]
+ },
+ {
+  "key": "compaction",
+  "desc": "Compaction seam",
+  "owners": [
+   "compaction",
+   "compaction-basic"
+  ],
+  "definer": "compaction",
+  "providers": [
+   "compaction-basic"
+  ],
+  "consumers": [
+   "compaction-basic"
+  ]
+ },
+ {
+  "key": "subagents",
+  "desc": "Subagent provider and continuation service",
+  "owners": [
+   "subagent",
+   "subagent-acp",
+   "subagent-claude-code",
+   "subagent-codex",
+   "subagent-dsh-sdk",
+   "subagent-fork-in-process",
+   "subagent-spawn-in-process"
+  ],
+  "definer": "subagent",
+  "providers": [
+   "subagent-acp",
+   "subagent-claude-code",
+   "subagent-codex",
+   "subagent-dsh-sdk",
+   "subagent-fork-in-process",
+   "subagent-spawn-in-process"
+  ],
+  "consumers": [
+   "tool-ralph",
+   "tool-subagent",
+   "tool-subagent-control"
+  ]
+ },
+ {
+  "key": "agentTeams",
+  "desc": "Agent Teams coordination domain",
+  "owners": [
+   "experimental-agent-team"
+  ],
+  "definer": "experimental-agent-team",
+  "providers": [],
+  "consumers": [
+   "experimental-client-ui-agent-team",
+   "experimental-tool-agent-team"
+  ]
+ },
+ {
+  "key": "inspector",
+  "desc": "Cross-realm runtime inspection",
+  "owners": [
+   "inspector"
+  ],
+  "definer": "inspector",
+  "providers": [],
+  "consumers": []
+ },
+ {
+  "key": "jobs",
+  "desc": "Background job registry",
+  "owners": [
+   "jobs",
+   "jobs-local"
+  ],
+  "definer": "jobs",
+  "providers": [
+   "jobs-local"
+  ],
+  "consumers": [
+   "tool-bash",
+   "tool-jobs",
+   "tool-subagent",
+   "tool-terminal"
+  ]
+ },
+ {
+  "key": "web",
+  "desc": "Web access provider registry",
+  "owners": [
+   "web",
+   "web-fetch-http",
+   "web-search-deepseek",
+   "web-search-exa",
+   "web-search-perplexity"
+  ],
+  "definer": "web",
+  "providers": [
+   "web-fetch-http",
+   "web-search-deepseek",
+   "web-search-exa",
+   "web-search-perplexity"
+  ],
+  "consumers": [
+   "tool-web"
+  ]
+ },
+ {
+  "key": "spillStore",
+  "desc": "Spill storage seam",
+  "owners": [
+   "spill",
+   "spill-local"
+  ],
+  "definer": "spill",
+  "providers": [
+   "spill-local"
+  ],
+  "consumers": [
+   "spill-policy"
+  ]
+ },
+ {
+  "key": "directoryPicker",
+  "desc": "Workspace-directory picking seam",
+  "owners": [
+   "host-directory-picker",
+   "host-directory-picker-browse",
+   "host-directory-picker-native"
+  ],
+  "definer": "host-directory-picker",
+  "providers": [
+   "host-directory-picker-browse",
+   "host-directory-picker-native"
+  ],
+  "consumers": [
+   "api-workspace-controller"
+  ]
+ },
+ {
+  "key": "webServer",
+  "desc": "HTTP route registration",
+  "owners": [
+   "host-webserver"
+  ],
+  "definer": "host-webserver",
+  "providers": [],
+  "consumers": [
+   "client-connection",
+   "client-hmr",
+   "client-modules"
+  ]
+ },
+ {
+  "key": "clientModules",
+  "desc": "Client plugin graph host",
+  "owners": [
+   "client-modules"
+  ],
+  "definer": "client-modules",
+  "providers": [],
+  "consumers": [
+   "client-hmr"
+  ]
+ },
+ {
+  "key": "workflowEngine",
+  "desc": "Workflow script engine",
+  "owners": [
+   "workflow",
+   "workflow-worker-thread"
+  ],
+  "definer": "workflow",
+  "providers": [
+   "workflow-worker-thread"
+  ],
+  "consumers": [
+   "tool-ralph",
+   "tool-workflow"
+  ]
+ },
+ {
+  "key": "webhookRuntime",
+  "desc": "Webhook rule runtime",
+  "owners": [
+   "webhook"
+  ],
+  "definer": "webhook",
+  "providers": [],
+  "consumers": [
+   "webhook-github"
+  ]
+ },
+ {
+  "key": "lsp",
+  "desc": "Language-server navigation seam",
+  "owners": [
+   "lsp",
+   "lsp-stdio"
+  ],
+  "definer": "lsp",
+  "providers": [
+   "lsp-stdio"
+  ],
+  "consumers": [
+   "tool-lsp"
+  ]
+ },
+ {
+  "key": "dynamicCordisRunner",
+  "desc": "Dynamic Cordis package host runner",
+  "owners": [
+   "cordis-host-runner"
+  ],
+  "definer": "cordis-host-runner",
+  "providers": [],
+  "consumers": [
+   "tool-cordis"
+  ]
+ },
+ {
+  "key": "cordisInspect",
+  "desc": "Dynamic Cordis inspect registry",
+  "owners": [
+   "cordis-host-runner"
+  ],
+  "definer": "cordis-host-runner",
+  "providers": [],
+  "consumers": [
+   "tool-cordis"
+  ]
+ }
+]
