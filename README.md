@@ -33,7 +33,7 @@
 | `#/events` | 68 个事件的生产者 × 消费者矩阵 |
 | `#/tools` | 25 个模型面向工具的目录 |
 | `#/composition` | 组合层：profile / bundle / 补丁语义 + 600+ 配置行 |
-| `#/pkg/<group>/<dir>` | 单包详情：**逐包精读**（一句话定位 / 为什么必须有它 / 系统位置 / 内部结构 / 职责边界 / 带行号的源码带读 / 坑 / 通俗复述）+ 依赖、被依赖、源码入口 |
+| `#/pkg/<group>/<dir>` | 单包详情：**逐包精读**（一句话定位 / 为什么必须有它 / 系统位置 / 内部结构 / 职责边界 / 带行号的源码带读 / 坑 / 通俗复述，带**吸顶页内小目录**、正文**按句成列**、`上游：`/`数据流：` 这类领句提为小标题、正文里的行号引用可点开右栏源码）+ 依赖、被依赖、源码入口 |
 | `#/svc/<key>` | 单服务详情：三角色拆解 + 为什么这样设计 |
 | **`#/files`** | **仓库文件树**（按包归类，默认只开产品源码） |
 | **`#/code/<路径>`** | **源码查看器**（高亮 + 行号 + 溯源面板） |
@@ -159,13 +159,16 @@ server.mjs              本地服务：静态托管 + /api（文件树/文件/�
 assets/style.css        设计系统（深色 IDE 主题）
 assets/app.js           路由、搜索、架构页面渲染
 assets/source.js        源码浏览器（文件树、查看器、溯源面板、高亮器）
-data/bundle.js          ★ 架构数据（351 KB，由下面脚本生成，离线可用）
+assets/deepfmt.js       逐包精读正文的结构化渲染器（分句 / 领句小标题 / 行号引用转链接），浏览器与校验脚本共用同一份实现
+data/bundle.js          ★ 架构数据（≈2.1 MB，含 265 包精读正文 + 每包文件清单，由下面脚本生成，离线可用）
 data/*.json             中间产物，便于人工检查
 scripts/extract.mjs     从源码仓库抽取包/服务/工具/事件/配置行
 scripts/enrich.mjs      18 层的手写知识层 + 源码片段抽取（带行号）
 scripts/deepfacts.mjs   为每包生成「精读底料」（README+符号表+inject，data/deep/brief/）
 scripts/deepmerge.mjs   合并 37 批逐包精读解读 → data/deep.json
+scripts/filemap.mjs     从精读底料提取每包文件清单 → data/filemap.json（正文行号引用解析用）
 scripts/verify-deep.mjs 精读页回归：抽样章节断言 + 带读链接分屏 + 全量零报错扫查
+scripts/verify-deep-fmt.mjs 零删减校验：渲染结果与 deep.json 逐字符一致 + 每条行号链接指向真实文件
 scripts/bundle.mjs      把所有 JSON 打成一个 bundle.js
 scripts/verify.mjs      架构页回归：22 条路由 + 报错 + 溢出检查
 scripts/verify-src.mjs  源码浏览器回归：树/代码/行号跳转/双向溯源
@@ -196,6 +199,8 @@ scripts/inventory.mjs   仓库构成统计
 - **逐包精读（265/265 全覆盖）**：每个包页的「为什么必须有它 / 系统位置 / 内部结构 / 职责边界 / 源码带读 / 坑 / 通俗复述」是**人写的深度解读**，
   由多个阅读代理基于 `data/deep/brief/` 的符号索引 + 实际打开源码写成，
   其中 1276 条「源码带读」的行号逐条打开文件核对过。它们是解释，不是规范；权威定义仍在仓库 `docs/`。
+  正文的**排版**在前端按句重排（分句列表 + `上游：`/`数据流：` 领句提为小标题 + 行号引用转可点链接 + 吸顶页内小目录），**不删不改一个字**：
+  `node scripts/verify-deep-fmt.mjs` 会把 265 包 × 6 字段的渲染结果剥掉标签后与 `data/deep.json` 逐字符比对，并校验每条行号链接都指向真实存在的文件。
   已知的数据快照问题（写在对应包页的「坑」里）：`code-runtime` 两包、`settings-file`、`agent-presets`、e2b 三包在本地快照只有编译产物没有 `src/`；
   `workflow-worker-thread` 已在上游最新提交中删除（解读基于 git 历史）。
 - 源码浏览器的文件内容、行号、符号、inject 声明，都是**从磁盘现读现扫**的。

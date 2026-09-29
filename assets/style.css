@@ -750,3 +750,73 @@ table.tour a.srclink{text-decoration:none}
   font-size:14px;line-height:1.9;color:var(--tx-2);
 }
 .analogy .t{font-weight:700;color:var(--tx);margin-bottom:6px;font-size:12.5px;letter-spacing:.3px}
+.analogy .d-body{margin-top:8px}
+
+/* ---------- 页内小目录（吸顶） ---------- */
+.sec-toc{
+  position:sticky;top:0;z-index:20;
+  display:flex;gap:7px;flex-wrap:wrap;
+  padding:11px 0 12px;margin-bottom:20px;
+  background:var(--bg);border-bottom:1px solid var(--line);
+}
+.toc-chip{
+  font-family:inherit;font-size:11.5px;line-height:1.4;
+  padding:5px 11px;border-radius:20px;cursor:pointer;
+  border:1px solid var(--line);background:var(--bg-2);color:var(--tx-2);
+  transition:.12s;
+}
+.toc-chip:hover{border-color:var(--ac);color:var(--ac);text-decoration:none}
+.toc-chip.on{border-color:var(--ac);color:var(--ac);background:rgba(139,157,255,.13);font-weight:600}
+
+/* ---------- 精读章节 ---------- */
+section.dsec{scroll-margin-top:76px}
+.dsec h2{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.dsec h2 .d-ico{font-size:17px;line-height:1}
+.dsec h2 .k-en{
+  font-size:9.5px;letter-spacing:1.3px;text-transform:uppercase;
+  color:var(--tx-3);font-weight:700;vertical-align:middle;
+}
+.fold-btn{
+  margin-left:auto;font-family:inherit;font-size:11px;
+  padding:4px 11px;border-radius:14px;cursor:pointer;
+  border:1px solid var(--line);background:var(--bg-3);color:var(--tx-3);
+  transition:.12s;white-space:nowrap;
+}
+.fold-btn:hover{border-color:var(--ac);color:var(--ac)}
+.dsec.folded .dsec-body{display:none}
+
+/* ---------- 分句列表 ---------- */
+.ds{list-style:none;margin:0;padding:0}
+.ds li{
+  position:relative;padding-left:17px;margin-bottom:7px;
+  font-size:13.5px;line-height:1.9;color:var(--tx-2);
+}
+.ds li::before{
+  content:'';position:absolute;left:2px;top:.72em;
+  width:5px;height:5px;border-radius:50%;background:var(--line-2);
+}
+.d-lead,.d-p{font-size:13.5px;line-height:1.9;color:var(--tx-2);margin-bottom:6px}
+.d-body > *:last-child{margin-bottom:2px}
+
+/* ---------- 领句小标题（上游：/ 下游：/ 数据流： / 划线依据：…） ---------- */
+.seg{
+  margin:14px 0;padding:2px 0 2px 14px;
+  border-left:2px solid rgba(139,157,255,.28);
+}
+.seg-k{
+  display:inline-block;padding:2.5px 10px;border-radius:20px;
+  background:rgba(139,157,255,.13);border:1px solid rgba(139,157,255,.28);
+  color:var(--ac);font-size:11.5px;font-weight:700;letter-spacing:.4px;
+  margin-bottom:9px;
+}
+.seg .ds li{margin-bottom:6px}
+
+/* ---------- 正文里的行号引用 → 可点跳源码 ---------- */
+a.ref{
+  font-family:var(--mono);font-size:.86em;
+  background:rgba(139,157,255,.1);color:var(--ac);
+  padding:2px 6px;border-radius:5px;border:1px solid rgba(139,157,255,.26);
+  white-space:nowrap;text-decoration:none;transition:.12s;
+}
+a.ref:hover{background:rgba(139,157,255,.22);border-color:var(--ac);text-decoration:none}
+.analogy a.ref{background:rgba(77,214,193,.12);border-color:rgba(77,214,193,.3);color:var(--ac-2)}

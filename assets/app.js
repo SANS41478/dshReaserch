@@ -5,13 +5,16 @@
 'use strict'
 
 const D = window.DSH_DATA
-const { packages: PKGS, services: SVCS, tools: TOOLS, events: EVENTS, bundles: BUNDLES, layers: LAYERS, code: CODE, deep: DEEP } = D
+const { packages: PKGS, services: SVCS, tools: TOOLS, events: EVENTS, bundles: BUNDLES, layers: LAYERS, code: CODE, deep: DEEP, filemap: FILEMAP } = D
 
 /* ---------- 索引 ---------- */
 const byShort = new Map(PKGS.map(p => [p.short, p]))
 const byName = new Map(PKGS.map(p => [p.name, p]))
 /** 逐包精读解读（265 包全覆盖），键 group/dir */
 const deepOf = p => DEEP && DEEP[`${p.group}/${p.dir}`]
+/** 每包文件清单（行号引用 → 完整路径用），键 group/dir；缺数据时优雅降级为纯文本 */
+const DIR_INDEX = DeepFmt.buildDirIndex(PKGS)
+const FMT_CTX = { filemap: FILEMAP || null, dirIndex: DIR_INDEX }
 const byGroup = new Map()
 for (const p of PKGS) {
   if (!byGroup.has(p.group)) byGroup.set(p.group, [])
@@ -99,14 +102,8 @@ function md(s) {
   return out.replace(/&lt;code&gt;([^&]*)&lt;\/code&gt;/g, '<code>$1</code>')
 }
 
-/** 精读解读专用渲染：文本可能含 Map<SessionId, T> 这类泛型尖括号，
- *  不能走 md()（会把它们当 HTML 标签）。先整体转义，再还原 **bold** 与 `code`。 */
-function dmd(s) {
-  let out = esc(String(s ?? ''))
-  out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-  out = out.replace(/`([^`]+)`/g, '<code>$1</code>')
-  return out.replace(/\n{2,}/g, '<br><br>')
-}
+/** 精读正文的结构化渲染已移到 assets/deepfmt.js（DeepFmt.renderField）：
+ *  分句 + 领句小标题 + 行号引用转链接，浏览器与校验脚本共用同一实现。 */
 
 /** 纯文本版的行内 md（无既有 HTML 的场合） */
 function mdPlain(s) {
@@ -706,37 +703,56 @@ function pagePkg(group, dir) {
     ? p.peers.map(d => { const s = depShort(d); return s.startsWith('cordis') ? `<span class="dep peer">${esc(s)}</span>` : pkgLink(s) }).join('')
     : ''
 
-  // 逐包精读解读（265 包全覆盖）
+  // 逐包精读解读（265 包全覆盖）—— 结构化重排（分句 / 领句标签 / 行号链接 / 页内小目录）
   const d = deepOf(p)
+
+  /** 一个精读章节：图标 + 中文标题 + 英文 kicker +（可选）收起钮 */
+  const sec = (id, ico, title, en, body, foldable) => `
+  <section class="dsec${foldable ? ' foldable' : ''}" id="${id}">
+    <h2><span class="d-ico">${ico}</span>${title}<span class="k-en">${en}</span>${foldable ? `<button class="fold-btn" type="button" data-fold>收起 ↑</button>` : ''}</h2>
+    <div class="dsec-body">${body}</div>
+  </section>`
+
+  /** 正文 → 结构化 HTML（行号引用自动跳右栏源码） */
+  const R = t => DeepFmt.renderField(t, p, FMT_CTX)
+
+  const toc = [
+    ['sec-why', '💡 为什么'],
+    ['sec-pos', '🧭 位置'],
+    ['sec-inside', '🧩 内部结构'],
+    ['sec-boundary', '🚧 职责边界'],
+    d.tour?.length ? ['sec-tour', '📖 源码带读'] : null,
+    d.gotchas ? ['sec-gotchas', '⚠️ 坑'] : null,
+    ['sec-analogy', '🗣️ 通俗复述'],
+  ].filter(Boolean)
+
   const deepHtml = d ? `
+  <nav class="sec-toc">${toc.map(([id, label]) => `<button class="toc-chip" type="button" data-goto="${id}">${label}</button>`).join('')}</nav>
+
   <details class="official-summary"><summary>官方 README 摘要（脚本自动抽取，点开对照）</summary>
     <p class="lead">${md(p.summary || p.desc || '')}</p>
   </details>
 
-  <h2>为什么必须有它</h2>
-  <p>${dmd(d.why)}</p>
+  ${sec('sec-why', '💡', '为什么必须有它', 'WHY IT MUST EXIST', R(d.why))}
 
-  <h2>在系统里的位置</h2>
-  <p>${dmd(d.position)}</p>
+  ${sec('sec-pos', '🧭', '在系统里的位置', 'POSITION IN THE SYSTEM', R(d.position))}
 
-  <h2>内部结构</h2>
-  <p>${dmd(d.inside)}</p>
+  ${sec('sec-inside', '🧩', '内部结构', 'INTERNALS', R(d.inside), (d.inside || '').length >= 1200)}
 
-  <h2>职责边界</h2>
-  <p>${dmd(d.boundary)}</p>
+  ${sec('sec-boundary', '🚧', '职责边界', 'BOUNDARY', R(d.boundary))}
 
-  ${d.tour?.length ? `<h2>源码带读 <span class="badge">${d.tour.length}</span></h2>
+  ${d.tour?.length ? sec('sec-tour', '📖', `源码带读 <span class="badge">${d.tour.length}</span>`, 'SOURCE TOUR', `
   <table class="tour">
     <thead><tr><th style="width:34%">位置</th><th>为什么值得看</th></tr></thead>
     <tbody>${d.tour.map(t => `<tr>
       <td><a class="srclink" href="#/code/${encodeURI(t.file)}:${t.line}"><code>${esc(t.file.split('/').pop())}:${t.line}</code></a><div style="font-size:10.5px;color:var(--tx-3);font-family:var(--mono)">${esc(t.sym || '')}</div></td>
       <td style="font-size:12.5px">${esc(t.note)}</td>
     </tr>`).join('')}</tbody>
-  </table>` : ''}
+  </table>`) : ''}
 
-  ${d.gotchas ? `<h2>坑与边界条件</h2><p>${dmd(d.gotchas)}</p>` : ''}
+  ${d.gotchas ? sec('sec-gotchas', '⚠️', '坑与边界条件', 'GOTCHAS & LIMITS', R(d.gotchas)) : ''}
 
-  <div class="analogy"><div class="t">🗣️ 通俗复述</div>${dmd(d.analogy)}</div>` : `
+  <section class="dsec" id="sec-analogy"><div class="analogy"><div class="t">🗣️ 通俗复述</div>${R(d.analogy)}</div></section>` : `
   <h2>它是什么</h2>
   <p class="lead">${md(p.summary || p.desc || '')}</p>`
 
@@ -1031,6 +1047,7 @@ async function route() {
       if (typeof sinkSourceLinks === 'function') sinkSourceLinks(content)
       if (typeof mountSourcePage === 'function') mountSourcePage()
       if (typeof renderStrip === 'function') renderStrip()
+      if (typeof spyToc === 'function') spyToc()
       return
     }
   }
@@ -1042,6 +1059,40 @@ renderNav()
 renderSourceNav()
 initSearch()
 if (typeof initPane === 'function') initPane()
+
+/* ---------- 精读页交互：页内小目录 / 章节收起 / 当前章节高亮 ---------- */
+document.getElementById('content').addEventListener('click', e => {
+  const go = e.target.closest('[data-goto]')
+  if (go) {
+    const el = document.getElementById(go.dataset.goto)
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    return
+  }
+  const fold = e.target.closest('[data-fold]')
+  if (fold) {
+    const box = fold.closest('.dsec')
+    if (box) {
+      const on = box.classList.toggle('folded')
+      fold.textContent = on ? '展开 ↓' : '收起 ↑'
+    }
+  }
+})
+
+/** 小目录高亮当前所在章节（滚动时 rAF 节流；非精读页直接跳过） */
+let spyTick = 0
+function spyToc() {
+  const toc = document.querySelector('.sec-toc')
+  if (!toc) return
+  const secs = [...document.querySelectorAll('.dsec[id]')]
+  if (!secs.length) return
+  let cur = secs[0]
+  for (const s of secs) if (s.getBoundingClientRect().top <= 140) cur = s
+  toc.querySelectorAll('.toc-chip').forEach(b => b.classList.toggle('on', b.dataset.goto === cur.id))
+}
+window.addEventListener('scroll', () => {
+  if (spyTick) return
+  spyTick = requestAnimationFrame(() => { spyTick = 0; spyToc() })
+}, { passive: true })
 
 /* 左侧内容里的「读源码」类链接 → 一律在右栏打开，不替换当前页。
    这样左边讲解和右边源码才是真并行；用户想整页看再点面板里的「整页 ↗」。

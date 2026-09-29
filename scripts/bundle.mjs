@@ -13,6 +13,7 @@ const bundle = {
   layers: read('layers.json'),
   code: read('code.json'),
   deep: read('deep.json'),
+  filemap: read('filemap.json'),   // 每包文件清单（行号引用 → 完整路径）
 }
 
 writeFileSync(
