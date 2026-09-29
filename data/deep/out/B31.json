@@ -1,0 +1,342 @@
+[
+  {
+    "group": "client",
+    "dir": "ui-workspace",
+    "short": "workspace",
+    "oneLiner": "左栏的 Workspace/Session 浏览器与新会话导航的唯一实现。",
+    "why": "删掉它，左栏 sidebar.workspaces 这个洞没人填，用户看不到任何工作区和会话列表，也无法开新会话。ctx.uiWorkspace 这个 Cordis Service 就定义在本包：openSession/startSession/connectWorkspace/archiveSession 等全部导航策略随之消失，包括空白会话复用、writer-held 冲突降级、启动恢复默认工作区（workspaces.initializeDefault）——没有它，首次安装的空系统永远停在空白页，因为调 initializeDefault 的正是它的 UiWorkspaceService。会话的 pin/rename/fork/archive 全套行操作、搜索（元数据即时匹配 + 250ms 防抖 Host 内容搜索）、拖拽排序与归档过滤也都是它。ui-conversation 只是被动展示当前选中会话，它自己不会去创建或选择任何会话。",
+    "position": "上游：ui-sidebar 声明 sidebar.workspaces 洞、ui-conversation 声明 conversation.hero.workspace 洞，本包用 ctx.slots.inject 等待声明并双双认领（不依赖加载顺序）；inject 8 个服务（slots/sessions/workspaces/remote/layout/shortcuts 等），读 Host 的 Workspace Controller（ctx.workspaces）与 Session Controller（ctx.sessions）的纯快照。下游：渲染交给 WorkspaceBrowser/WorkspacePicker；所有写动作经 navigation.ts 的 UiWorkspaceService 调 sessions.create/fork、workspaces.* RPC，并用 ctx.layout.beginNavigation 拿 AbortSignal 做导航作废。数据流两路：Host 快照 → 全局 useWorkspaces/useSessions hook → tree.ts 纯函数派生分组行 → 渲染；用户动作 → 插槽行操作组件 → UiWorkspaceService → Host RPC → 快照刷新回流。",
+    "inside": "按部件分五块。① client/index.ts 的 apply：创建 UiWorkspaceService 并 provideRoot 全局 useWorkspaces hook；两次注册（browser→sidebar.workspaces、picker→conversation.hero.workspace）各自声明 directoryFlow 子洞（目录选择交互由 ui-directory-picker-native/-browse 组合填充，洞空则 Add workspace 按钮不渲染）。② navigation.ts 的 UiWorkspaceService（127 行起，包内唯一继承 Service 的类）：持有 mainReference（SessionReference）与持久化 selection store；openSession/openWorkspace/startSession/forkSession 在此实现，connectWorkspace 里 reuseOrCreateBlank 复用同工作目录的空白会话，reuseBlank 在 session/writer-held 时降级新建。③ tree.ts（649 行）纯派生层：deriveGroups/deriveFlat 把 Controller 快照变成树/平铺行，reconcileManualOrder 补全手动拖拽序（缺失成员按 pin 序前置、按时间追加），deriveSearchResults 合并元数据匹配与防抖的内容搜索。④ stores.ts 的 createWorkspaceViewStore：浏览器本地的视图状态（分组、排序模式、归档三态过滤、展开），普通派生不写它，只有 pin/拖拽/选中空白行才落账。⑤ 渲染与动作：rows/WorkspaceBrowser.tsx（1488 行）+ Rows.tsx 画行、拖拽、悬停卡，AnimatedRows（45 行起）用 getSnapshotBeforeUpdate 测量前后位置驱动 native 行移动动画；session-actions/* 把 pin/rename/fork/archive 作为 slot entry 注册进自声明的两个 list 洞（menu order 100/200/300/400，按钮 100/200），rename 对话框、停止并归档确认框、行操作 toast 则注册进 frame 级 shell.overlay 以活得比行菜单久。",
+    "boundary": "归它管：会话列表派生与全部行交互、Workspace 注册/删除/拖拽排序的 UI、导航与选中态策略、目录选择流程的触发与路径采纳。不归它管：侧栏壳与折叠（ui-sidebar 占 sidebar 列并声明本包所在的洞）；右侧面板与打开落点（ui-layout/ui-sidebar-right）；目录选择交互本体（ui-directory-picker-native/-browse 只填 directoryFlow 洞，本包经 open/onPicked 采纳结果）；会话行前导座位里的时钟标等装饰（sidebar.session.row.leading 由 ui-schedule 等占用）。划线依据：Host 数据与浏览器本地视图状态分界——Controller 快照能推出的它自己算（tree.ts），要动 Host 状态的走 RPC，布局归属的推给 layout 家族；连它自己的行动作都走与第三方插件完全相同的插槽路径，不留特权后门。",
+    "tour": [
+      {
+        "file": "packages/client/ui-workspace/src/client/index.ts",
+        "line": 106,
+        "sym": "apply",
+        "note": "两个宿主洞的认领、目录流子洞声明、动作自注册与 overlay 面，一个文件看懂整包的组合方式"
+      },
+      {
+        "file": "packages/client/ui-workspace/src/client/index.ts",
+        "line": 285,
+        "sym": "slots.inject('sidebar.workspaces.session.menu.item')",
+        "note": "pin/rename/fork/archive 以与第三方插件相同的 slot entry 路径注册，order 间隔 100 留插件插位"
+      },
+      {
+        "file": "packages/client/ui-workspace/src/client/navigation.ts",
+        "line": 127,
+        "sym": "UiWorkspaceService",
+        "note": "包内唯一 Cordis Service：mainReference 生命周期、空白会话复用、导航作废都在此"
+      },
+      {
+        "file": "packages/client/ui-workspace/src/client/tree.ts",
+        "line": 436,
+        "sym": "deriveGroups",
+        "note": "快照→分组行的纯派生：排序、归档过滤、树模式、pending 交互状态在这一层决定"
+      },
+      {
+        "file": "packages/client/ui-workspace/src/client/rows/AnimatedRows.tsx",
+        "line": 45,
+        "sym": "AnimatedRows",
+        "note": "React 提交前后测位置、native transform 做行移动；无布局观察者、不轮询"
+      }
+    ],
+    "gotchas": "会话只能归档不能删除，归档行经过滤视图或搜索结果可恢复；pending 交互（等待审批等）不聚合进折叠组，组不展开就看不见；-native 目录选择依赖本地 Host 载体，远程浏览器部署不可用，远程要换 -browse 组合；手动拖拽序是浏览器本地的，只有 Workspace 组拖拽顺序是 Host 持久的；回 Last updated 即丢弃手动布局；subagent 来源的会话在侧栏隐藏；内容搜索是字面量匹配且不能深链到具体事件，选中结果只打开会话。",
+    "analogy": "像 VS Code 资源管理器和最近打开列表的合体，但管理的是 AI 会话：树怎么分组、哪些行显示、拖完怎么记账它说了算；它自己不碰文件系统，需要动 Host 时递 RPC 条子，本地只记你把窗口怎么摆（排序、折叠、过滤）。"
+  },
+  {
+    "group": "client",
+    "dir": "ui-tool",
+    "short": "tool",
+    "oneLiner": "会话里所有工具调用的渲染者：调用树组装与按名分发的视图插槽。",
+    "why": "删掉它，conversation.chat.node 的 tool-call 节点没有渲染者——对话里每次 bash、read_file、搜索、写文件都变成无法呈现的节点，「agent 在干活」的全部视觉证据消失。tool.call.toolview 这个 keyed 插槽也不复存在：ui-skill 等业务包的原子视图无处注册，终端/差异/读取/搜索卡片的纯模型层（models/）一起蒸发。它同时定义了 preparing 阶段流式参数的唯一通道（useToolCallArgumentsPartial），没有它参数边流边显的行做不到。Runtime 仍权威地配对 call/result，但用户永远看不到。",
+    "position": "上游：ui-conversation 把每个有序 tool-call Conversation Node 通过 conversation.chat.node 的 'tool-call' key 派发给本包注册的 ToolCallTree；inject 只需 slots/remote 两服务（remote 仅提供 Host home 用于路径 ~ 化）。下游：ToolCallTree 为每个原子调用按工具名查 tool.call.toolview keyed 插槽，命中渲染业务视图（如 ui-skill 注册的 skill），未命中落到本包 GenericToolCard；本包自己也用 ctx.plugin 注册 9 个内置 toolview（bash/read/read_image/file-mutation/search/web/todo/details/ask-question）。数据流单向：Runtime 冻结的 ToolCallBlock（preparing/start/result 三阶段、递归 subCalls）→ 分支 memo 化 → keyed 派发 → models/ 纯函数校验出卡片数据。",
+    "inside": "① apply.ts（35 行）：注册 'tool-call' 键并同一次调用声明子插槽 tool.call.toolview（keyed、session 作用域），注入 hooks.toolCallArgumentsPartial。② ToolCallTree.tsx：ToolCallBranch 递归渲染 root 与 subCalls（preparing 无子级），ToolCall（20 行起）构造 owner props（callId/toolName/phase/openFile/cwd/home/loadImage/inspect）后按 entryKey=toolName 派发；保留 data-chat-anchor-key=\"call:<id>\" 与 data-chat-call-id 的 DOM 契约供分页与选中；Auto review 拒绝（AUTO_REVIEW_DENIED）优先于 keyed 视图、强制走通用卡。③ tool-call-arguments-partial.ts（13 行）：bindToolCallArgumentsPartial 用 useSyncExternalStore 惰性订阅所在 assistant-step source，只选本 callId 的 argsRaw 前缀——不调 Hook 的视图不加订阅。④ models/ 纯卡片模型层：toolRowModel（classifyTool 分 variant、SUMMARY_KEYS 按变体挑摘要、resultText 扁平化结果、AutoReviewDeniedError 识别），terminal-card-model（324 行，溢出通知 hasSpillNotice、持久 shell 结算不判成功），diff/read/search/web/image 各自模型带 CHAT_*_MAX_LINES 折叠上限。⑤ toolviews/：共享 ToolRow（120 行，memo 化）与各 family 行；PreparingToolRow 处理参数未齐阶段。",
+    "boundary": "归它管：调用树组装与 subCalls 拓扑、按 wire 名分发、通用回退卡、内置第一方工具卡片、参数前缀订阅。不归它管：会话流与 call/result 配对（Runtime 权威，本包不重建 transcript）；具体业务工具视图（各业务包经 keyed 插槽注册，本包不配对 Session 事件）；输出卡片原子（ui-primitives 的 TerminalBlock/DiffBlock 等，本包只组合）；点击文件后的打开路由（chat 视图把 openFile 路由到右侧栏文本预览）。划线依据：keyed 插槽把「某种工具长什么样」留给所有者，「树长什么样、回退是什么」留在树——所以第一方视图可以随时迁出到业务包而不动树。",
+    "tour": [
+      {
+        "file": "packages/client/ui-tool/src/client/apply.ts",
+        "line": 35,
+        "sym": "slots.inject('conversation.chat.node')",
+        "note": "注册 'tool-call' 节点键并声明 keyed 子插槽 tool.call.toolview，整包唯一的挂载点"
+      },
+      {
+        "file": "packages/client/ui-tool/src/client/tool/ToolCallTree.tsx",
+        "line": 57,
+        "sym": "renderSlot('tool.call.toolview')",
+        "note": "按 toolName 派发原子调用，未注册落 GenericToolCard 回退；Auto 拒绝在此前被截走"
+      },
+      {
+        "file": "packages/client/ui-tool/src/client/tool/tool-call-arguments-partial.ts",
+        "line": 13,
+        "sym": "bindToolCallArgumentsPartial",
+        "note": "preparing 阶段流式参数的惰性订阅：不调用不订阅，选中串不变不刷新"
+      },
+      {
+        "file": "packages/client/ui-tool/src/client/tool/models/tool-call-model.ts",
+        "line": 128,
+        "sym": "classifyTool",
+        "note": "wire 工具名→行 variant 的分类与标题/摘要挑选，行模型从这里开始"
+      },
+      {
+        "file": "packages/client/ui-tool/src/client/tool/toolviews/GenericToolCard.tsx",
+        "line": 33,
+        "sym": "GenericToolCard",
+        "note": "通用回退卡：输入/结果扁平化展示，一切不支持或畸形输入的兜底"
+      }
+    ],
+    "gotchas": "Host 把 run_code 排除在 PTC 程序绑定外，生产事件只有一层 dispatch（递归契约支持嵌套但现实不出现）；第一方工具视图仍寄居本包，尚未迁到各自业务包；web 卡链接永远新开标签页，因为视图拿不到 ui-chat 的外链设置；工具文案复用 ui-conversation 的 locale 命名空间；Host 的 presentCall/presentResult 永远进不了 Client——卡片只吃第一方原始事件字段；Write/edit 的 Preparing NKB 是参数字符串长度估算，不是文件字节数。",
+    "analogy": "像把浏览器的网络活动面板改造成给 AI 用：模型每次伸手干活（跑命令、读文件、搜网页）都在对话里留一张卡。这个包决定卡片树的形状和默认长相，别的部门可以凭工具名认领某个位置换成自己的卡片。"
+  },
+  {
+    "group": "client",
+    "dir": "ui-sidebar",
+    "short": "sidebar",
+    "oneLiner": "左栏壳：品牌行、New Session、折叠轨与功能座位的纯组合容器。",
+    "why": "删掉它，ui-layout 声明的 sidebar 列无人认领——左栏整个空掉：没有品牌行、New Session 按钮、折叠开关、Settings 入口和全局面板导航。注意它不是那个会话列表（那是 ui-workspace 的职责），它只声明 sidebar.workspaces、sidebar.settings 等子座位让功能包来填。折叠成 56px 轨的动画时序、指针感知滚动条、Windows 标题栏变体、macOS 折叠后移到红绿灯旁的 HeaderLeadingControls，都是这个壳的家当；功能包因此不必各自实现折叠态。",
+    "position": "上游：向 ui-layout 的 sidebar single 座位注册（ctx.slots.inject 等待其声明）；inject slots/layout/uiWorkspace/locale/shortcuts 五服务。下游：New Session 与面板选择回调直接转发给 ctx.uiWorkspace.startSession 与 ctx.layout.selectPanel/toggleSidebar，自己不做任何业务决策；功能包（ui-workspace、ui-settings、插件面板等）填它声明的七个子座位。数据流：layout 的列状态（collapsed/width）作 owner props 流入壳 → 壳渲染座位；面板元数据是 sidebar.panellist 注册项与 locale 的只读投影，无独立写 API。",
+    "inside": "index.ts 的 apply（45 行起）是全部装配：注册 locale 字典；syncPanels（50 行）把 sidebar.panellist 的注册项（id/order/label）与 locale 变化合并排序成 SidebarPanelMetadata 快照，持有在 createSnapshotStore 里并做浅比较去重；injectProps 提供 startSession/toggleSidebar/selectPanel 回调与 panels、shortcuts hooks；一次 slots.inject('sidebar') 注册 SidebarRoot 并同调用声明七个子座位（brand.mark/brand.name/toggle.badge/panellist/workspaces/settings/footer.action）；另向 ui-layout 的 shell.leading 注册 HeaderLeadingControls（macOS 列隐藏时挂在 traffic lights 旁）。SidebarRoot.tsx（88 行起）处理折叠的 settle 时序（宽内容在当前宽度淡出、定时器到才卸载成 rail）、Windows data-windows-titlebar 变体与气泡朝向、quietBars 机制（指针离开列盒 2 秒后隐藏滚动条，离开判定按列盒几何而非 DOM 包含，因为设置面板是列的 fixed 后代）。",
+    "boundary": "归它管：壳的几何与折叠动画、座位声明、面板列表元数据投影、滚动条指针感知、平台窗口 chrome 变体。不归它管：会话树/搜索/状态点（ui-workspace 占 sidebar.workspaces，README 明说不归壳）；设置面板（ui-settings 占 sidebar.settings）；面板本体（main keyed 槽与选中态在 ui-layout 的 store）。划线依据：壳对内容一无所知——只给布局、生命周期与转发回调，内容语义全部推给占位者；这就是为什么 README 的 Known Limitations 第一条是「状态点归 ui-workspace」。",
+    "tour": [
+      {
+        "file": "packages/client/ui-sidebar/src/client/index.ts",
+        "line": 76,
+        "sym": "slots.inject('sidebar')",
+        "note": "一次注册壳并声明七个子座位；注册进 sidebar 列会整体替换导航列"
+      },
+      {
+        "file": "packages/client/ui-sidebar/src/client/index.ts",
+        "line": 50,
+        "sym": "syncPanels",
+        "note": "注册表 + locale → 面板元数据快照的只读投影，含浅比较防抖"
+      },
+      {
+        "file": "packages/client/ui-sidebar/src/client/SidebarRoot.tsx",
+        "line": 88,
+        "sym": "SidebarRoot",
+        "note": "折叠 settle 时序、Windows 标题栏、quietBars 滚动条全在此组件"
+      },
+      {
+        "file": "packages/client/ui-sidebar/src/client/HeaderLeadingControls.tsx",
+        "line": 26,
+        "sym": "HeaderLeadingControls",
+        "note": "macOS 折叠后移入 ui-layout 的 shell.leading 窗口 chrome 座位的控制"
+      }
+    ],
+    "gotchas": "向 sidebar 列注册会整个替换导航列并连带其内部座位消失——想加东西必须进内层座位；「任务完成」未读标记是纯本地观看态（完成时间>最后查看），永不达 Host；无注册时面板列表连同间距都不渲染；折叠时宽内容靠 fade 后定时卸载而非立即卸载，刷新直接进折叠态则静态渲染 rail。",
+    "analogy": "浏览器侧栏的外框：框、把手和「+」按钮归它，里面装什么书签树由别的扩展决定；你拔掉外框，里面所有东西瞬间无处可挂。"
+  },
+  {
+    "group": "client",
+    "dir": "ui-sidebar-right",
+    "short": "sidebar-right",
+    "oneLiner": "右栏：每会话一个停靠面，dockkit 的产品嵌入者与导航/类型注册表。",
+    "why": "删掉它，dockkit 只是一个无人使用的通用引擎：没有会话维度的 SurfaceState、没有 localStorage 持久化（dsh.sidebar-right.v1.<sessionId>）、没有 openResource/openTab 的地址解析，也没有 tab 类型注册表——文件预览、文件树、终端、浏览器等所有右栏 tab 无处安放。conversation header 的展开按钮、计划评审的自动打开、tab 的导航参数域（params/revision）也都失效。它回答 dockkit 拒绝知道的一切：文案、kind 语义、新 pane 播种什么、装在哪、其他插件怎么够到它。",
+    "position": "上游：向 ui-layout 的 rightbar 列与 conversation.session.header.corner（展开按钮）注册；因为 frame 是基础包、不注入本包，展示态由座位经 ctx.layout.openRightbar(track, fullscreen)/closeRightbar 反向报告。下游：ui-sidebar-files/-textpreview/-terminal/-browser 等 tab 类型经 ctx.sidebarRightTabs.register + keyed 座位 sidebar.right.pane.tab 两阶段接入；打开内容时调 dockkit 纯 planner 算 ops，由自己的 store 落账。数据流：ctx.sidebarRight.openResource → registry.claim(address) → store 的 openContent intent → dockkit plan* → record 一条历史 → snapshot 渲染；导航参数经 TabDomain 以 occurrence 记录（revision 递增），在布局历史之外。",
+    "inside": "① index.ts apply（100 行起）：registry/controller 在 apply 顶层构造（不能在 effect 作用域里，否则其他插件 register 时会静默卡死浏览器启动——注释明言此坑）；ctx.reflect.provide 提供 sidebarRight/sidebarRightTabs 两服务；一个 effect 里注册 rightbar 座位（RightbarRoot→rightbar.session→RightbarSeat）、共享 store 的 ExpandButton、guide 的两阶段注册。② tab-registry.ts 的 SidebarRightTabRegistry（229 行）：id 全局唯一、每 kind 至多一 builtin 一 extension、patterns 对 dsh-resource:// 地址做 glob、canOpen 否决、claim 按 extension>builtin>fallback 带再按 pattern 长度排序解析。③ stores.ts（439 行）：每会话 SurfaceState（layout+history+minted 计数器，计数器进 surface 是 replay 可复现的关键）；advance（189 行）是统一动作形状：mint → planner → replay 草稿 → planSettle（仅 expanded 时回填默认页）→ record 一条历史；canCloseTab（69 行）保证唯一 docked guide 不可关。④ service.ts 的 SidebarRightController：openResource/openTab/close/split/float/dock/toggleFullscreen 公开面，place（407 行）统一 replaceTab>paneId>activePane 落位与 preferNewPane 分裂；无挂载面时 require() 抛错而非写进没人画的表面。⑤ tab-domain.ts 的 TabDomain（77 行）：branded occurrence id、navigation params/revision、abort signal、per-tab actions；session-views.ts 为前台与后台会话保持 keepMounted 视图。⑥ persistence.ts：localStorage 读写，字段类型与成员校验，非法只清本会话键。",
+    "boundary": "归它管：右栏的产品语义——会话绑定、展示态（push/fullscreen）、资源地址解析与类型竞争、导航参数域、tab 生命周期（occurrence/close handler）、持久化。不归它管：停靠树的计算与拖拽（dockkit）、列几何与 track（ui-layout，展示态靠反报）、tab 内容本身（各 provider 包，textpreview 的 { line } 参数类型就声明在消费方）。划线依据：dockkit 拒绝知道「产品」，本包拒绝知道「树怎么算」——planner 纯函数是唯一计算者，本包只 mint id、选 planner、落账。",
+    "tour": [
+      {
+        "file": "packages/client/ui-sidebar-right/src/client/index.ts",
+        "line": 100,
+        "sym": "apply",
+        "note": "registry/controller 顶层构造的原因注释、两座位注册、guide 走公共两阶段路径"
+      },
+      {
+        "file": "packages/client/ui-sidebar-right/src/client/tab-registry.ts",
+        "line": 229,
+        "sym": "SidebarRightTabRegistry",
+        "note": "类型注册与 claim 解析：priority 带 + pattern 长度的编辑器式竞争"
+      },
+      {
+        "file": "packages/client/ui-sidebar-right/src/client/stores.ts",
+        "line": 189,
+        "sym": "advance",
+        "note": "mint→plan→settle→record：一意图一条历史的统一动作形状，setle 仅对 expanded 面回填"
+      },
+      {
+        "file": "packages/client/ui-sidebar-right/src/client/service.ts",
+        "line": 318,
+        "sym": "openResource",
+        "note": "地址校验（dsh-resource:// 外即抛）后 claim，再进入统一的 place 落位"
+      },
+      {
+        "file": "packages/client/ui-sidebar-right/src/client/tab-domain.ts",
+        "line": 77,
+        "sym": "TabDomain",
+        "note": "occurrence/navigation/signal 的 Tab 领域：布局历史之外的第二本账"
+      }
+    ],
+    "gotchas": "布局仅浏览器本地、不同步设备；无会话即无面板（hero 页右栏空白）；undo 只能经 @internal _undo/_redo，产品上刻意无控件；tab 标题在打开时定格，活标题只能经 title 座位；折叠列不回填默认页，首次展开空布局才 seed；硬编码堆叠层，浮层不会高过菜单；无内容级后退栈——步进重放的是布局操作而非浏览历史。",
+    "analogy": "dockkit 是散装积木，这个包把积木拼成「每会话一个停靠区」的成品柜，还兼任前台：想往右栏放东西的人都得先找它登记（注册表）、再找它开门（openResource/openTab）；每层柜子怎么摆的账本和钥匙（localStorage）也在它手里。"
+  },
+  {
+    "group": "client",
+    "dir": "ui-sidebar-files",
+    "short": "sidebar-files",
+    "oneLiner": "右栏文件树 tab 类型：懒列目录加监视刷新，点文件交给侧栏预览。",
+    "why": "删掉它，右栏没有文件树：guide 少一个入口（Mod+P 的 workspace.files 命令也没了），用户失去主动浏览会话工作目录的手段——文本预览还在，但只能从对话里的文件链接被动进入。它同时是「业务包如何做一个 page 型 tab 类型」的范本：两阶段注册、无 patterns、不 claim 任何地址，全包 8 个源文件按 is/keeps/lists/draws/says 分层，被 README 逐一点名。",
+    "position": "上游：inject 六服务（slots/locale/sidebarRightTabs/sidebarRight/remote/remote.workspaceFiles）；经 ctx.sidebarRightTabs.register(filesDefinition) 注册 kind 'files' 的 page 型，带一个 guide entry（order 10）。下游：目录数据来自 Remote 命名空间 remote.workspaceFiles 的 list/watch（Host 侧 workspace-files API）；文件行经 useTabInfo().tab.actions.openResource 打开 dsh-resource://file/session/<id>/<相对路径> 地址，交给 fallback band 的 textpreview 渲染。数据流：展开目录 → face 的 list RPC → store 记 levels[绝对路径] 状态 → FilesBody 渲染；watch 事件 → DirectoryNode.follow → 待处理刷新。",
+    "inside": "① definition.tsx（25 行起 filesDefinition）：id '@deepseek-ai/dsh-client-ui-sidebar-files'、kind 'files'、band 'builtin'、无 patterns（page 型靠 kind 打开）、一个 guide entry。② store.ts（93 行 createFilesStore）：按 tab id 分桶的 FilesTabState——root、levels（每绝对路径 loading/ready/failed）、expanded、autoRefresh、scrollTop；store 比 body 活得久，切 tab 回来层级与滚动位置原样恢复；owner 的 signal 结束一个桶，读后 settled 也不写入。③ directory-node.ts 的 DirectoryNode（5 行）：每个展开目录一个节点，own 一个 watch（face.ts 的 createWatch），collapse 级联关闭隐藏后代；读中到达的变更转 pending 留给下一次刷新。④ face.ts（152 行 filesFace）：把 createList/createWatch 绑成注入面，保留列表截断标志、丢掉 workspace 相对路径。⑤ FilesBody.tsx：目录前、自然大小写不敏感排序、dotfiles 照常；失败行按码各一行（workspace-file/not-found 等）；FilesTitle.tsx 是 chip 标题（16px 文件夹图标）。⑥ index.ts：注册 workspace.files 快捷键，resolve 里 commandTarget(element) 解析焦点 pane 后 openTabFromTarget('files', target)。",
+    "boundary": "归它管：树的读取/缓存/监视/排序/打开动作、层级失败与截断的呈现。不归它管：文件内容渲染（textpreview 的 fallback band）、tab 骨架与落位（ui-sidebar-right）、目录读取的 Host 端实现（api-workspace-files）。划线依据：page 型只产出地址与动作，消费地址是 viewer 型的事——两阶段注册划出的正是这条缝；所以它对「文件打开后长什么样」零知识。",
+    "tour": [
+      {
+        "file": "packages/client/ui-sidebar-files/src/client/index.ts",
+        "line": 67,
+        "sym": "sidebarRightTabs.register(filesDefinition)",
+        "note": "两阶段注册的第一阶段：类型进注册表，body/title 分两步进 keyed 座位"
+      },
+      {
+        "file": "packages/client/ui-sidebar-files/src/client/definition.tsx",
+        "line": 25,
+        "sym": "filesDefinition",
+        "note": "page 型（无 patterns）+ guide entry 的最小完整样例"
+      },
+      {
+        "file": "packages/client/ui-sidebar-files/src/client/store.ts",
+        "line": 93,
+        "sym": "createFilesStore",
+        "note": "按 tab 分桶的 levels/expanded/scrollTop：store 比 body 活得久"
+      },
+      {
+        "file": "packages/client/ui-sidebar-files/src/client/directory-node.ts",
+        "line": 5,
+        "sym": "DirectoryNode",
+        "note": "目录节点与它的 watch 生命周期：open/expand/collapse/refresh/关闭级联"
+      },
+      {
+        "file": "packages/client/ui-sidebar-files/src/client/face.ts",
+        "line": 152,
+        "sym": "filesFace",
+        "note": "list/watch 绑成注入面，读列表项、保留截断标志"
+      }
+    ],
+    "gotchas": "只能列目录：无搜索、无过滤、无拖拽、无重命名、无右键菜单、无当前文件高亮；树只有一个根（会话 cwd），往上翻不了，Host 本来也拒绝 workspace 外路径；被端点条目上限截断的层级以标记行结尾；折叠层级缓存已显示条目，但重开会重新拉取；自动刷新可关，toggle 是隐藏而非删除。",
+    "analogy": "一个只能「看」的 FTP 侧栏：翻开一层拉一层，开着自动刷新；点文件不自己显示，而是递一张写清地址的纸条给隔壁的预览柜台。"
+  },
+  {
+    "group": "client",
+    "dir": "ui-sidebar-textpreview",
+    "short": "sidebar-textpreview",
+    "oneLiner": "右栏文本预览 tab 类型：file 地址的 fallback 查看器，分页读行。",
+    "why": "删掉它，所有 dsh-resource://file/ 地址没有 claim 者（registry 的 fallback 带空缺）：文件树的文件行、对话里的文件链接、工具卡的文件路径点击，全部抛「no registered tab type claims」——它的 definition 写明它以 fallback band 接下每一个 parseFileAddress 能解析的 file 地址（session 与 absolute 两个 scope），是「没有任何更具体类型时的保底查看器」。它还向 SidebarRightResourceParamsMap 声明 { line?: number }，file 地址的行导航参数类型以它为出处，对话「跳到第 N 行」靠它落地。",
+    "position": "上游：向 ctx.sidebarRightTabs 注册 kind 'text'（fallback band）；body 挂 sidebar.right.pane.tab keyed 座位、key=TEXTPREVIEW_ID；文件元数据来自标准 useResource（file provider）。下游：remote.workspaceFiles.read 一页页拉文本。数据流：地址 → hostFileOf 解析出 (sessionId, path) → 注入面 loadPage 发起 RPC → store 的 pages[起始行] → TextPreview 组件渲染；navigation.revision 应答行跳转，滚动/换行等视图状态写回 store。",
+    "inside": "（本包 src 不在仓库快照中，以下依据 lib/types 下带完整注释的 .d.ts。）① definition：TEXTPREVIEW_KIND 'text'、TEXTPREVIEW_ID 作 body 注册键；basenameOf 按 URL 段解码生成 chip 标题（#/?/空格还原为字面），地址整体仍是内容身份——同名不同目录是两个 tab。② store.d.ts：TextTabState 按 tab id 分桶——version、pages（以 1-based 起始行为键）、eof、loading、failure、scrollTop、wrap、已应答的 revision；fresh() 是空桶，tab 的第一次读取才武装 signal 监听，记录结束即弃桶、迟到的结算无处可写。③ face.d.ts：textFace(read) 返回注入面 loadPage/reloadPages；新版本文件的后到页会丢弃全部页并重启走读；组件从不用 await，一切读写经 store actions。④ rpc.d.ts：hostFileOf 做地址→(session, path) 翻译——session 地址带自己的会话，absolute 地址借 seat 的会话读且被 Host 限制在该会话 workspace 内。⑤ TextPreview.d.ts：loadedPages/scrollToLine/linesOf 等纯函数加分页控件。",
+    "boundary": "归它管：文本内容的分页读取、走读与重载、查看状态（滚动、换行、行导航应答）。不归它管：图片/差异等专用渲染（各自类型以更高 band 抢走地址，它无须改动即被接管）；文件树（ui-sidebar-files）；地址的构造（fileAddressFor 在 ui-util-workspace-path）；行导航参数的运行时校验（JSON 形状约定，不检查）。划线依据：fallback 带就是它的边界声明——刻意排在所有 band 最低位，像 VS Code 里纯文本编辑器的位置：任何更具体的 viewer 优先，它永远接得住剩余。",
+    "tour": [
+      {
+        "file": "packages/client/ui-sidebar-textpreview/lib/types/client/definition.d.ts",
+        "line": 31,
+        "sym": "textDefinition",
+        "note": "fallback band 的保底查看器定位：任何可解析 file 地址都由它接住"
+      },
+      {
+        "file": "packages/client/ui-sidebar-textpreview/lib/types/client/store.d.ts",
+        "line": 74,
+        "sym": "createTextStore",
+        "note": "pages 以 1-based 起始行为键、按 tab 分桶；视图状态刻意活得比 body 久"
+      },
+      {
+        "file": "packages/client/ui-sidebar-textpreview/lib/types/client/face.d.ts",
+        "line": 52,
+        "sym": "textFace",
+        "note": "loadPage/reloadPages 注入面：组件不用 await，读写全走 store actions"
+      },
+      {
+        "file": "packages/client/ui-sidebar-textpreview/lib/types/client/rpc.d.ts",
+        "line": 54,
+        "sym": "hostFileOf",
+        "note": "file 地址→(session, path) 的翻译，session/absolute 两 scope 的读取权威"
+      }
+    ],
+    "gotchas": "仓库快照里没有 src/（只有编译产物 lib/types），本条解读以带完整 doc 注释的 .d.ts 为据，行号指向 .d.ts；内容只读，无编辑；行导航参数未做运行时校验；chip 标题在打开时定格为 basename；lines: 0（越过文件末尾）与 lines: 1 空行的语义要靠 Host 行数区分。",
+    "analogy": "像 VS Code 的纯文本查看器：任何没有专用编辑器的文件最后都落到它这里；别指望它漂亮，指望它永远接得住。"
+  },
+  {
+    "group": "client",
+    "dir": "ui-layout",
+    "short": "layout",
+    "oneLiner": "三列 AppFrame 与 ctx.layout：列宽让位求解与主题投影的壳层。",
+    "why": "删掉它，浏览器根槽 'root' 没人填——整个页面框架不存在，sidebar/main/rightbar/shell.overlay/shell.leading 五个座位无人声明，所有列内容（ui-sidebar、ui-conversation、ui-sidebar-right）无处挂载。ctx.layout（selectPanel/toggleSidebar/openRightbar/closeRightbar/beginNavigation）消失：ui-sidebar-right 无法报告展示态，ui-workspace 的导航作废机制（AbortSignal）无从谈起，全局面板导航（sidebar.panellist→main）断裂。主题也没了投影者：color-scheme、暗色标记、alias tokens、内容字号、theme-color meta 全部不再上 document。",
+    "position": "上游：向运行时内建 'root' 槽注册 AppFrame；inject slots/theme/locale/shortcuts 四服务。下游：三列占位者从它声明的座位接入；其他插件读 ctx.layout 或 usePanelInfo hook（provideRoot 发布）。数据流：root layout store 持 panelInfo 选择与列测量 → AppFrame 订阅渲染三列 → 右栏占位者经 ctx.layout 反报 track/fullscreen → columns.ts 的 computeColumns 重解三列宽 → CSS Grid；主题侧 ctx.theme 快照经 ThemePresenter 直写 DOM，全程无 React 路径。",
+    "inside": "① index.ts apply（151 行起）：第一个 effect 建 createLayoutStore 的 root 单例 + LayoutController + 一次 ctx.slots.register('root')（同一调用里贡献 AppFrame 并声明五子座位——声明即渲染权）+ sidebar.left.toggle 快捷键（Mod+B）；订阅 main 槽维护 retainMainPanels；第二个 effect 挂 ThemePresenter 并订阅 theme/change。② columns.ts：常量表（CENTER_MIN 400、侧栏 264-420 默认 280 折叠 56、1024 自动折叠、右栏 300 起步上限 0.7 首开 0.45）与 computeColumns（52 行）——右栏先缩到 300、再撤 track、中心才允许低于 400；侧栏永不在这里让位。③ service.ts 的 LayoutController（57 行）：selectPanel 先查 live main 注册表、缺席即抛且保持现选；beginNavigation 返回 AbortSignal，后续导航/布局销毁会作废旧信号；openRightbar/closeRightbar 只是转写 store 动作。④ AppFrame.tsx（121 行起）：列容器常驻、拖拽把手、发布 --dsh-frame-top/leading-clearance、Windows/macOS 标题栏变体与 data-animating 曲线同步。⑤ theme-presenter.ts 的 ThemePresenter（32 行）：初始 getter 读一次、此后纯事件驱动的 DOM 写入（color-scheme、data-ds-dark-theme、tokens、meta）。⑥ DocumentTitle.tsx：仅在会话可见时用其标题。",
+    "boundary": "归它管：框架几何与让位求解、主面板选择与导航作废、右栏 track 的记账、主题投影、窗口 chrome 座位与 clearance 变量。不归它管：右栏里面是什么（ui-sidebar-right 的会话面板，frame 刻意不注入它）、左栏内容（ui-sidebar）、会话选择（Session Controller）、面板本体注册（main keyed 槽由各插件自己进）。划线依据：frame 只解「多宽、谁在中间、谁让路」，内容语义全部下推——这正是右栏占位者必须反报 openRightbar 的原因。",
+    "tour": [
+      {
+        "file": "packages/client/ui-layout/src/client/index.ts",
+        "line": 151,
+        "sym": "apply",
+        "note": "一次 register 同时贡献 AppFrame 与声明五座位，layout 服务同 effect 就位"
+      },
+      {
+        "file": "packages/client/ui-layout/src/client/columns.ts",
+        "line": 52,
+        "sym": "computeColumns",
+        "note": "右栏先缩到 300 再撤 track 的让位求解，常量表就在同文件头部"
+      },
+      {
+        "file": "packages/client/ui-layout/src/client/service.ts",
+        "line": 57,
+        "sym": "LayoutController",
+        "note": "selectPanel 校验 live 注册表、beginNavigation 的 AbortSignal、展示态反报面"
+      },
+      {
+        "file": "packages/client/ui-layout/src/client/AppFrame.tsx",
+        "line": 121,
+        "sym": "AppFrame",
+        "note": "三列容器、拖拽把手与 --dsh-frame-*-clearance 变量发布"
+      },
+      {
+        "file": "packages/client/ui-layout/src/client/theme-presenter.ts",
+        "line": 32,
+        "sym": "ThemePresenter",
+        "note": "主题快照的纯 DOM 投影：初始 getter 一次、此后事件驱动"
+      }
+    ],
+    "gotchas": "列几何是瞬态的——重载后侧栏回默认宽、右栏隐藏，拖拽宽度只是 frame 级偏好；右栏关闭后中心仍可能低于 400px（56px 左轨保留）；track 与面板共一条动画曲线仅限 data-animating 期间，占位者用自有曲线就会脱节；挤压回流期间无滚动锚定，阅读位置可能漂移。",
+    "analogy": "窗框加卷帘：它决定每扇窗多宽、谁被挤、谁让路，但窗里卖的什么货它一概不知；顺手负责把「白天/黑夜」刷在墙上（主题变量），让所有租户不必自己刷漆。"
+  },
+  {
+    "group": "client",
+    "dir": "ui-dockkit",
+    "short": "dockkit",
+    "oneLiner": "宿主无关的停靠布局套件：可逆操作分裂树引擎加渲染组件两层。",
+    "why": "删掉它，右栏只剩一堆没有树的意图：split/merge/moveTab/float 等没有纯函数计算者，「一次手势一条历史」与 undo 机制消失。它是 ui-sidebar-right 的地基——布局状态、撤销、拖拽、浮层全部不复存在，右栏退化成一个静态面板。但要理解它的定位：README 首句「The Harness Web client is its first embedder; nothing in here knows that」——它按可独立发布的引擎写（MIT、staticLinked 单 bundle、零 cordis 服务），删掉它不产生任何直接的产品报错，而是让唯一嵌入者失去地基。",
+    "position": "它处在依赖链的底端：不依赖任何 dsh 包（peers 仅 cordis 类型），被 ui-sidebar-right 静态链接。上游（消费者）两个：嵌入者的 store 调 engine 纯函数（plan*/applyOp/Sequencer）；组件层（DockSurface/DockLayout/FloatLayer/TabPanel）消费 DockSnapshot 渲染、经 DockIntents 契约回报。数据流：手势 → 一次 DockIntents 调用（一意图，绝无拖拽帧）→ 嵌入者 store 调 plan* 得 ops → record 进 Sequencer → getSnapshot 引用变更通知 → 组件重渲染。所有宿主特异物经三契约注入：DockLabels（文案）、TabRenderer（tab 体）、DockIntents（手势结果）。",
+    "inside": "① contract/types.ts：branded PaneId/SplitId/TabId（只有 Mint 或 DOM 往返能铸造）；LayoutState（105 行：nodes/tabs/rootId/floats 底到顶/activePaneId/expanded/mode）；LayoutOp（137 行）17 种操作且自带新建 id——这是 replay 可复现、逆操作可表达的根基，insertPane/insertTab/restoreFocus 三个种类就是专为表达逆操作而生。② engine/operations.ts：applyOp（423 行）纯归约，每操作返回 { state, inverse }，逆在执行时捕获（撤销时原状态已不在）；replay（462 行）折叠正放。③ engine/sequence.ts：record（98 行）把一意图落一条历史、inverse 逆序 unshift、新写入丢 redo 分支；stepBack/stepForward 把连续 focus-only 条目并成一步；Sequencer（156 行）持 state+history。④ engine/planner.ts（399 行）：共享决策纯函数——planDropTab（270 行）把拖放变成 reorder/move/分裂（唯一 tab 让位时先回填 makeTab 再搬，保证落点获得焦点）、planSettle（382 行）合并被掏空的 pane 并对空根 pane 重新播种（不给工厂就留空，可选择性退出）、planOpenContent 按 (kind, contentId) 去重聚焦。⑤ engine/controller.ts 的 DockController（54 行）：有状态意图层，每方法 = planner + record + commit；subscribe/getSnapshot 供 React useSyncExternalStore，快照引用只在布局变时变。⑥ components/：TabPanel.tsx 的 TabStrip（212 行）实现 WAI-ARIA tabs 手动激活与一串浏览器缺陷修复（chip 收缩至 80px 下限后滚动、淡出带、touch-action: none、按下即捕获指针、点击才 focus）；DockSurface（递归树）与 DockLayout（单/双水平 pane、保留 DOM 单元）双形态；FloatLayer 自带手势、视口坐标；measure.ts 在每次提交与 resize 后实测 halvesFit（geometry.ts:127）决定 split 控件可用性。",
+    "boundary": "归它管：树模型与不变量、可逆操作与线性历史、手势→意图的收敛、浏览器手势硬化（capturePointer、touch-action、focus 时序、chips 让步规则）。不归它管：任何文案（DockLabels 传入，含可访问名）、tab 内容与标题（TabRenderer/renderTabTitle）、kind 语义（opaque string）、undo/redo 控件（嵌入者自决）、周边 chrome（rail、折叠呈现归嵌入者）。划线依据：两层边界就是包的存在理由——engine 无 React 无 DOM 无宿主概念，组件只回报复定意图；产品规则（两 pane 上限、20%-80%）经策略 prop（canSplit/canAddTab/canCloseTab）从外面注入，引擎自身只有 room rule 一条自留政策。",
+    "tour": [
+      {
+        "file": "packages/client/ui-dockkit/src/contract/types.ts",
+        "line": 137,
+        "sym": "LayoutOp",
+        "note": "17 种操作自带新建 id：replay 复现与逆操作表达的地基，注释逐条讲意图"
+      },
+      {
+        "file": "packages/client/ui-dockkit/src/engine/operations.ts",
+        "line": 423,
+        "sym": "applyOp",
+        "note": "每操作返回 next state + inverse 的纯归约；switch 一览全部操作种类"
+      },
+      {
+        "file": "packages/client/ui-dockkit/src/engine/sequence.ts",
+        "line": 98,
+        "sym": "record",
+        "note": "一意图一条历史：inverse 逆序 unshift、丢 redo 分支、空意图不记录"
+      },
+      {
+        "file": "packages/client/ui-dockkit/src/engine/planner.ts",
+        "line": 382,
+        "sym": "planSettle",
+        "note": "空 pane 合并与根 pane 回填的 opt-in 规则：不给工厂就留空"
+      },
+      {
+        "file": "packages/client/ui-dockkit/src/engine/controller.ts",
+        "line": 54,
+        "sym": "DockController",
+        "note": "planner+record+notify 的有状态意图层，subscribe/getSnapshot 是 React 的接缝"
+      }
+    ],
+    "gotchas": "尺寸语义刻意小：分数权重加一个最小钳制，无 snap/优先尺寸/偏好尺寸，没有完整 splitview 的级联挤压；touch 未调优；无障碍不完整——divider 无 separator role、无键盘分屏/移动/浮层路径；无公开样式契约（hashed CSS module，单文件 stylesheet 是刻意的防去重冲突设计）；导出随时可变、非稳定 API（发布只因 Sidebar 静态链接）；产品限制（两水平 pane、20%-80%、fallback 种子）在嵌入者而非引擎。",
+    "analogy": "一套窗格积木引擎：只懂树、比例和撤销账本，不懂文件还是终端。你拖动时它全程只在草稿纸上比划，松手那一刻才记一笔完整账——中途永远不会弄脏账本。"
+  }
+]

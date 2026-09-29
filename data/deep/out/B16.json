@@ -1,0 +1,173 @@
+[
+  {
+    "group": "goal",
+    "dir": "goal",
+    "short": "goal",
+    "oneLiner": "同会话目标的持久化状态机：长任务跨 turn 与重启的唯一权威",
+    "why": "agent loop 逐 turn 驱动，模型说的『我要长期做 X』只是对话文本，turn 一结束或进程一重启就没人记得——没有状态源，续跑驱动器无法判断该不该开下一轮，UI 也无处显示进度。goal 把当前目标独立成 event-sourced 状态：每次变更都向 session log 追加携带完整快照的 goal/change 事件，clear 写版本化墓碑；resume/fork 后由严格 fold 重放出目标、阶段、revision 与已用轮数。不加载它，dsh-tool-goal、dsh-goal-round-driver、dsh-command-goal 全部失去可读写的状态源，自动续跑与 /goal 命令整体失效；普通单轮任务不受影响——这正是它的定位边界。",
+    "position": "它是被消费的核心域，本身不消费别人。上游：dsh-tool-goal 的三个工具、dsh-goal-round-driver 的续跑驱动、dsh-command-goal 的 /goal 命令、以及经 session/projection 推送的 Web UI 都调用 ctx.goals；数据流是「消费者提交变更 → GoalService 校验并 append goal/change → 投影单元重放 → get() 返回 detached GoalView」。下游：require dsh-session-projection——构造时 ctx.sessionProjections.register 注册 'goal' 投影单元；状态本身落在 dsh-session 的 session log 里；ctx.on('session/event') 只在 goal/change 提交后同步进程本地 activation 缓存。goal/changed 与 goal/activation-changed 两个事件向消费者广播边缘，goal 域不回调任何具体消费者。",
+    "inside": "入口 src/index.ts 定义 GoalService（ctx.goals，static inject ['agents','sessionProjections']，Config 只有 defaultMaxGoalRounds 默认 256）。① 严格投影：goalProjectionDefinition 注册 'goal' 投影单元（stateVersion 6），applyGoalProjection 只从 goal/change 与 goal 来源 user/message 事件 fold 出 GoalProjectionState，首个非法事件记入 failure，此后 state() 直接抛错、宿主访问整体拒绝——是完整性检测而非插件隔离。② 生命周期：create/edit/pause/resume/complete/block/clear 七动词对应 active/paused/blocked/complete 四态闭集；resume 只接受 active-but-disarmed、paused、blocked，且 roundsStarted < maxGoalRounds。③ 乐观并发：get() 返回 detached GoalView，变更必须带 {id, revision} 的 GoalRef，expectCurrent 拒绝 stale ref（GOAL_STALE_REVISION），assertLive 要求 ctx.agents.get(agent.id) === agent。④ 持久化：commit() 把完整快照作为 goal/change 事件 append 进 session log（唯一权威），nextMutationTime 对回拨墙钟做 clamp。⑤ 激活缓存：armed/disarmed 存于 WeakMap<Session, GoalRuntimeState>，从不持久化；agent/created 与每次 session-start 边缘都 disarm，commit 借 pendingActivation 让 activation 与对应 seq 的事件同步生效。⑥ 事件：goal/changed 在持久化提交后发出，goal/activation-changed 只广播进程本地边缘。",
+    "boundary": "它只管「目标状态是什么」：持久化、校验、乐观锁、重放、投影。明确不管：何时续跑——activation 只是标志，决策归 dsh-goal-round-driver；谁有权创建或完成——dsh-tool-goal 在执行时做 authority 检查，/goal 是人侧入口；目标是否真完成——没有独立 evaluator，调用方记录 complete 即权威；轮数以外的资源（token、费用、时间）一概不计。划线依据：状态必须单一权威且可严格重放，而策略天然多样（何时续、何时停、何时认输），把策略留在消费者包，状态域才够小够纯，能被 invariant 伴侣对每个 attached 会话做独立增量重放验证。",
+    "tour": [
+      { "file": "packages/goal/goal/src/index.ts", "line": 613, "sym": "GoalService.commit", "note": "唯一持久化写入点：完整快照以 goal/change 事件 append 进 session log，日志即目标状态的唯一权威。" },
+      { "file": "packages/goal/goal/src/index.ts", "line": 469, "sym": "GoalService.assertLive", "note": "变更只认 ctx.agents 里注册的同一实例，杜绝凭 id 冒充；compare-and-set 的身份半边。" },
+      { "file": "packages/goal/goal/src/index.ts", "line": 456, "sym": "GoalService.expectCurrent", "note": "校验 GoalRef 的 id 加 revision，旧视图拿到 GOAL_STALE_REVISION 而不是静默覆盖新状态。" },
+      { "file": "packages/goal/goal/src/index.ts", "line": 364, "sym": "GoalService.resume", "note": "rearm 唯一入口：接受 active-but-disarmed/paused/blocked，轮数未耗尽，恢复同时清掉旧 blocker。" },
+      { "file": "packages/goal/goal/src/index.ts", "line": 162, "sym": "goalProjectionDefinition", "note": "'goal' 严格投影单元（stateVersion 6）：fold 遇到首个非法事件记 failure，此后宿主侧访问整体拒绝。" }
+    ],
+    "gotchas": "activation（armed/disarmed）不持久化：resume/fork 后 active 目标一律 disarmed，必须显式 resume；每个会话只有一个 current goal，未完成的必须先 edit/pause/block/clear 才能换新；maxGoalRounds 只数轮，不 meter token/费用/时间；complete/block 无独立认证，调用方记录即权威；信任进程内生产者——能直接摸 Session 的插件可伪造 goal/change，严格重放只能检测损坏并把 goal 访问停在该记录处，这是完整性检测不是插件隔离；goal 状态本身不注入模型上下文，可见通道只有工具结果与续跑 prompt。",
+    "analogy": "像健身房墙上的训练目标卡：教练每轮看完训练就更新卡片；你停一周回来（重启），卡片还在——但「是否自动加练」的开关每次进馆都默认关着，得你说一声「继续」才重新打开。卡片只记状态，不替你决定练不练。"
+  },
+  {
+    "group": "goal",
+    "dir": "goal-round-driver",
+    "short": "goal-round-driver",
+    "oneLiner": "目标空闲续跑驱动器：预占轮号加双重围栏的同会话自动推进",
+    "why": "goal 服务只存状态不排程——删掉这个包，armed 的 active 目标永远停在上一个 turn 结束的地方，「无监督多轮推进」塌掉，长任务退化成每一步都要人推。驱动器把续跑做成明确机制：agent idle、activation armed、轮数有余额时，预占 roundsStarted+1，排队一条 goal 来源的 user 消息让模型朝目标再走一轮；轮数耗尽则以稳定码 round-limit 记 blocker 收尾。没有它，dsh-goal 的 activation 只是死数据，tool-goal 的 goal-round 权限路径也永不激活，goal 生命周期只剩人侧命令一条腿。",
+    "position": "上游：监听 agent/status（idle）、goal/changed、session/event（user/message、turn/end）、agent/inbox/inserted/claimed/discarded 等边缘，由 agent/pre-step 围栏把守入步。下游：读 ctx.goals 的 get/disarm/block/pause 写目标状态，经 agent.followup 把 <goal_round> prompt 注入 inbox，经 ctx.sessions.flush() 做持久化检查点。数据流：goal 状态 → 驱动器排队消息 → agent inbox → session log 里的 goal 来源 user/message → fold 把 roundsStarted 加一 → 驱动器据此决定下一轮；人类输入插队时围栏让自动工作让位。",
+    "inside": "单文件状态机（inject ['agents','goals','sessions']，无配置）。① DriverState（Map<Agent, DriverState>）：attempt 是 queued/claimed/admitted 三相的 RoundAttempt，另有 competingQueued、needsCheckpoint、requested、stopping。② drive()（L138）：idle 时若 needsCheckpoint 先 await ctx.sessions.flush() 并重查全部条件；已有 attempt 则标记待检查点返回；goal 非 active/armed 直接返回；roundsStarted 耗尽调 ctx.goals.block 记 round-limit；否则构造 reservation、renderGoalRoundPrompt、followup 排队，queue 失败记 queue-failed blocker。③ 竞态围栏：agent/pre-step 监听里 validReservation（L345）在 next() 前后各验一次完整认领记录（fiber 活着、attempt=claimed、未 stale、goal id/revision/phase/armed 未变、round 等于 roundsStarted+1），不合法则 reject 并把人类消息放回 inbox；通过后返回 startsRequestSeries: true 让一轮在 Chat 里呈现为自包含请求头。④ 停止条件：turn/end 的 max-tokens 直接 disarm；agent/error disarm；goal/changed 里宿主发起的 pause 会 cancel 正在跑的 turn，模型自己 pause 则正常跑完；取消的轮在下个 idle 点被 pause 且永不自动重启。⑤ teardown（effect yield，L436）：stopping=true、全量 disarm、以 parent 取消在跑的轮并等 quiescence，事件围栏保持到 settle。",
+    "boundary": "只管「何时开下一轮」与轮数上限的机械执行；目标是否真完成、blocker 语义是否成立归 dsh-tool-goal 的模型判断；resume 权威在人——驱动器加载或 resume/fork 后绝不自行复活任务；不 fork 会话、不起新 agent（Ralph 式独立尝试明确排除在本包外）；异常失败无自动重试。划线依据：调度与状态分离——goal 域保持纯状态，驱动器只消费 activation 与 roundsStarted，于是 invariant 伴侣可以独立验证「goal 来源消息必须逐字节等于本包保留的 prompt」，防伪造续跑指令。",
+    "tour": [
+      { "file": "packages/goal/goal-round-driver/src/index.ts", "line": 138, "sym": "drive", "note": "一轮的全部准入逻辑：检查点、attempt 回收、armed 校验、round-limit、预占加 followup。" },
+      { "file": "packages/goal/goal-round-driver/src/index.ts", "line": 167, "sym": "drive 的轮数耗尽分支", "note": "耗尽不报错而是以稳定码 round-limit 记 blocker，把上限变成持久可解释的状态。" },
+      { "file": "packages/goal/goal-round-driver/src/index.ts", "line": 345, "sym": "validReservation", "note": "完整竞态围栏：fiber、attempt 相位、stale、goal 引用、round 号五重核对，任一不满足即 fail-closed。" },
+      { "file": "packages/goal/goal-round-driver/src/index.ts", "line": 360, "sym": "agent/pre-step 监听", "note": "next() 前后各验一次认领记录；人类消息插队会让自动轮被 reject 并回收 reservation。" },
+      { "file": "packages/goal/goal-round-driver/src/index.ts", "line": 424, "sym": "pre-step 放行返回", "note": "通过双重围栏后返回 startsRequestSeries: true，让这一轮在 UI 里渲染为自包含请求。" }
+    ],
+    "gotchas": "加载于既有 agent 之上永不继承自动权限，resume/fork 后必须显式 resume；已进 inbox 的轮可能在 unload 开始前就开始并消耗额度（Cordis unload 异步，teardown 只能取消请求并等 quiescence）；round cap 只数进入历史的 goal 消息，人类消息与 stale 预占不占额度；无异常失败自动重试，transient 失败要等人授权 resume；轮 cap 不是资源预算，token/费用/时间策略在别处。",
+    "analogy": "像跑步机旁的自动教练：你每跑完一圈休息（idle），他看一眼目标卡还有没有圈数，有就喊「下一圈」（goal_round prompt）；你中途插话他就先闭嘴等你；喊到上限圈数就在卡上盖章「到顶了」（round-limit），绝不自己偷偷加圈，也绝不把别人的课当成你的续集。"
+  },
+  {
+    "group": "goal",
+    "dir": "tool-goal",
+    "short": "tool-goal",
+    "oneLiner": "模型侧目标工具：get/create/update 与执行时权限裁决",
+    "why": "有了 goal 状态域，模型仍摸不到它——没有这个包，模型既不能从人类请求里推断并创建长目标，也不能在自动轮里报告 complete/blocked，生命周期只剩人侧命令一条腿。它把 get_goal/create_goal/update_goal 注册进 ctx.tools，并在执行时裁决权限：create/edit/pause/resume 需要本轮有宿主认证的直接人类输入且 agent 是 runtime root；complete/blocked 额外接受「正好是当前 goal round」；blocked 还有连续轮数阈值（默认 3）的机械下限。删掉它，自动轮无法收尾，目标只会一路跑到 round-limit 被 block。",
+    "position": "上游：模型经 agent loop 调用工具；goal-round-driver 的自动轮也依赖同一套权限在轮末收尾。下游：调 ctx.goals 的 get/create/edit/pause/resume/complete/block 做实际变更；向 ctx.systemPrompt 注册 'tool:goal' 指南段；经 exec.deferContext 注入 <goal_complete>/<goal_blocked> 收尾消息（source kind 'tool-goal'）。数据流：模型参数 → goalToolExecution 认证 → authority 判定 → ctx.goals 变更 → 紧凑 JSON 结果回工具层；goal 变更本身不进模型上下文。",
+    "inside": "① index.ts apply()（L187）：注册三个 defineTool，输出共用 GOAL_VALUE_SCHEMA 的紧凑 JSON——goal: null 或 id/revision/objective/phase/roundsStarted/maxGoalRounds/blockedReason 加 activation 观察值；Config 的 blockedAfterConsecutiveRounds 默认 3，同时插值进 system prompt 指南并作为执行时硬下限。② authority.ts：goalToolExecution（L48）要求 exact live agent、status running、currentInitiator、open turn（读 turnBoundary 投影）；hasDirectHumanInput（L80）检查 open turn 事件里是否有宿主认证的 {kind:'user'} user/message——Agent.followup()/steer() 省略 source 时默认 'user'，所以插件、调度器等非人类生产者必须自带 source，不能冒领人类权威；isMatchingGoalRound（L87）验证当前 turn 正是 goal 的已准入轮；completionAuthority（L111）在 direct-human 与 goal-round 之间二选一。③ update_goal 分支：resume 对 durable paused 目标抛 GOAL_TOOL_RESUME_PAUSED（那是用户/Web 的活）；blocked 在 goal-round 权限下 roundsStarted 小于阈值直接拒绝（GOAL_TOOL_BLOCK_THRESHOLD）；blocked_reason 只配 blocked 且落为稳定码 model-reported。④ 成功的自动 complete/blocked 经 deferContext 注入 renderWrapupContext 指令，让模型先向用户写最终消息再结束 turn；直接人类的变更绝不触发。",
+    "boundary": "只管模型侧的目标读写与执行时权限；不管何时续跑（round-driver）、人类 UI 入口（command-goal，含 paused 的 resume 权）、把目标常态渲染进 prompt（未定方向的 context 插件）。划线依据：权限必须在变更生效前裁决，而权限来源（人类 turn 与 goal round）是 agent loop 的事件事实，只有工具执行层拿得到当前 turn 切片；状态域若知道这些就会失去可重放性。所以本包不发持久事件、不出独立状态，被 goal 域与包测试双向覆盖。",
+    "tour": [
+      { "file": "packages/goal/tool-goal/src/authority.ts", "line": 48, "sym": "goalToolExecution", "note": "一切权限的起点：exact live agent、running、currentInitiator、open turn 四重认证。" },
+      { "file": "packages/goal/tool-goal/src/authority.ts", "line": 100, "sym": "requireDirectHuman", "note": "create/edit/pause/resume 的硬门槛：本轮必须有宿主认证的直接人类输入且 agent 是 root。" },
+      { "file": "packages/goal/tool-goal/src/authority.ts", "line": 111, "sym": "completionAuthority", "note": "complete/blocked 的双轨授权：直接人类 turn，或恰好当前 goal 的已准入轮。" },
+      { "file": "packages/goal/tool-goal/src/index.ts", "line": 305, "sym": "update_goal 的 blocked 阈值检查", "note": "连续轮数阈值是机械下限：roundsStarted 不足时 blocked 直接被拒，模型只能更严不能更松。" },
+      { "file": "packages/goal/tool-goal/src/index.ts", "line": 319, "sym": "update_goal 的 wrapup deferContext", "note": "自动轮收尾后注入 <goal_complete>/<goal_blocked> 指令，让模型转向用户写最终消息再结束。" }
+    ],
+    "gotchas": "语义意图仍是模型判断——运行时只能证明本轮存在人类消息，不能证明请求配得上一个 goal；「同一阻塞条件持续 N 轮」也是模型判断，运行时只数已准入轮数；goal-round 权限路径在没挂 driver 时是死的——单挂本包不产生 goal 轮；prompt 指南注册独立于工具注册，scope 可能藏掉工具却留下指南（Dev Note 明列的未决问题）；resume 对 durable paused 一律拒绝。",
+    "analogy": "像公司的立项审批台：模型想立项（create_goal）必须有真人当面提的需求；自动跑单（goal round）时可以报完工或报卡壳，但报卡壳至少要连续三期周会都撞同一堵墙，还要写清墙是什么。暂停后重启的钥匙只在老板（用户）手里，模型要不来。"
+  },
+  {
+    "group": "goal",
+    "dir": "command-goal",
+    "short": "command-goal",
+    "oneLiner": "人类侧 /goal 命令：UI 命令面直达目标生命周期",
+    "why": "状态域与模型工具都齐了，交互式部署里用户仍没有不经过模型的控制手段——没有它，暂停一个失控的自动任务、亲手设目标、给目标附图都得求模型代劳。它把 /goal 注册进 ctx.commands：裸 /goal 显示状态与合法下一步；/goal <objective> 创建并 arm；edit/pause/resume/clear 各自直达域动词；命令与其直接输出只留在 UI，从不进模型请求。attach 的图片/文件在 create/edit 成功后作为一条普通 user followup 进会话，后续 goal 轮能从历史读到。headless 与 ACP 等无命令适配器的部署明确不需要它。",
+    "position": "上游：命令适配器（Web 客户端是参考实现）派发 /goal；inject ['commands','goals']。下游：完全复用 ctx.goals 的 get/create/edit/pause/resume/clear，不自建状态；创建/编辑成功后经 invocation.agent.followup 提交附件消息。数据流：用户输入 → parseGoalCommand → executeGoalCommand 调 ctx.goals → CommandResult 直接回 UI。目标变更以 goal/change 落日志，之后可能出现在驱动器的续跑 prompt 里——但命令文本、状态渲染、错误文案永不进模型历史也不落 presentation 日志。",
+    "inside": "单文件适配器（199 行）。① parseGoalCommand（L35）：语法而非自由文本——只有 clear/pause/resume/edit 占满整个输入时才算控制词（大小写不敏感），裸 edit 是 invalid-edit，其余任何非空后缀都是 objective，所以 /goal pause after verification 创建的是字面目标。② executeGoalCommand（L126）：show 渲染 Status/Objective/Rounds/Activation/Blocker 与 commandHint（按 phase 加 activation 给出当前合法命令）；create 拒绝替换未完成目标，只有 complete 可被直接替换；edit 对 complete 目标转为新建；附件只随 create/edit 走，其他子命令带附件报直接错误。③ submitObjectiveAttachments（L117）：附件按选择顺序加固定文本 Reference attachments for the goal objective. 组成一条 user 消息；goal 域不存任何附件状态。④ 错误折叠：GoalError 统一转成固定文案的直接命令错误，不暴露 branded id/revision；意外实现失败照样 rethrow，让适配器按命令失败上报。⑤ apply（L190）只有一条 ctx.commands.register，声明 attachments: true。",
+    "boundary": "只做命令语法解析、稳定错误渲染、附件转投；不提供持续状态徽章（裸 /goal 就是可移植观察 API）；没有每命令的 round-cap 参数（那是 deployment config，或让模型经 tool edit）；paused 目标的模型 resume 权在 tool-goal 被拒、在本命令放行——两侧分工明确。划线依据：命令要跨适配器行为一致，所以刻意无 modal 表单、无替换确认回调，内联 edit 加显式 clear 保持破坏性意图确定；通用命令注册表没有更丰富的交互原语，这是已知限制而非疏漏。",
+    "tour": [
+      { "file": "packages/goal/command-goal/src/index.ts", "line": 35, "sym": "parseGoalCommand", "note": "「语法而非自由文本」：控制词只在占满输入时生效，其余一切后缀都是 objective。" },
+      { "file": "packages/goal/command-goal/src/index.ts", "line": 117, "sym": "submitObjectiveAttachments", "note": "附件不进 goal 域：成功 create/edit 后作为一条普通 user 消息进会话，goal 轮从历史读到。" },
+      { "file": "packages/goal/command-goal/src/index.ts", "line": 178, "sym": "executeGoalCommand 的 catch", "note": "GoalError 一律折叠成固定文案的直接错误，不暴露 branded id/revision；意外失败照常抛出。" },
+      { "file": "packages/goal/command-goal/src/index.ts", "line": 60, "sym": "commandHint", "note": "按 phase 加 activation 给出当前状态下合法的下一步命令，裸 /goal 因此成为可移植观察面。" },
+      { "file": "packages/goal/command-goal/src/index.ts", "line": 190, "sym": "apply", "note": "一条 commands.register 完成全部工作：命令与输出留在 UI 命令面，从不进模型请求。" }
+    ],
+    "gotchas": "只在挂了命令适配器的交互部署可用（Web 参考实现；headless、ACP 自动化、JSON-RPC 适配器都不消费 ctx.commands）；edit 拒绝直接替换未完成目标，要先 clear；/goal pause after verification 是创建字面目标——控制词必须独占输入；Web bundle 里命令按 agent preset 挂载（standard/code/cordis），minimal 不含；命令输出从不进模型历史，presentation text 不落日志。",
+    "analogy": "目标系统的前台服务窗口：游客（用户）不找教练（模型）也能在窗口直接填表、按暂停、贴照片；窗口只办卡不教课，而且不管窗口按没按暂停，机器开动起来还是教练说了算。"
+  },
+  {
+    "group": "compaction",
+    "dir": "compaction",
+    "short": "compaction",
+    "oneLiner": "上下文压缩抽象接缝：三操作契约加日志括号锁与压缩点识别",
+    "why": "长会话必然顶到模型上下文上限——没有统一接缝，每个触发方（压力监听、/compact、溢出恢复）都得自己发明「怎么替换历史、怎么防并发、怎么认出压缩消息」，随手改历史会摧毁 session log 的可重放性。本包定义 ctx.compaction：CompactionEngine 的三个抽象操作（compactIfNeeded 自动触发、compactNow 手动按需、compactRegion 指定区间），并规定唯一合法的表面变更方式——compaction/start（log-only 拿锁）、compaction/summary（log-only）、一条带 surfaceOp replace 的 user/message（唯一表面变更）、compaction/end（log-only 放锁）。没有后端挂载时什么也不压缩，/compact 直接失败。",
+    "position": "上游：dsh-command-compact 只调 compactNow；dsh-compaction-basic 实现全部三操作并自带触发监听；agent loop 与 UI 经 isCompactCheckpointSource 识别压缩消息、经 compaction/summary 的 shadowed 定价做投影扣减。下游：依赖 dsh-session 的事件/表面词汇与 dsh-llm 的 ContentBlock——刻意偏离 Cordis-only 的 Service Definition 指南（Agent Note 有记录）；经 declare module 向 SessionEventMap 合并 compaction/start、summary、end、prune 四个 log-only 事件，向 MessageSourceMap 合并 'compact-checkpoint'，向 Context 合并 ctx.compaction。数据流：触发方 → 引擎实现 → session.append 落日志事件 → deriveMessages 按当前表面派生模型消息。",
+    "inside": "① CompactionEngine（L119，abstract Service）：compactIfNeeded(agent, trigger, signal)（trigger 为 pressure 或 context-overflow）、compactNow（闲时维护任务，turn: null 的独立括号）、compactRegion(start, end)（表面位置闭区间，双边界必须 tool-pairing 平衡）。② ManualCompactionError：busy/cancelled/changed/summary/commit/persistence 六个稳定码，是人侧命令的预期失败词汇。③ 事件词汇（types.ts）：compaction/start 记 {compactionId, turn: number|null}，live 括号不得跨 turn/start 与 turn/end；compaction/summary 记摘要内容、shadowedRange/shadowedSeqs、shadowedTokenCount、provider/model/usage——它是紧跟其后的替换消息的 shadow price，与 compaction/prune 共享同一配对协议；compaction/end 的 error 字段记录失败关闭。④ checkpoint.ts：compactCheckpointSource（L33）构造冻结的 'compact-checkpoint' source，isCompactCheckpointSource 让任何消费者不认识具体后端也能认出并关联压缩点。⑤ tool-pairing.ts：toolPairingBalancedBefore/After 校验压缩边缘不劈开 assistant 工具调用/结果对，按 cut 缓存平衡表，replace 世代重建缓存。⑥ invariant.ts 伴侣独立验证 start→summary→end 括号、owner-turn 包裹与 checkpoint 关联。⑦ 世代不可变性的根就在这里：compaction/* 全部 log-only，原文永不删改，替换只由带 surfaceOp 的 user/message 完成——重放日志即确定性地重建同一压缩后表面。",
+    "boundary": "只管契约：操作签名、失败分类、事件词汇、checkpoint 识别、边缘平衡检查。明确不管：何时压（token-meter 加 basic 的策略）、怎么摘要（basic 的 LLM 调用）、手动入口 UX（command-compact）、图像策略（compaction-image-offload）。划线依据：接缝是「什么算一次合法压缩」不变式的家，必须与策略解耦才能换后端；session 与 llm 词汇进契约是刻意的——摘要必须能作为消息落进会话，抽象掉这层反而制造第二套词汇。",
+    "tour": [
+      { "file": "packages/compaction/compaction/src/index.ts", "line": 119, "sym": "CompactionEngine", "note": "三操作抽象即全部契约：实现方自带策略，接缝只锁住「合法压缩长什么样」。" },
+      { "file": "packages/compaction/compaction/src/types.ts", "line": 24, "sym": "compaction/start 事件", "note": "log-only 的拿锁标记：turn 区分轮内自动与独立手动括号，未匹配即 busy 信号。" },
+      { "file": "packages/compaction/compaction/src/types.ts", "line": 34, "sym": "compaction/summary 事件", "note": "记录摘要与被遮蔽定价，是紧跟替换消息的 shadow price——纯消费者 O(1) 配对扣减。" },
+      { "file": "packages/compaction/compaction/src/checkpoint.ts", "line": 33, "sym": "compactCheckpointSource", "note": "后端无关的压缩点标记：替换消息 source 带 compactionId，持久化或克隆后仍可识别关联。" },
+      { "file": "packages/compaction/compaction/src/index.ts", "line": 106, "sym": "compaction/summary-error 事件", "note": "同步 waterfall：恢复方先落一条持久输入变更才返回 true，后端随后重推导重定价再试。" }
+    ],
+    "gotchas": "单独挂载它什么也不发生——没有后端就没有压缩，/compact 会失败；压缩缩小的是派生历史，系统提示、工具 schema、session 前缀不在合同内；单个不可分割单元（超大工具调用或大非工具节点）无法被平衡摘要压缩，非可裁剪残余同样无解；compaction/* 全是 log-only，表面只允许出现一条替换 user/message；模型没有面向的压缩工具，触发只有人侧命令与自动压力。",
+    "analogy": "像图书馆的合卷规程：管理员想合装旧册子，先在登记簿写「开工」（start，锁），把旧页内容拍照存档（summary 事件），再在书架原位放一本合订本（替换消息），登记「完工」（end）。旧页永远留在库房（日志），任何人照登记簿都能重放出同样的书架。"
+  },
+  {
+    "group": "compaction",
+    "dir": "compaction-basic",
+    "short": "compaction-basic",
+    "oneLiner": "token 计量驱动的默认压缩后端：压力触发、暖前缀摘要、括号事务",
+    "why": "接缝只定契约，没有实现就永远没有压缩。本包是出厂后端：以 ctx.tokenMeter 单一计量为准，agent/pre-step 里在派生请求前测压，越过 floor(min(W×0.8, W−O−B))（B=65536）就先裁工具结果再摘要最旧平衡段，保留近期尾巴（默认 16%）；provider 确认 CONTEXT_WINDOW_EXCEEDED 后绕过阈值做最大平衡头部收缩并授权重试。删掉它，长会话在逼近窗口时直接溢出失败，/compact 也没有可调用的实现。它与接缝、pruner 的分工：接缝定合法形状，它定何时压、留多少、怎么摘要并执行事务，pruner 只做无模型的预裁剪。",
+    "position": "上游：自己的监听器（agent/pre-step 压力、agent/request-error 溢出）与 command-compact（compactNow）；static inject ['llm','tokenMeter','sessions']，可选兄弟经 ctx.get('toolResultPruner') 取用。下游：ctx.tokenMeter.measure 全程定价；ctx.llm.stream 发一次性摘要请求（绕过 agent/request 扩展点）；经 region.ts 的 compactSurfaceRegion 走 dsh-compaction 括号事务；手动路径经 ctx.sessions.flush 做持久化检查点。数据流：meter 计量 → 选区 → 摘要请求 → compaction 括号加替换 user/message → meter 重新计量决定收敛或重试。",
+    "inside": "① BasicCompactionEngine（L113）：_registerAutomaticCompaction 注册三个监听——pre-step 压力（失败只 warn 并继续 turn，TargetPressureConfigError 对同一 target 只 warn 一次）、assistant/message 成功即清溢出重试计数、agent/request-error 溢出恢复（比较 session.surface.replaceGeneration 决定是否 retry；model-free 裁剪已落地也算 durable 进步，授权从替换后的表面重试）。② compactIfNeeded（L269）：resolveModelInfo 拿 contextWindow，resolveCompactSpec 解析阈值与保留预算；不达标返回 null；达标先 prune 再重测，仍超标才进入 compactionRetries+1 次的「选区→compactRegion→重测」循环。③ region.ts selectCompactableRange（L117）：从第一个非 system 表面节点起选，倒序累计保留 retainTokens，左边界回退到 toolPairingBalancedBefore 保证不劈 step。④ compactSurfaceRegion（L173）共享事务：校验区间与锁（inspectCompactionEntryState 找未匹配 start 与最新 session/end-seed，早于 seed 的未匹配 start 是上个进程生命周期的陈迹不阻塞）→ append compaction/start → prepare（定价快照加重放输入）→ summarize（失败走 compaction/summary-error waterfall 恢复后循环重试）→ 稳定性再校验（自动等于 whole-surface，手动等于 selected-span）→ 拒绝不收缩的摘要 → commit：append compaction/summary 加带 surfaceOp replace、sourceEventSeqs 引用 start/summary/被遮蔽 seq 的 user/message → 恰好一次 compaction/end 尝试（失败关闭也写并带 error）。⑤ summarizer.ts：summarizeWithLlm（L120）把节点 0 的 system/message、header tools、被遮蔽消息重放为字节级前缀，尾接冻结的 COMPACTION_INSTRUCTION（L32），使辅助调用成为真前缀以复用 provider KV 缓存；purpose 设 compaction；只取文本，图像输出抛 UNSUPPORTED_CONTENT；frameSummary（L188）包 <compacted-summary> 与固定 preamble。⑥ summarize()（L247）是唯一子类钩子，模板/远端摘要器整体替换它而事务不动。",
+    "boundary": "管触发策略、保留、摘要与事务执行；不管 meter 怎么算（token-meter 的固定启发式）、图像选谁 offload（image-offload 在 summary-error 时落盘选择，失败后仍有效）、手动入口 UX（command-compact）、裁剪标记的模型可见语义（pruner 包）。划线依据：pressure、retention、收敛判断全部走同一个 meter，策略与计量绑定才不会两个数字打架；摘要钩子独立成 summarize() 使替换摘要器不必重写事务；日志世代不可变性由接缝契约保证，本包只负责在括号内老老实实走完。",
+    "tour": [
+      { "file": "packages/compaction/compaction-basic/src/region.ts", "line": 210, "sym": "compactSurfaceRegion 的 compaction/start append", "note": "日志记录的括号就是锁：start 同步落地后才允许异步摘要 yield，之后恰好一次 end 尝试。" },
+      { "file": "packages/compaction/compaction-basic/src/region.ts", "line": 506, "sym": "commitCompactionBody 的替换 user/message", "note": "全流程唯一表面变更：surfaceOp replace 加 sourceEventSeqs 引用 start/summary/被遮蔽 seq，原事件原样留在日志。" },
+      { "file": "packages/compaction/compaction-basic/src/summarizer.ts", "line": 145, "sym": "summarizeWithLlm 的消息拼装", "note": "重放系统头、工具与被遮蔽消息为字节级前缀，尾接冻结指令——辅助调用成为真前缀以复用 KV 缓存。" },
+      { "file": "packages/compaction/compaction-basic/src/index.ts", "line": 190, "sym": "agent/request-error 监听", "note": "溢出恢复：确认 CONTEXT_WINDOW_EXCEEDED 后绕过阈值做最大收缩，replaceGeneration 前进才授权 retry。" },
+      { "file": "packages/compaction/compaction-basic/src/region.ts", "line": 117, "sym": "selectCompactableRange", "note": "保留策略落在选择上：跳过节点 0 的 system 头、倒序保留近期尾巴、左边界必须 tool-pairing 平衡。" }
+    ],
+    "gotchas": "meter 是固定启发式（约四字符一 token），CJK 与 JSON Schema 被低估；图像只有声明 request-image 定价的路由才按真实视觉 token 计。溢出分类依赖 adapter 维护的 CONTEXT_WINDOW_EXCEEDED 归一化。摘要失败保留最近持久表面——prune 已落地就基于裁剪面继续，日志会多一条带 error 的失败括号。compactRegion 需要打开的 turn，全关闭的会话抛 no open turn。maxTokens 截断（推理 token 吃掉上限）同样按失败处理。小窗口部署必须配置合适 headroom，否则首次使用报 TargetPressureConfigError。",
+    "analogy": "像会议室的白板整理员：白板写到八成满（阈值）时，他先把几页潦草草稿折起来（裁工具结果），再把最旧一叠纸拍成一张会议纪要贴在最前（摘要），最近 16% 的发言原样保留。拍照用同一台相机（token meter），纪要电话复用大家正在看的同一块共享屏幕（KV 前缀），旧纸从不销毁只是收进档案柜。"
+  },
+  {
+    "group": "compaction",
+    "dir": "compaction-tool-result-pruner",
+    "short": "compaction-tool-result-pruner",
+    "oneLiner": "模型无关的工具结果裁剪器：码点头尾截断加 shadow-price 记账",
+    "why": "工具输出是上下文膨胀的最大单项来源，而摘要要花一次模型调用。裁剪器提供零模型调用的第一道削减：basic 在确认压力或溢出后、选摘要区之前调用 pruneSession，把超阈值文本换成 head 加固定 marker 加 tail；若裁完已低于阈值，摘要整个跳过。删掉它，超长工具结果只能进摘要或原样留在窗口——既多花摘要调用，也常因「单个不可分割工具单元」太大而无区可选；basic 明确把闭合工具对的这种残余留给 pruner 修复。它是三个压缩包分工里「便宜、确定、无模型」的那一层。",
+    "position": "上游：唯一常规调用方是 dsh-compaction-basic（compactIfNeeded 里先 prune 后选区/摘要），宿主也可显式调用。下游：static inject ['tokenMeter']——写 shadow price 需要 meter；通过 session.append 追加 log-only 的 compaction/prune 与带 surfaceOp replace 的 tool/result 替换，与 dsh-compaction 共享 shadow-price 协议。数据流：basic 触发 → pruneSession 快照当前表面 → 每个超预算结果生成替换 → compaction/prune 与 tool/result 同步相邻落地 → meter 重新计量决定是否还需摘要。",
+    "inside": "① ToolResultPruner（ctx.toolResultPruner，Service，inject ['tokenMeter']，Config 三字段）。② measureContent（L68）：text 块按 Unicode code point 计长，非文本块零成本。③ pruneContent（L83）：超阈值才动手——保留 headChars 头、PRUNE_MARKER（'\\n\\n[... tool result middle pruned ...]\\n\\n'）、tailChars 尾；码点切片保证不劈 UTF-16 代理对（emoji 完整，字素簇仍可能被切）；图像等富块保持原相对顺序；替换后断言不超阈值且严格变小，否则抛错。④ pruneSession（L136）：对当前表面快照里每个 tool/result 求替换；每个替换先同步 append compaction/prune（shadowedRange 单节点，shadowedTokenCount 用 meter.estimateMessage 对原事件定价），紧随 append tool/result（surfaceOp replace，sourceEventSeqs 引用原事件）——重放时能精确复原被裁的输入，这正是 replay-safe 的含义。session 拒绝某替换则整轮同步失败，本轮已落地的替换保持 durable。⑤ config.ts：默认 8192/4096/1024，加载期校验 head 加 marker 加 tail 不超过 threshold，保证单遍收敛、绝不越裁越大；未知键直接拒绝插件。",
+    "boundary": "只做语法级头尾裁剪与 shadow-price 记账；不判断中间哪几行语义重要（那是需要模型或启发式的未决方向）；不决定何时裁——触发条件完全归 basic，低于压力一张纸都不碰；字符预算不是 token 预算，压力是否解除由 token meter 裁决。划线依据：无模型调用加确定性单遍收敛是它的价值主张，语义判断与触发策略留在别处，才能保持「便宜、可预测、可重放」这三件事同时成立。",
+    "tour": [
+      { "file": "packages/compaction/compaction-tool-result-pruner/src/index.ts", "line": 136, "sym": "pruneSession", "note": "一轮裁剪的主循环：表面快照、逐个替换、聚合码点节省；中途失败保已落地替换。" },
+      { "file": "packages/compaction/compaction-tool-result-pruner/src/index.ts", "line": 160, "sym": "compaction/prune append", "note": "shadow-price 协议落地：计量事件与替换 tool/result 同步相邻，纯消费者直接配对扣减。" },
+      { "file": "packages/compaction/compaction-tool-result-pruner/src/index.ts", "line": 165, "sym": "替换 tool/result append", "note": "surfaceOp replace 加 sourceEventSeqs 引用原事件——原文留在日志，重放可精确复原。" },
+      { "file": "packages/compaction/compaction-tool-result-pruner/src/index.ts", "line": 83, "sym": "pruneContent", "note": "码点头尾截断核心：不劈代理对、富块保序、结果必须严格变小且低于阈值。" },
+      { "file": "packages/compaction/compaction-tool-result-pruner/src/config.ts", "line": 7, "sym": "PRUNE_MARKER", "note": "固定中间标记，与默认预算 8192/4096/1024 一起构成单遍收敛的确定性。" }
+    ],
+    "gotchas": "低于压力从不裁剪——它是压缩触发的下游，不是独立守护进程；裁剪改的是模型「看到什么」，原文只在日志可查，模型不会再看到第二份；码点预算不等于 token 预算；字素簇（组合字符）可能被切，代理对不会；图像等富块零成本参与但不会减少，只保序；裁剪发生在摘要之前，若摘要后来失败，已落地的裁剪仍然有效。",
+    "analogy": "像给超长传真件掐头去尾：留开头一页、结尾几行，中间贴张「此处略去若干页」的条子；原件完好锁在档案室（session log），要时随时调档重印。而且只在文件柜快满时才动手，平时一张不碰。"
+  },
+  {
+    "group": "compaction",
+    "dir": "command-compact",
+    "short": "command-compact",
+    "oneLiner": "人类侧 /compact 命令：闲时按需压缩与错误码文案映射",
+    "why": "自动压缩只看压力，用户需要「现在就给我省点」的开关——没有它，交互式部署里按需压缩无处可点（程序路径 compactRegion 需要打开的 turn 和精确坐标）。它注册 /compact 到 ctx.commands：无参数；成功报告压缩条数与估计 token，返回值带 sourceEventSeq 指向 compaction/summary 事件供 UI 关联展示；busy/cancelled/changed/summary/commit/persistence 六个 ManualCompactionError 码逐一映射为可直接展示的稳定文案；mid-turn 或已有压缩进行中时报不可用，期间提交的 prompt 照常排队不丢。命令生命周期是 log-only 的 command/run 与 command/done，永不进模型历史。",
+    "position": "上游：命令适配器（Web）派发；inject ['commands','compaction']。下游：只依赖接缝的 compactNow(agent, signal, commandId)——后端无关，换任何 CompactionEngine 实现都成立；signal 从派发 UI 的取消直通后端。数据流：用户输入 → handler → compactNow（agent.runMaintenance 闲时维护）→ CompactionResult → CommandResult（含 sourceEventSeq 等于 summarySeq）回 UI。命令行文、参数、结果文本全部不进模型请求；成功后压缩本体由后端以 turn: null 的独立括号落日志。",
+    "inside": "单文件 109 行。① executeCompact（L59）：拒绝任何参数（Usage: /compact (no arguments)）；await ctx.compaction.compactNow；null 返回 No compactable history yet.；成功文案 Compacted N history items (~T tokens). 带 sourceEventSeq；invocation.signal.aborted 优先返回 Compaction cancelled.；ManualCompactionError 走 expectedFailure，其他错误原样抛出让适配器按命令失败上报。② expectedFailure（L24）：六码闭集映射，每条文案都告诉用户后续动作——「尝试已记入会话日志」或「会话可能没存上」。③ apply（L85）：active Promise 集合跟踪每个真实 handler；ctx.effect 组合器里先 yield 一个 drain（Promise.allSettled 等已开始的 handler settle），再 yield ctx.commands.register——Cordis 组合 teardown 是 LIFO，所以卸载时先停新调用、再等在途的 close 与 flush 走完，根销毁不会越过被中止命令的清理边界。busy 判定故意是进程范围的：活的未匹配 start 阻塞，早于最新 session/end-seed 的 start 是上个生命周期的陈迹不阻塞。",
+    "boundary": "只做命令注册、参数拒绝、错误码翻译、生命周期静默；不选压缩范围（无 range 与策略参数，明确留给程序路径 compactRegion）；不排队——turn 有路权时直接报 busy，排队是 Dev Note 里的未决方向；不依赖任何特定后端。划线依据：命令要跨适配器行为稳定，所以零参数；与后端解耦到只认 compactNow 签名，invariant 与事务归接缝、UX 归本包，两边各自可测可换。",
+    "tour": [
+      { "file": "packages/compaction/command-compact/src/index.ts", "line": 67, "sym": "executeCompact 的 compactNow 调用", "note": "后端无关的全部依赖：只认 compactNow(agent, signal, commandId) 一个签名。" },
+      { "file": "packages/compaction/command-compact/src/index.ts", "line": 72, "sym": "sourceEventSeq 关联", "note": "成功结果用 compaction/summary 的 seq 做关联键，UI 折叠展示不靠文本解析或行邻接。" },
+      { "file": "packages/compaction/command-compact/src/index.ts", "line": 24, "sym": "expectedFailure", "note": "六个稳定码逐一映射为可直接展示的文案，预期失败绝不变成异常栈。" },
+      { "file": "packages/compaction/command-compact/src/index.ts", "line": 97, "sym": "apply 的 lifecycle effect", "note": "先 yield drain 再 register：teardown LIFO 保证卸载时在途 handler 的 close 与 flush 先落地。" },
+      { "file": "packages/compaction/command-compact/src/index.ts", "line": 100, "sym": "drain yield", "note": "Promise.allSettled 等待已开始 handler，是「静默销毁」约定的实现点。" }
+    ],
+    "gotchas": "idle-only：turn 或已接受的唤醒 prompt 有路权时报 busy，命令本身不排队；无参数是刻意的跨适配器稳定性；没有 ctx.commands 的 surface（headless、JSON-RPC）调不到它，只能靠自动压力压缩；压缩成功后 KV 缓存从第一个被替换 token 起失效，替换前的请求前缀仍可复用。",
+    "analogy": "空调遥控器上的「立即除湿」按钮：只管发指令、把机器的六种抱怨翻译成人话；机器忙时它不插队只提醒。选哪半屋子、怎么烘，全是除湿机（后端）的事——换个牌子遥控器照样能用。"
+  },
+  {
+    "group": "schedule",
+    "dir": "schedule",
+    "short": "schedule",
+    "oneLiner": "绑定原始会话的持久提醒：六种计时规则与 Host 定时投递",
+    "why": "agent 会话是被动应答的——没有它，「十分钟后提醒我查构建」「每周一三五早九检查队列」这类时间性跟进只能被模型口头答应然后忘掉。本包把提醒做成可持久化任务：schedule_create 支持 after/at/every/daily/weekly/cron 六种选择器（IANA 时区、五字段 Vixie cron、DST 跳过规则），存进 Host 级 storage domain 的 schedule.json，Host 重启后仍在；到期时把 [SCHEDULE REMINDER] 帧 followup 进创建它的那个原始 Session。它不是全局 cron：不存在脱离会话的作业，每个任务永远绑死一个 sessionId，铃只在这个会话里响。没有 Host Web Session controller 和 session persistence 后端它也无法工作——投递要以 session/flush 确认为准。",
+    "position": "上游：root agent 的四个工具（schedule_create/list/delete/update）、Web 任务页与 schedule Remote namespace（catalog/history/update/delete）。下游：static inject ['agents','sessions','tools','storageDomain','sessionController','sessionPersistence']——sessionPersistence 是装订顺序要求（session/flush 监听由它注册）；投递时 sessionController.resolveAgent 恢复冷 Session，agent.followup 入站，ctx.sessions.flush 确认后才算送达并写回执。数据流：创建/更新/删除经 serialize FIFO 写 storage domain；runtime 定时器到期 → 恢复会话 → followup 加 flush → 回写 lastDelivery、deliveryHistory 与下一目标。管理操作从不激活 Session、不读会话日志。",
+    "inside": "① ScheduleService（L100，ctx.schedule，Config 是 deliveryHistoryDays 30 与 deliveryHistoryRecords 200）：构造时 storageDomain.open(scheduleDomain) 并校验键与 record.id 一致；ctx.effect 里起 ScheduleRuntime。所有管理写经 serialize()（L454）的 FIFO promise 链，创建/删除/更新在入队后、落盘前重查取消信号；update 是完整记录 compare-and-set，冲突返回 schedule_conflict 不覆盖。② 生命周期归属：任务行 {sessionId, record, status, deliveryHistory} 属于 Host 级存储，但每个任务绑定原始 Session——工具只管本 agent 会话的任务，list 只回 active，catalog 跨会话只读；会话归档被 schedule.archiveAdmission 拦截：workspace/session-activity 把 active 任务报成 schedule 家族，workspace/session-stop 在同一 FIFO 槽里删光 active 行（stopSessionTasks L421，直接删表避免重入死锁）。③ runtime.ts ScheduleRuntime（L20）：requestDrive 触发重算；drive()（L85）扫到期任务、同 Session 的周期任务合并成一条批量消息，resolveAgent 恢复会话，followup 后 flush 失败即不算送达（不写回执，warn 后下轮定时器可重试）；一次性 at 送达后置 inactive，周期任务推进到 occurrence.nextScheduledAt；最后只挂一个 setTimeout（超 2^31ms 分段，unref）。④ domain.ts（1892 行）：六种 record 的构造与校验、cron 规范化（星步、0 等于周日、拒绝 L/W/#/宏/秒字段）、resolveCronOccurrence（L1102）在时区与 DST 语义里找最近实际到期点、foldScheduleEvents（L1211）重放历史 schedule/change（历史提醒只 warn 要求重建）、renderReminderFraming（L1863）防注入帧。⑤ tools.ts registerScheduleTools（L408）把四个 defineTool 挂到 agent 作用域，schedule_update 先 list 取 expected 再 CAS。",
+    "boundary": "管提醒的存续、计时、投递与收据；不管投递后的模型执行——回执只确认入站，不确认模型做了什么；不做跨会话转发、暂停、每次新会话执行；明确不是全局 cron 服务——没有脱离 Session 的作业，任务永远投回创建它的会话，归档会话前必须先停光任务。划线依据：投递语义依赖「目标会话存在且可恢复」，绑定关系因此写进任务行由存储域校验；Host 定时器只服务 active 行，inactive 与删除是仅有的状态出口，这让 invariant 与 JSON 后端能以整域拒绝损坏而不是跳过坏行。",
+    "tour": [
+      { "file": "packages/schedule/schedule/src/index.ts", "line": 101, "sym": "ScheduleService.static inject", "note": "六个依赖即部署门槛：sessionController 恢复冷会话，sessionPersistence 的 flush 监听是送达确认前提。" },
+      { "file": "packages/schedule/schedule/src/runtime.ts", "line": 123, "sym": "drive 的 followup", "note": "投递等于同步入站原始会话；下一行 flush 不确认就不写回执——可能重复送达，但不虚报成功。" },
+      { "file": "packages/schedule/schedule/src/runtime.ts", "line": 161, "sym": "drive 的重挂定时器", "note": "全 Host 只有一个 pending timer：取最小目标时间，超 2^31ms 分段，unref 不阻退出。" },
+      { "file": "packages/schedule/schedule/src/index.ts", "line": 421, "sym": "stopSessionTasks", "note": "归档闸门的执行端：active 提醒拒档，停任务在同一 FIFO 槽内直删，保证排序且不重入死锁。" },
+      { "file": "packages/schedule/schedule/src/domain.ts", "line": 1863, "sym": "renderReminderFraming", "note": "到期消息的固定帧：prompt 以 JSON 编码并明示「不可信提醒内容」，防提醒文本变成新指令。" }
+    ],
+    "gotchas": "Host 必须活着才投递；enqueue 与任务写非原子，崩溃或关停可重复投递（无 exactly-once）；入站失败只记 warn，没有自动重试定时器；旧 session log 里的历史提醒不迁移，只 warn 要求 schedule_create 重建；cron 五字段最小粒度一分钟，拒绝 L/W/#、月份星期名、@daily 宏与秒字段，存储只保留规范化表达式；JSON 后端整个 schedule.json 每次变更全量重写、全部历史进内存；删除任务连带删除投递记录，history 从此答 schedule_not_found；投递回执不等于模型执行结果。",
+    "analogy": "像贴在某个聊天窗口里的便利贴闹钟：闹钟本体钉在墙上（Host 存储），但铃声只在原来那个聊天窗口里响；人不在（会话冷着）就把房间灯打开（恢复会话）再响；撕掉便签（删除）连响铃记录一起扔，但绝不会跑到别的窗口去响。"
+  }
+]

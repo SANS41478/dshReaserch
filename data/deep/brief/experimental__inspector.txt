@@ -1,0 +1,1044 @@
+# @deepseek-ai/dsh-experimental-inspector
+path: packages/experimental/inspector
+desc: Experimental cross-realm CDP hub for Host debugging and Client Runtime inspection
+deps: @deepseek-ai/dsh-brand, @deepseek-ai/dsh-util-crypto, @deepseek-ai/schemastery
+peers: @deepseek-ai/cordis, @deepseek-ai/cordis-plugin-loader, @deepseek-ai/dsh-client-modules, @deepseek-ai/dsh-host-webserver
+srcFiles: 148  srcLoc: 15741
+
+## README.md (157 行)
+---
+description: "Experimental Chrome DevTools inspection for Host and browser Client Cordis runtimes, including Console evaluation, Sources, Network capture, Elements trees, and a CDP-independent query API."
+kind: "package-bundle"
+---
+
+# @deepseek-ai/dsh-experimental-inspector
+
+English | [中文](README.zh.md)
+
+## Summary
+
+Inspect one running dsh Host and its browser Clients in Chrome DevTools: Host and Client Console contexts, Host Sources and debugging, captured Host fetches, and a shared Cordis tree, with all CDP state in a Worker.
+
+The Inspector stays off the default plugin list. Install its bundle explicitly with `dsh plugin --profile web add @deepseek-ai/dsh-experimental-inspector`. Its [`cordis.patch.yml`](cordis.patch.yml) mounts the installed package; `pnpm run demo:inspector` mounts the source tree. The Host row needs a Web server. The Worker never accesses live Cordis objects: the shared collector projects them into validated snapshots before transport.
+
+## Table of Contents
+
+- [Runtime layout](#runtime-layout)
+- [Configuration](#configuration)
+- [Observation API](#observation-api)
+- [Cordis tree inspection](#cordis-tree-inspection)
+- [Host fetch capture](#host-fetch-capture)
+- [Security](#security)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="runtime-layout"></a>
+## Runtime layout
+
+The Host plugin starts the Worker and connects a dedicated `MessagePort`. The Client plugin reads the injected `globalThis.__DSH_INSPECTOR__` bootstrap and opens a separate authenticated WebSocket directly to the Worker; a page opened before the Host row was enabled has no bootstrap, fails its Client plugin with a reload instruction, and inspects only after a reload. Chrome DevTools connects to the Worker's CDP WebSocket. A private `node:inspector.Session` per DevTools connection attaches from the Worker to the Host main thread, so Host Console evaluation, Sources, breakpoints, and resume remain available while Host JavaScript is paused.
+
+The source tree follows those execution environments: `client/` and `host/` provide mirrored adapter entry paths, `worker/` contains only Worker-thread orchestration and Chrome protocol state, and `shared/` contains environment-independent Cordis and network models, normalized realm backend interfaces, and the internal bridge protocol. Worker-side Client and Host adapters are mirrored under `worker/realms/`; a Client adapter in that directory still executes in the Worker.
+
+Host and Client producers send internal observation records rather than CDP messages. Records contain a source generation, sequence, source-clock timestamp, topic, and JSON payload. The Worker validates every process or network frame, owns source state and retention, and translates recognized topics to standard CDP domains.
+
+Client sources declare typed Runtime, Console, and read-only Sources capabilities. `Runtime.enable` publishes the real Host execution context and one synthetic context for every connected Client source. Selecting a Client context routes evaluation, property access, function calls, promise awaiting, and object release to that browser realm. Client Console arguments use the same session-local object table, while `Debugger.enable` publishes the built `lib/client.js` catalog and `Debugger.getScriptSource` reads bounded content chunks. Client-script breakpoints, step, and call frames remain unsupported; target-wide pause and resume control the Host debugger only.
+
+Both plugin faces run the same browser-safe Cordis collector. It converts reachable Context and Fiber objects into a versioned `CordisTreeSnapshot`; the Worker stores that CDP-independent representation and projects each Host or Client source into the Elements panel.
+
+<a id="configuration"></a>
+## Configuration
+
+The Host plugin injects `webServer` and accepts these fields:
+
+| Field | Default | Meaning |
+|---|---:|---|
+| `host` | `127.0.0.1` | Worker endpoint bind address; only loopback is accepted |
+| `port` | `9230` | First Worker endpoint port; occupied ports advance upward, while `0` requests an OS-assigned port |
+| `clientOrigins` | `[]` | Additional exact browser origins accepted by `/ingest`; loopback origins remain accepted |
+| `captureFetch` | `true` | Wrap `globalThis.fetch` and publish every later call |
+| `maxRequestBodyBytes` | 8 MiB | Per-request captured request-body prefix |
+| `maxResponseBodyBytes` | 32 MiB | Per-request captured response-body prefix |
+| `maxBodyChunkBytes` | 48 KiB | Raw bytes carried by one body record before base64 encoding |
+| `maxJournalBytes` | 256 MiB | Worker-retained request and response body bytes |
+| `maxRetainedRequests` | `2000` | Active and completed requests retained by the Worker |
+| `maxSourceFrameBytes` | 128 KiB | Encoded source-frame limit |
+| `maxSourceRecordsPerFrame` | `128` | Records in one source batch |
+| `maxQueuedRecords` | `2048` | Per-producer records waiting for transport |
+| `maxQueuedBytes` | 16 MiB | Per-producer queued encoded bytes |
+| `startupTimeoutMs` | 10 seconds | Worker readiness deadline |
+| `stopTimeoutMs` | 5 seconds | Graceful Worker shutdown deadline before termination |
+| `clientReconnectBaseMs` | 250 ms | First Client reconnect backoff cap |
+| `clientReconnectMaxMs` | 5 seconds | Maximum Client reconnect backoff cap |
+| `clientRuntimeTimeoutMs` | 30 seconds | Deadline for one Worker-to-Client Runtime or Sources command |
+| `queryTimeoutMs` | 10 seconds | Deadline for one non-CDP semantic query |
+| `maxClientRuntimeObjects` | `10000` | Live Client object handles retained per DevTools connection |
+| `maxClientRuntimeProperties` | `2000` | Property descriptors returned by one Client object inspection |
+| `maxClientSourceBytes` | 8 MiB | Maximum encoded bytes read from one Client script or source map |
+| `maxCordisNodes` | `2048` | Context and Fiber nodes admitted from one realm snapshot before truncation |
+| `maxDisconnectedCordisTrees` | `8` | Last disconnected realm trees retained as non-live snapshots |
+
+The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-experimental-inspector) is the exhaustive source for accepted fields and their declarations.
+
+The Host logs a `devtools://` URL after the Worker listens. The same Worker serves `/json`, `/json/list`, `/json/version`, the target WebSocket under `/devtools/page/<id>`, and the Client source at `/ingest`.
+
+<a id="observation-api"></a>
+## Observation API
+
+Both plugin faces provide the same service:
+
+```ts
+import type { Context } from '@deepseek-ai/cordis'
+import type { InspectorJsonValue } from '@deepseek-ai/dsh-experimental-inspector'
+
+declare const ctx: Context
+declare const topic: string
+declare const jsonPayload: InspectorJsonValue
+
+ctx.inspector.publish(topic, jsonPayload)
+await ctx.inspector.cordis.getTree()
+```
+
+Publishing validates lossless JSON and schedules delivery without waiting for the Worker. Each source has a bounded queue. Overflow is reported as a sequence gap and never delays the observed application operation. `cordis.getTree()` reads the Worker's latest detached semantic snapshot without creating a CDP session or enabling Runtime, Debugger, or Sources.
+
+<a id="cordis-tree-inspection"></a>
+## Cordis tree inspection
+
+The Elements document has fixed `<host>` and `<clients>` containers. `<host>` contains the Host root Context; `<clients>` contains one `<client>` per Client source, and each `<client>` contains that realm's root Context. The Cordis root Fiber is omitted. Every other Fiber is a child of `fiber.parent`, owns exactly one Context child for `fiber.ctx`, and carries only `uid="<Cordis Fiber.uid>"`; Context elements have no attributes. Context-only `extend()`, `isolate()`, and `intercept()` layers remain direct Context descendants.
+
+Host and Client publish the same nested `CordisTreeSnapshot` type. Context and Fiber nodes carry opaque object handles for realm-local object lookup; Fiber nodes additionally carry Cordis `uid`. The Worker composes those realm snapshots into one `{ host, clients }` inspection tree. It assigns `BackendNodeId` values per source generation; each DevTools connection assigns its own `NodeId` values; `DOM.resolveNode` asks the owning Host or Client Runtime for a connection-local `RemoteObjectId`. `DOM.requestNode` maps that object id back to the same Elements node. `ctx.inspector.cordis.getTree()` and `DSHInspector.getCordisTree` read the detached consumer-neutral tree without routing handles or CDP ids.
+
+Node delivery is depth-limited per DevTools connection: `DOM.getDocument` serves three document levels when the caller omits `depth`, withheld levels advertise `childNodeCount`, and expansion fetches them through `DOM.requestChildNodes` (`depth: -1` for a whole subtree). NodeIds leaving through `DOM.performSearch`, `DOM.requestNode`, or `DOM.pushNodesByBackendIdsToFrontend` first push the not-yet-sent ancestor levels as `DOM.setChildNodes` events.
+
+Sources publish complete snapshots, while the Worker compares stable backend node identities before notifying DevTools. Unchanged snapshots emit no DOM event; additions, removals, and attribute changes use node-level CDP events, inserted-node payloads withhold their subtree, and sibling reordering replaces only that parent's children. Existing `NodeId` values and unaffected Elements expansion remain stable.
+
+When a Client disconnects, its Console execution context and live object ids are destroyed immediately. With disconnected-tree retention enabled, Elements keeps the last tree unchanged while connection state remains in the inspection model rather than becoming an unreviewed DOM attribute. Reconnection keeps the logical source id, creates a new synthetic CDP context id for the new transport generation, and replaces the stale tree after its complete snapshot arrives. The Client retains its logical id in `sessionStorage` and claims it through Web Locks for the page lifetime, so refresh reuses the id while a duplicated live tab receives a new one. The Worker retains at most `maxDisconnectedCordisTrees` such snapshots; zero removes them immediately.
+
+<a id="host-fetch-capture"></a>
+## Host fetch capture
+
+Fetch capture is on by default and records the complete URL, all request and response headers, request body, response body, status, timing, errors, and cancellation. It does not redact credentials, cookies, query values, or payloads. Body capture reads clones; the caller receives the original Response as soon as the original fetch resolves.
+
+The configured body limits bound retention rather than select fields: capture keeps the prefix and marks the result truncated. `Network.getRequestPostData` and `Network.getResponseBody` read the Worker's retained bytes. `Network.streamResourceContent` returns the buffered prefix and adds later response bytes to `Network.dataReceived` for that DevTools connection, which drives live Response and EventStream views. Direct Undici Client/Dispatcher calls and fetch references retained before plugin activation are outside this observer.
+
+After response headers arrive, a caller-side abort can stop the observer's clone; captured bytes remain available through `Network.getResponseBody`, capture metadata records the error and truncation, and CDP emits `Network.loadingFinished` because fetch returned a Response. A fetch rejection before response headers emits `Network.loadingFailed`, with `canceled: true` for an abort.
+
+<a id="security"></a>
+## Security
+
+The CDP target grants arbitrary code execution in both Host and connected Client realms through `Runtime.evaluate`; Host Debugger operations provide additional control. Full fetch capture includes secrets. The Worker therefore accepts only a `127.0.0.1` bind address. Client ingest additionally requires a random WebSocket subprotocol token injected by the Host and rejects non-loopback origins unless explicitly configured. The CDP socket itself has no token; loopback binding is its only access control.
+
+<a id="model-experience"></a>
+## Model Experience
+
+None, as this developer-only inspector observes runtime activity without changing model requests.
+
+#### KV Cache effect
+
+None; this package neither assembles nor sends a provider request.
+
+## Known Limitations and Deferred Work
+
+<a id="known-limitations-and-deferred-work"></a>
+
+- **Client active debugging is unsupported** — Console events, Runtime evaluation, RemoteObject access, and read-only `lib/client.js` Sources work. Client-script debugger requests return explicit unsupported errors; target-wide pause and resume control the Host only.
+- **Client Sources expose the Inspector bundle only** — other page scripts are not cataloged by this package.
+- **Client evaluation uses page JavaScript** — page Content Security Policy can block dynamic evaluation, and the synthetic context does not provide DevTools command-line helpers or native REPL declaration semantics.
+- **Client identity arbitration requires Web Locks** — browsers without that API retain reconnect and refresh identity through `sessionStorage`, but cannot distinguish two simultaneously live tabs copied from the same storage state.
+- **Fetch interception covers `globalThis.fetch`** — direct Undici APIs and fetch references retained before activation are not observed.
+- **Body cloning has cost** — full capture tees request and response streams up to the configured limits and can increase memory and I/O pressure. The retained-body limit does not include buffering inside the stream tee, including an oversized source chunk or data queued for a slower application reader.
+- **No automatic Worker restart** — an unexpected Worker exit fails the current Inspector instance; lifecycle recovery belongs to a later change.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>
+
+**Runtime invariant:** No companion is published. Wire parsing, generations, Worker lifecycle, and CDP sessions reject invalid relationships in their owning operations.
+
+
+## 源文件与导出符号
+
+### packages/experimental/inspector/src/client/bridge/controller.ts  (22 行)
+  12	fn	startInspectorClient
+
+### packages/experimental/inspector/src/client/bridge/dispatcher.ts  (87 行)
+  21	iface	ClientBridgeFrameHandlers
+  41	fn	dispatchBridgeFrame
+
+### packages/experimental/inspector/src/client/bridge/lifecycle.ts  (41 行)
+  4	class	ClientBridgeLifecycle
+      members: L9 constructor, L15 connected, L23 reconnect, L34 close
+
+### packages/experimental/inspector/src/client/bridge/publisher.ts  (111 行)
+  15	class	ClientBridgePublisher
+      members: L21 constructor, L28 publish, L34 setState, L45 connect, L53 accept, L65 replace, L75 disconnect, L80 close, L88 flush, L103 scheduleFlush
+
+### packages/experimental/inspector/src/client/bridge/rpc.ts  (22 行)
+  7	class	ClientBridgeRpc
+      members: L13 connectSocket
+
+### packages/experimental/inspector/src/client/bridge/transport.ts  (319 行)
+  33	class	ClientInspectorSource
+      members: L49 constructor, L100 close, L130 connect, L223 executeRuntime, L240 acknowledgeRuntime, L247 cancelRuntime, L255 cancelRuntimeSession, L264 cancelRuntimeRequests, L272 executeSourceRequest
+
+### packages/experimental/inspector/src/client/cdp/console.ts  (177 行)
+  13	fn	consoleBridgeCapability
+  18	type	ClientConsoleSink
+  53	class	ClientConsoleObserver
+      members: L59 constructor, L69 enable, L79 disable, L86 close, L93 reset, L98 install, L117 uninstall, L137 captureConsole, L152 captureException, L170 if, L175 if
+
+### packages/experimental/inspector/src/client/cdp/debugger.ts  (12 行)
+  9	fn	debuggerBridgeCapability
+
+### packages/experimental/inspector/src/client/cdp/errors.ts  (11 行)
+  6	class	ClientRuntimeExecutionError
+      members: L7 constructor
+
+### packages/experimental/inspector/src/client/cdp/heap-profiler.ts  (12 行)
+  9	fn	heapProfilerBridgeCapability
+
+### packages/experimental/inspector/src/client/cdp/index.ts  (27 行)
+  17	fn	bridgeCapabilities
+
+### packages/experimental/inspector/src/client/cdp/objects.ts  (407 行)
+  26	type	ClientObjectAllocation
+  29	iface	ClientRuntimeObjectOptions
+  36	class	ClientObjectStore
+      members: L42 constructor, L48 beginAllocation, L58 commitAllocation, L67 get, L78 group, L91 serialize, L127 release, L141 releaseGroup, L152 rollback, L160 clear, L166 register, L191 if, L192 if, L193 if, L194 if, L195 if, L199 if, L200 if, L214 if, L216 if, L227 if, L270 if, L275 if, L276 if, L277 if, L278 if, L279 for, L286 if, L287 if, L288 if, L291 while, L304 if, L312 if, L317 if, L324 if, L331 if, L342 if, L343 if, L346 if, L347 if
+
+### packages/experimental/inspector/src/client/cdp/profiler.ts  (12 行)
+  9	fn	profilerBridgeCapability
+
+### packages/experimental/inspector/src/client/cdp/properties.ts  (161 行)
+  19	fn	getClientProperties
+
+### packages/experimental/inspector/src/client/cdp/runtime.ts  (502 行)
+  35	fn	runtimeBridgeCapability
+  40	iface	ClientRuntimeLimits
+  47	class	ClientRuntimeExecutor
+      members: L55 constructor, L67 execute, L111 acknowledge, L123 cancel, L134 closeSession, L147 releaseObjectGroup, L160 consoleEvent, L199 exceptionEvent, L228 reset, L234 session, L251 constructor, L259 beginAllocation, L263 commitAllocation, L267 rollback, L271 execute, L300 close, L304 releaseObjectGroup, L308 serializeAll, L316 describeException, L335 evaluate, L357 callFunction, L379 awaitPromise, L395 resolveArgument, L405 exception, L415 completion, L454 if, L455 if, L456 if, L457 if, L458 if, L464 if, L474 if
+
+### packages/experimental/inspector/src/client/cdp/sources.ts  (243 行)
+  22	fn	sourcesBridgeCapability
+  27	iface	ClientSourceAsset
+  45	class	ClientSourceCatalogError
+      members: L46 constructor
+  52	class	ClientSourceCatalog
+      members: L55 constructor, L69 scriptKeyForUrl, L83 execute, L119 describe, L137 source, L149 sourceBytes, L154 sourceMapBytes
+  174	fn	discoverInspectorClientSourceCatalog
+
+### packages/experimental/inspector/src/client/cdp/stack.ts  (79 行)
+  7	type	ClientScriptKeyResolver
+  14	fn	captureClientConsoleStack
+  24	fn	clientErrorStack
+  46	fn	parseClientStack
+
+### packages/experimental/inspector/src/client/index.ts  (4 行)
+
+### packages/experimental/inspector/src/client/inspection/cordis.ts  (4 行)
+
+### packages/experimental/inspector/src/client/inspection/network.ts  (5 行)
+  4	const	NETWORK_TOPICS
+
+### packages/experimental/inspector/src/client/inspection/realm.ts  (127 行)
+  12	class	ClientRealmSource
+      members: L16 constructor, L31 claim, L50 connect, L62 close, L99 if, L123 if
+
+### packages/experimental/inspector/src/client/plugin.ts  (91 行)
+  declare module: declare module '@deepseek-ai/cordis' {
+  21	iface	InspectorService
+  36	const	name
+  39	const	inject
+  45	fn	apply
+
+### packages/experimental/inspector/src/host/bridge/controller.ts  (351 行)
+  35	iface	InspectorOptions
+  87	iface	InspectorSpec
+  115	iface	InspectorEndpoint
+  123	iface	InspectorHandle
+  135	fn	resolveInspectorOptions
+  185	fn	startInspector
+
+### packages/experimental/inspector/src/host/bridge/dispatcher.ts  (62 行)
+  15	iface	HostBridgeFrameHandlers
+  27	fn	dispatchBridgeFrame
+
+### packages/experimental/inspector/src/host/bridge/lifecycle.ts  (126 行)
+  8	class	InspectorWorkerLifecycle
+      members: L19 exitCode, L23 constructor, L41 waitForReady, L79 markRunning, L86 expectExit, L91 terminate, L100 stop, L118 notifyUnexpectedExit
+
+### packages/experimental/inspector/src/host/bridge/publisher.ts  (82 行)
+  10	class	HostBridgePublisher
+      members: L16 constructor, L24 publish, L30 setState, L37 replace, L44 flush, L56 acknowledge, L66 close, L73 scheduleFlush
+
+### packages/experimental/inspector/src/host/bridge/rpc.ts  (23 行)
+  8	class	HostBridgeRpc
+      members: L9 constructor, L17 connectPort
+
+### packages/experimental/inspector/src/host/bridge/transport.ts  (90 行)
+  18	iface	HostSourceOptions
+  29	class	HostInspectorSource
+      members: L35 constructor, L64 close, L79 receive
+
+### packages/experimental/inspector/src/host/cdp/console.ts  (21 行)
+  9	fn	consoleBridgeCapability
+  18	fn	rejectConsoleBridgeCommand
+
+### packages/experimental/inspector/src/host/cdp/debugger.ts  (12 行)
+  9	fn	debuggerBridgeCapability
+
+### packages/experimental/inspector/src/host/cdp/errors.ts  (11 行)
+  6	class	HostCdpBridgeUnavailableError
+      members: L7 constructor
+
+### packages/experimental/inspector/src/host/cdp/heap-profiler.ts  (12 行)
+  9	fn	heapProfilerBridgeCapability
+
+### packages/experimental/inspector/src/host/cdp/index.ts  (29 行)
+  26	fn	bridgeCapabilities
+
+### packages/experimental/inspector/src/host/cdp/objects.ts  (13 行)
+  10	fn	rejectObjectBridgeOperation
+
+### packages/experimental/inspector/src/host/cdp/profiler.ts  (12 行)
+  9	fn	profilerBridgeCapability
+
+### packages/experimental/inspector/src/host/cdp/properties.ts  (12 行)
+  9	fn	rejectPropertyBridgeOperation
+
+### packages/experimental/inspector/src/host/cdp/runtime.ts  (43 行)
+  14	fn	runtimeBridgeCapability
+  23	fn	rejectRuntimeBridgeCommand
+
+### packages/experimental/inspector/src/host/cdp/sources.ts  (21 行)
+  10	fn	sourcesBridgeCapability
+  18	fn	rejectSourcesBridgeCommand
+
+### packages/experimental/inspector/src/host/cdp/stack.ts  (5 行)
+  4	const	HOST_CDP_BRIDGE_REASON
+
+### packages/experimental/inspector/src/host/index.ts  (4 行)
+
+### packages/experimental/inspector/src/host/inspection/cordis.ts  (4 行)
+
+### packages/experimental/inspector/src/host/inspection/network.ts  (235 行)
+  8	const	NETWORK_TOPICS
+  11	iface	FetchCaptureOptions
+  24	iface	FetchObserver
+  35	fn	installFetchObserver
+
+### packages/experimental/inspector/src/host/inspection/realm.ts  (23 行)
+  13	fn	createHostRealmSource
+
+### packages/experimental/inspector/src/host/plugin.ts  (83 行)
+  32	iface	HostPluginConfig
+  38	fn	apply
+
+### packages/experimental/inspector/src/index.ts  (109 行)
+  declare module: declare module '@deepseek-ai/cordis' {
+  39	iface	InspectorService
+  60	const	name
+  63	const	inject
+  66	iface	Config
+  74	const	Config
+  106	fn	apply
+
+### packages/experimental/inspector/src/shared/bridge/buffer.ts  (162 行)
+  11	iface	InspectorSourceBufferOptions
+  29	class	InspectorSourceBuffer
+      members: L36 constructor, L39 hasPending, L50 publish, L60 setState, L78 replacement, L97 takeBatch, L126 discardPending, L131 record, L143 enqueue, L157 stateFits
+
+### packages/experimental/inspector/src/shared/bridge/codec.ts  (5 行)
+
+### packages/experimental/inspector/src/shared/bridge/control-codec.ts  (154 行)
+  17	fn	parseInspectorWorkerConfig
+  57	fn	parseInspectorHostControl
+  68	fn	parseInspectorWorkerControl
+  99	fn	parseInspectorClientBootstrap
+
+### packages/experimental/inspector/src/shared/bridge/ids.ts  (28 行)
+  9	type	InspectorSourceId
+  12	type	InspectorSourceGeneration
+  15	type	ClientRuntimeSessionId
+  18	type	ClientRuntimeRequestId
+  21	type	ClientSourceSessionId
+  24	type	ClientSourceRequestId
+  27	type	ClientRemoteObjectHandle
+
+### packages/experimental/inspector/src/shared/bridge/messages/control.ts  (73 行)
+  4	iface	InspectorWorkerConfig
+  22	iface	InspectorWorkerBoot
+  28	iface	InspectorWorkerShutdown
+  33	type	InspectorHostControl
+  36	iface	InspectorWorkerReady
+  44	iface	InspectorWorkerFailure
+  50	iface	InspectorWorkerStopped
+  55	type	InspectorWorkerControl
+  58	iface	InspectorClientBootstrap
+
+### packages/experimental/inspector/src/shared/bridge/messages/cordis.ts  (5 行)
+  4	const	CORDIS_TREE_TOPIC
+
+### packages/experimental/inspector/src/shared/bridge/messages/network.ts  (13 行)
+  4	const	FETCH_TOPICS
+
+### packages/experimental/inspector/src/shared/bridge/messages/observation.ts  (392 行)
+  42	type	InspectorSourceKind
+  45	type	InspectorSourceCapability
+  48	iface	InspectorSourceDescriptor
+  60	iface	InspectorRecordInput
+  67	iface	SourceOpenFrame
+  75	iface	SourceReplaceFrame
+  85	iface	SourceAppendFrame
+  96	iface	SourceCloseFrame
+  104	type	SourceToWorkerFrame
+  114	iface	SourceAcceptedFrame
+  122	iface	SourceAppendAcknowledgedFrame
+  131	iface	SourceResnapshotFrame
+  141	iface	SourceRejectedFrame
+  149	type	WorkerToSourceFrame
+  168	fn	parseWorkerSourceFrame
+  230	fn	parseSourceFrame
+
+### packages/experimental/inspector/src/shared/bridge/messages/query/codec.ts  (139 行)
+  16	iface	InspectorQueryFrameIdentity
+  27	fn	isInspectorQueryRequestEnvelope
+  36	fn	isInspectorQueryResponseEnvelope
+  45	fn	parseInspectorQueryRequestFrame
+  65	fn	parseInspectorQueryFrameIdentity
+  81	fn	parseInspectorQueryResponseFrame
+
+### packages/experimental/inspector/src/shared/bridge/messages/query/commands.ts  (41 行)
+  6	iface	CordisTreeGetQuery
+  11	type	InspectorQuery
+  14	iface	CordisTreeGetResult
+  20	type	InspectorQueryResult
+  23	type	InspectorQueryResultFor
+  26	iface	InspectorQueryError
+  32	iface	InspectorQueryRequester
+
+### packages/experimental/inspector/src/shared/bridge/messages/query/frames.ts  (31 行)
+  8	type	InspectorQueryRequestId
+  11	iface	InspectorQueryRequestFrame
+  21	iface	InspectorQueryResponseFrame
+
+### packages/experimental/inspector/src/shared/bridge/messages/query/index.ts  (6 行)
+
+### packages/experimental/inspector/src/shared/bridge/messages/runtime/command-codec.ts  (135 行)
+  12	fn	parseClientRuntimeCommand
+
+### packages/experimental/inspector/src/shared/bridge/messages/runtime/commands.ts  (102 行)
+  18	type	ClientRuntimeRemoteObject
+  21	type	ClientRuntimePropertyDescriptor
+  24	type	ClientRuntimeInternalPropertyDescriptor
+  27	type	ClientRuntimeExceptionDetails
+  30	type	ClientCallArgument
+  33	iface	ClientRuntimeEvaluateCommand
+  38	iface	ClientRuntimeGetPropertiesCommand
+  43	iface	ClientRuntimeCallFunctionCommand
+  48	iface	ClientRuntimeAwaitPromiseCommand
+  53	iface	ClientRuntimeReleaseObjectCommand
+  59	iface	ClientRuntimeReleaseObjectGroupCommand
+  65	iface	ClientRuntimeGlobalLexicalScopeNamesCommand
+  70	type	ClientRuntimeCommand
+  80	type	ClientRuntimeCompletion
+  83	type	ClientRuntimeResult
+  98	iface	ClientRuntimeError
+
+### packages/experimental/inspector/src/shared/bridge/messages/runtime/console-frames.ts  (148 行)
+  15	iface	ClientConsoleCapability
+  20	iface	ClientConsoleEnableFrame
+  29	iface	ClientConsoleDisableFrame
+  38	iface	ClientConsoleEventFrame
+  52	fn	parseClientConsoleCapability
+  63	fn	parseClientConsoleControlFrame
+  85	fn	parseClientConsoleEventFrame
+
+### packages/experimental/inspector/src/shared/bridge/messages/runtime/frames.ts  (214 行)
+  17	iface	ClientRuntimeCapability
+  23	iface	ClientRuntimeRequestFrame
+  34	iface	ClientRuntimeCancelFrame
+  44	iface	ClientRuntimeResponseAcknowledgedFrame
+  54	iface	ClientRuntimeResponseFrame
+  67	iface	ClientRuntimeSessionClosedFrame
+  80	fn	parseClientRuntimeCapability
+  93	fn	parseClientRuntimeRequestFrame
+  114	fn	parseClientRuntimeCancelFrame
+  137	fn	parseClientRuntimeResponseAcknowledgedFrame
+  160	fn	parseClientRuntimeResponseFrame
+  181	fn	parseClientRuntimeSessionClosedFrame
+
+### packages/experimental/inspector/src/shared/bridge/messages/runtime/index.ts  (6 行)
+
+### packages/experimental/inspector/src/shared/bridge/messages/runtime/value-codec.ts  (335 行)
+  29	fn	parseClientRuntimeResult
+  85	fn	parseClientRuntimeRemoteObject
+  201	fn	parseClientRuntimeExceptionDetails
+  227	fn	parseClientRuntimeStackTrace
+
+### packages/experimental/inspector/src/shared/bridge/messages/sources/codec.ts  (128 行)
+  18	fn	parseClientSourceCommand
+  44	fn	parseClientSourceResult
+
+### packages/experimental/inspector/src/shared/bridge/messages/sources/commands.ts  (48 行)
+  7	type	ClientScriptDescriptor
+  10	type	ClientSourceContentKind
+  13	type	ClientSourceCommand
+  24	type	ClientSourceResult
+  44	iface	ClientSourceError
+
+### packages/experimental/inspector/src/shared/bridge/messages/sources/frames.ts  (144 行)
+  16	iface	ClientSourcesCapability
+  21	iface	ClientSourceRequestFrame
+  32	iface	ClientSourceResponseFrame
+  45	iface	ClientSourceSessionClosedFrame
+  58	fn	parseClientSourcesCapability
+  69	fn	parseClientSourceRequestFrame
+  90	fn	parseClientSourceResponseFrame
+  111	fn	parseClientSourceSessionClosedFrame
+
+### packages/experimental/inspector/src/shared/bridge/messages/sources/index.ts  (6 行)
+
+### packages/experimental/inspector/src/shared/bridge/publisher.ts  (46 行)
+  7	iface	InspectorPublisher
+  13	iface	InspectorStatePublisher
+  24	iface	InspectorConnection
+  27	class	InspectorSourceConnection
+      members: L32 publish, L37 setState, L42 request
+
+### packages/experimental/inspector/src/shared/bridge/query-reader.ts  (19 行)
+  11	fn	createQueryCordisRuntimeTreeReader
+
+### packages/experimental/inspector/src/shared/bridge/rpc.ts  (183 行)
+  17	iface	InspectorQuerySender
+  26	iface	InspectorQueryConnectionOptions
+  45	class	InspectorQueryRemoteError
+      members: L46 constructor
+  52	class	InspectorQueryConnection
+      members: L58 constructor, L66 connect, L77 request, L114 receive, L156 disconnect, L165 close, L171 rejectPending
+
+### packages/experimental/inspector/src/shared/bridge/validation.ts  (4 行)
+
+### packages/experimental/inspector/src/shared/bridge/version.ts  (3 行)
+  2	const	INSPECTOR_PROTOCOL_VERSION
+
+### packages/experimental/inspector/src/shared/cdp/capabilities.ts  (29 行)
+  4	type	RuntimeOperation
+  14	type	ConsoleOperation
+  17	type	SourceOperation
+  20	type	DebuggerOperation
+  23	iface	InspectorRealmCapabilities
+
+### packages/experimental/inspector/src/shared/cdp/console.ts  (47 行)
+  7	type	RuntimeConsoleType
+  28	iface	RuntimeConsoleEvent
+  37	iface	RuntimeExceptionEvent
+  44	type	RuntimeConsoleBackendEvent
+
+### packages/experimental/inspector/src/shared/cdp/debugger.ts  (79 行)
+  10	iface	RuntimeDebuggerLocation
+  17	iface	RuntimeDebuggerScope
+  26	iface	RuntimeDebuggerCallFrame
+  38	iface	RuntimeCallFrameEvaluationRequest
+  51	iface	RuntimeDebuggerEnableRequest
+  56	iface	RuntimeDebuggerResumeRequest
+  61	type	RuntimeDebuggerEvent
+  78	type	RuntimeCallFrameEvaluation
+
+### packages/experimental/inspector/src/shared/cdp/errors.ts  (31 行)
+  7	iface	RuntimeCallFrame
+  16	iface	RuntimeStackTrace
+  23	iface	RuntimeExceptionDetails
+
+### packages/experimental/inspector/src/shared/cdp/ids.ts  (13 行)
+  6	type	InspectorRealmId
+  9	type	RuntimeBackendObjectHandle
+  12	type	RuntimeScriptKey
+
+### packages/experimental/inspector/src/shared/cdp/index.ts  (12 行)
+
+### packages/experimental/inspector/src/shared/cdp/operations.ts  (88 行)
+  13	type	RuntimeCallArgument
+  20	type	RuntimeExecutionContext
+  25	iface	RuntimeEvaluateRequest
+  44	iface	RuntimeGetPropertiesRequest
+  53	iface	RuntimeCallFunctionRequest
+  69	iface	RuntimeAwaitPromiseRequest
+  76	iface	RuntimeCompletion
+  82	iface	RuntimeProperties
+
+### packages/experimental/inspector/src/shared/cdp/property.ts  (32 行)
+  6	iface	RuntimePropertyDescriptor
+  20	iface	RuntimeInternalPropertyDescriptor
+  26	iface	RuntimePrivatePropertyDescriptor
+
+### packages/experimental/inspector/src/shared/cdp/realm.ts  (163 行)
+  21	iface	NativeProtocolNotification
+  27	type	RealmCapability
+  32	iface	RuntimeBackend
+  86	iface	ConsoleBackend
+  98	iface	SourceBackend
+  122	iface	DebuggerBackend
+  148	iface	NativeDomainBackend
+
+### packages/experimental/inspector/src/shared/cdp/remote-object.ts  (79 行)
+  7	type	RuntimeRemoteObjectType
+  18	type	RuntimeRemoteObjectSubtype
+  40	iface	RuntimePropertyPreview
+  49	iface	RuntimeObjectPreview
+  58	iface	RuntimeRemoteObjectDescriptor
+  69	iface	RuntimeBackendObjectReference
+  74	iface	RuntimeRemoteObject
+
+### packages/experimental/inspector/src/shared/cdp/sources.ts  (20 行)
+  6	iface	RuntimeScript
+
+### packages/experimental/inspector/src/shared/cordis/collector.ts  (199 行)
+  17	iface	CordisTreeLimits
+  39	class	CordisTreeCollector
+      members: L44 constructor, L50 snapshot, L118 close, L150 for, L157 for, L161 for, L178 while, L186 if, L187 if, L195 if
+
+### packages/experimental/inspector/src/shared/cordis/ids.ts  (10 行)
+  6	type	InspectorObjectRegistryId
+  9	type	InspectorObjectHandle
+
+### packages/experimental/inspector/src/shared/cordis/model.ts  (161 行)
+  9	const	CORDIS_RUNTIME_TREE_SCHEMA_VERSION
+  12	type	CordisRuntimeSourceId
+  15	type	CordisRuntimeSourceKind
+  18	type	CordisRuntimeConnection
+  23	iface	CordisRuntimeSource
+  30	iface	CordisRuntimeContext
+  36	iface	CordisRuntimeFiber
+  43	type	CordisRuntimeNode
+  46	iface	CordisRuntimeRealm
+  55	iface	CordisRuntimeTree
+  66	fn	parseCordisRuntimeTree
+  116	fn	cordisRuntimeSourceId
+
+### packages/experimental/inspector/src/shared/cordis/object-reference.ts  (24 行)
+  7	iface	InspectorObjectReference
+  17	fn	parseInspectorObjectReference
+
+### packages/experimental/inspector/src/shared/cordis/object-registry.ts  (177 行)
+  15	const	IDENTIFY_REALM_OBJECT_FUNCTION
+  26	class	RealmObjectRegistry
+      members: L34 constructor, L42 begin, L52 resolve, L62 identify, L81 close, L94 retain, L108 commit
+  114	class	RealmObjectGeneration
+      members: L118 constructor, L125 retain, L134 release, L140 commit
+  152	fn	realmObjectExpression
+  161	fn	identifyRealmObject
+
+### packages/experimental/inspector/src/shared/cordis/observer.ts  (47 行)
+  8	type	CordisTreeSnapshotListener
+  17	fn	observeCordisTree
+
+### packages/experimental/inspector/src/shared/cordis/projector.ts  (79 行)
+  14	type	CordisTreeSourceConnection
+  19	iface	CordisTreeSource
+  26	iface	CordisTreeSourceSnapshot
+  33	iface	CordisInspectionTree
+  43	fn	projectCordisRuntimeTree
+
+### packages/experimental/inspector/src/shared/cordis/publisher.ts  (26 行)
+  17	fn	publishCordisTree
+
+### packages/experimental/inspector/src/shared/cordis/reader.ts  (25 行)
+  6	iface	CordisRuntimeTreeReader
+  20	fn	createCordisRuntimeTreeReader
+
+### packages/experimental/inspector/src/shared/cordis/snapshot.ts  (112 行)
+  11	const	CORDIS_TREE_SCHEMA_VERSION
+  14	const	CORDIS_TREE_MAX_DEPTH
+  21	iface	CordisContextTreeNode
+  27	iface	CordisFiberTreeNode
+  34	type	CordisTreeNode
+  37	iface	CordisTreeSnapshot
+  51	fn	parseCordisTreeSnapshot
+
+### packages/experimental/inspector/src/shared/identity.ts  (20 行)
+  6	type	InspectorId
+  14	fn	inspectorId
+
+### packages/experimental/inspector/src/shared/index.ts  (19 行)
+
+### packages/experimental/inspector/src/shared/json.ts  (80 行)
+  4	type	InspectorJsonPrimitive
+  7	type	InspectorJsonValue
+  13	iface	InspectorJsonObject
+  22	fn	isJsonValue
+  32	fn	requireJsonObject
+  44	fn	jsonByteLength
+  53	fn	isPlainObject
+
+### packages/experimental/inspector/src/shared/network/event-source.ts  (78 行)
+  6	class	InspectorEventSourceParser
+      members: L19 push, L23 consume, L45 parseLine
+
+### packages/experimental/inspector/src/shared/network/observation.ts  (61 行)
+  4	type	InspectorHeader
+  7	iface	FetchIdentity
+  12	iface	FetchStartPayload
+  21	iface	FetchBodyChunkPayload
+  26	iface	FetchRequestBodyEndPayload
+  33	iface	FetchResponsePayload
+  43	iface	FetchEndPayload
+  50	iface	InspectorEventSourceMessage
+  57	iface	FetchErrorPayload
+
+### packages/experimental/inspector/src/shared/service.ts  (33 行)
+  9	iface	InspectorService
+  27	fn	createInspectorService
+
+### packages/experimental/inspector/src/shared/validation.ts  (94 行)
+  13	fn	exactObject
+  25	fn	exactKeys
+  40	fn	wireId
+  51	fn	optionalString
+  67	fn	optionalBoolean
+  83	fn	optionalNonNegativeNumber
+
+### packages/experimental/inspector/src/worker/bridge/endpoint.ts  (305 行)
+  19	iface	InspectorEndpointInfo
+  26	class	InspectorEndpoint
+      members: L33 constructor, L50 start, L76 close, L98 handleHttp, L116 handleUpgrade, L139 acceptCdp, L172 acceptIngest, L207 authorizedClient, L223 target, L235 cdpUrl, L239 boundPort, L247 createServer, L253 requireServer, L258 json
+
+### packages/experimental/inspector/src/worker/bridge/hub.ts  (324 行)
+  17	iface	IngestedInspectorRecord
+  22	iface	SourceConnection
+  29	iface	InspectorRecordConsumer
+  46	type	InspectorSourceEvent
+  66	iface	InspectorSourceView
+  78	class	InspectorSourceRegistry
+      members: L83 constructor, L94 receive, L113 disconnect, L127 describe, L145 subscribeStatus, L155 subscribeEvents, L166 send, L177 close, L186 apply, L264 open, L290 assertTopics, L298 count, L304 notifyStatus, L314 emit
+
+### packages/experimental/inspector/src/worker/bridge/runtime-rpc.ts  (381 行)
+  24	iface	ClientRuntimeTarget
+  32	type	ClientRuntimeTargetEvent
+  52	class	ClientRuntimeRemoteError
+      members: L53 constructor
+  59	class	ClientRuntimeRouter
+      members: L68 constructor, L76 targets, L85 bySource, L95 subscribe, L107 subscribeConsole, L146 request, L186 closeTargetSession, L206 close, L218 receiveSourceEvent, L239 open, L254 remove, L268 consoleEvent, L281 settle, L316 acknowledgeClientResponse, L336 cancelClientResponse, L355 rejectPending, L363 emit
+
+### packages/experimental/inspector/src/worker/bridge/session.ts  (27 行)
+  16	fn	sendClientSessionClosed
+
+### packages/experimental/inspector/src/worker/bridge/source-rpc.ts  (193 行)
+  29	class	ClientSourceRemoteError
+      members: L30 constructor
+  36	class	ClientSourceRouter
+      members: L43 constructor, L60 request, L96 closeSession, L113 close, L122 receiveSourceEvent, L144 settle, L169 rejectPending, L179 if, L180 if
+
+### packages/experimental/inspector/src/worker/cdp/domains/debugger/cdp-params.ts  (53 行)
+  11	fn	parseCallFrameEvaluation
+  43	fn	requestScriptId
+
+### packages/experimental/inspector/src/worker/cdp/domains/debugger/index.ts  (7 行)
+
+### packages/experimental/inspector/src/worker/cdp/domains/debugger/projector.ts  (115 行)
+  16	fn	scriptParsedEvent
+  44	fn	debuggerEvent
+
+### packages/experimental/inspector/src/worker/cdp/domains/debugger/script-registry.ts  (118 行)
+  10	iface	DebuggerScriptRoute
+  17	class	DebuggerScriptRegistry
+      members: L26 register, L41 resolve, L50 byUrl, L62 byHash, L74 byUrlPattern, L87 wasUnsupported, L95 removeRealm, L104 clear
+  115	fn	cdpScriptId
+
+### packages/experimental/inspector/src/worker/cdp/domains/debugger/session.ts  (351 行)
+  24	class	DebuggerDomainSession
+      members: L35 constructor, L53 handle, L86 close, L96 enable, L125 disable, L137 getScriptSource, L148 searchInContent, L177 evaluateOnCallFrame, L186 pause, L193 resume, L202 forwardNative, L215 unsupportedRoute, L241 receiveRealm, L258 enableRealm, L264 attachCapabilities, L278 publishCatalog, L284 publishScript, L289 publishDebuggerEvent, L304 supportedDebugger, L310 detachCapabilities, L317 respond, L323 if, L329 for, L344 for
+
+### packages/experimental/inspector/src/worker/cdp/domains/dom/index.ts  (5 行)
+
+### packages/experimental/inspector/src/worker/cdp/domains/dom/model.ts  (298 行)
+  15	iface	CordisDomNode
+  26	iface	CordisDomDocument
+  34	type	CordisDomMutation
+  65	type	CordisDomChange
+  70	class	CordisDomBackend
+      members: L79 constructor, L94 document, L103 subscribe, L109 close, L120 nodeForObject, L130 nodeForObjectKind, L141 nodeForRealm, L147 build, L181 entity, L196 node, L211 emit, L243 if, L248 for, L252 for, L264 if, L272 for, L277 for, L288 for
+
+### packages/experimental/inspector/src/worker/cdp/domains/dom/session.ts  (523 行)
+  41	class	CordisDomSession
+      members: L53 constructor, L66 handle, L76 releaseObject, L91 bindObject, L107 releaseObjectGroup, L114 close, L120 execute, L210 resolveNode, L229 bindObjectId, L243 selectNode, L260 fromNodeId, L267 serialize, L290 pushNodePath, L311 forgetSubtree, L316 nodeId, L326 parentNodeId, L333 resetDocument, L342 updateDocument, L351 sendMutation, L421 pruneDocumentState, L449 releaseSourceObjects, L460 respond, L467 if, L477 if, L482 if, L483 if, L484 if, L489 if, L494 if, L503 if, L508 if
+
+### packages/experimental/inspector/src/worker/cdp/domains/native.ts  (50 行)
+  7	class	HostNativeDomainSession
+      members: L10 constructor, L27 handle, L38 owns, L43 close
+
+### packages/experimental/inspector/src/worker/cdp/domains/network/session.ts  (251 行)
+  8	iface	NetworkSink
+  16	class	NetworkDomain
+      members: L23 constructor, L31 enable, L43 disable, L54 detach, L59 close, L74 handle, L120 receive, L133 send, L208 sendRequestStart, L231 stopRequest, L242 for
+
+### packages/experimental/inspector/src/worker/cdp/domains/runtime/cdp-params.ts  (257 行)
+  14	iface	CdpExecutionContextSelector
+  21	iface	ParsedEvaluate
+  26	type	CdpCallArgument
+  33	iface	ParsedCallFunction
+  44	fn	parseEvaluate
+  82	fn	parseGetProperties
+  108	fn	parseCallFunction
+  154	fn	parseAwaitPromise
+  174	fn	parseReleaseObject
+  185	fn	parseReleaseObjectGroup
+  196	fn	parseGlobalLexicalScopeNames
+
+### packages/experimental/inspector/src/worker/cdp/domains/runtime/index.ts  (4 行)
+
+### packages/experimental/inspector/src/worker/cdp/domains/runtime/object-table.ts  (324 行)
+  20	iface	RuntimeObjectRoute
+  27	iface	RuntimeObjectPresentation
+  34	type	RuntimeObjectObserver
+  42	iface	CdpRuntimeCompletion
+  48	iface	CdpGetPropertiesResult
+  56	iface	CdpRuntimeEvent
+  62	class	RuntimeObjectTable
+      members: L68 constructor, L74 setObserver, L83 resolve, L94 completion, L114 properties, L139 consoleEvent, L176 realmsInGroup, L188 release, L196 releaseGroup, L206 releaseRealm, L213 clear, L224 remote, L245 property, L259 internalProperty, L270 privateProperty, L283 exception, L297 expose
+
+### packages/experimental/inspector/src/worker/cdp/domains/runtime/session.ts  (475 行)
+  26	class	RuntimeDomainSession
+      members: L34 constructor, L47 handle, L88 close, L102 setObjectObserver, L111 objectRoute, L122 projectCompletion, L137 projectRemoteObject, L149 releaseProjectedGroup, L158 nativeParameters, L180 resolveObject, L197 enable, L216 disable, L229 evaluate, L239 getProperties, L252 callFunction, L276 awaitPromise, L289 releaseObject, L303 releaseObjectGroup, L314 globalLexicalScopeNames, L321 discardConsoleEntries, L330 realmFromSelector, L337 realmFromOptionalSelector, L358 backendContext, L371 routeArgument, L383 unsupportedNativeRoute, L407 receiveRealm, L426 attachConsole, L434 announce, L451 destroy, L462 respond, L466 sendError, L472 if
+
+### packages/experimental/inspector/src/worker/cdp/ids.ts  (54 行)
+  8	type	CdpNumericId
+  11	type	InspectorConnectionId
+  14	type	CdpRemoteObjectId
+  17	type	CdpScriptId
+  20	type	CdpCallFrameId
+  23	type	CdpExecutionContextId
+  26	type	CdpNodeId
+  29	type	CdpBackendNodeId
+  37	fn	cdpStringId
+  50	fn	cdpNumericId
+
+### packages/experimental/inspector/src/worker/cdp/protocol.ts  (83 行)
+  6	iface	CdpRequest
+  13	iface	CdpNotification
+  19	iface	CdpTransport
+  29	fn	parseCdpRequest
+  52	fn	cdpError
+  62	fn	sendCdpFailure
+  73	fn	respondToCdpRequest
+
+### packages/experimental/inspector/src/worker/cdp/realm-sessions.ts  (129 行)
+  12	type	InspectorRealmSessionEvent
+  17	class	InspectorRealmSessionSet
+      members: L25 constructor, L34 all, L44 host, L55 byContextId, L65 byUniqueContextId, L75 bySource, L85 subscribe, L91 close, L100 receiveRealm, L113 open, L119 emit
+
+### packages/experimental/inspector/src/worker/cdp/session.ts  (118 行)
+  16	class	CdpSession
+      members: L25 constructor, L52 receive, L103 sendEvent, L108 close
+
+### packages/experimental/inspector/src/worker/cdp/target.ts  (78 行)
+  6	const	CDP_METHOD_NOT_HANDLED
+  9	iface	CdpTargetDescriptor
+  20	fn	handleScaffold
+
+### packages/experimental/inspector/src/worker/entry.ts  (56 行)
+
+### packages/experimental/inspector/src/worker/inspection/cordis-query.ts  (18 行)
+  12	fn	executeInspectorQuery
+
+### packages/experimental/inspector/src/worker/inspection/cordis-store.ts  (249 行)
+  21	type	CordisTreeSourceSnapshot
+  24	type	CordisInspectionTree
+  29	iface	CordisTreeObjectRoute
+  34	type	CordisTreeStoreEvent
+  39	iface	CordisTreeStoreOptions
+  49	class	CordisTreeStore
+      members: L55 constructor, L58 replace, L67 append, L73 close, L94 snapshots, L102 tree, L114 readTree, L124 resolveObject, L140 resolveObjectIdentity, L159 resolveObjectInKind, L173 subscribe, L178 latest, L196 install, L214 remove, L219 route, L223 emit, L241 while
+
+### packages/experimental/inspector/src/worker/inspection/network-store.ts  (450 行)
+  12	iface	NetworkStoreOptions
+  18	iface	CapturedNetworkBody
+  32	type	NetworkStoreEvent
+  93	class	NetworkStore
+      members: L101 constructor, L103 replace, L108 append, L119 close, L140 replay, L149 subscribe, L159 requestBody, L169 responseBody, L176 dispose, L184 ingest, L302 appendBody, L320 complete, L328 publish, L333 emit, L343 enforceRetention, L362 evictCompletedFor, L371 evict, L380 requestById, L403 if, L407 if, L412 if, L418 if, L424 if, L430 if, L436 if, L442 if
+
+### packages/experimental/inspector/src/worker/inspection/query-router.ts  (256 行)
+  22	iface	InspectorQueryPeerTransport
+  35	class	InspectorQueryRouter
+      members: L42 constructor, L52 open, L80 disconnect, L88 close
+  95	class	InspectorQueryPeer
+      members: L100 constructor, L114 accept, L126 revoke, L137 receive, L166 close, L174 execute, L198 rejectMalformed, L207 sendFailure, L228 canReply, L235 deliver, L243 rejectTransport
+
+### packages/experimental/inspector/src/worker/inspection/realm-store.ts  (117 行)
+  10	type	InspectorRealmEvent
+  15	class	InspectorRealmRegistry
+      members: L20 constructor, L33 realms, L42 byContextId, L54 byUniqueContextId, L66 bySource, L77 subscribe, L83 close, L89 receiveClient, L101 openClient, L107 emit
+
+### packages/experimental/inspector/src/worker/inspection/realm.ts  (55 行)
+  16	iface	InspectorRealmDescriptor
+  25	type	InspectorRealmContext
+  35	iface	InspectorRealmSession
+  48	iface	InspectorRealm
+
+### packages/experimental/inspector/src/worker/realms/client/bridge.ts  (27 行)
+  7	iface	ClientRealmBridge
+  20	fn	createClientRealmBridge
+
+### packages/experimental/inspector/src/worker/realms/client/console.ts  (41 行)
+  12	class	ClientConsoleBackend
+      members: L15 constructor, L22 subscribe, L33 clear, L36 close
+
+### packages/experimental/inspector/src/worker/realms/client/debugger.ts  (12 行)
+  9	fn	clientDebuggerCapability
+
+### packages/experimental/inspector/src/worker/realms/client/index.ts  (105 行)
+  26	class	ClientInspectorRealm
+      members: L33 constructor, L62 target, L67 openSession
+
+### packages/experimental/inspector/src/worker/realms/client/runtime.ts  (168 行)
+  23	class	ClientRuntimeBackend
+      members: L26 constructor, L33 enable, L37 disable, L42 evaluate, L56 getProperties, L78 callFunction, L100 awaitPromise, L111 globalLexicalScopeNames, L116 releaseObject, L120 releaseObjectGroup, L125 close, L131 request, L145 if, L150 if, L151 if, L152 if, L153 if, L154 if, L157 if, L163 if, L164 if, L165 if, L166 if
+
+### packages/experimental/inspector/src/worker/realms/client/scripts.ts  (28 行)
+  7	class	ClientScriptIdentity
+      members: L10 constructor, L17 toRuntime
+
+### packages/experimental/inspector/src/worker/realms/client/sources.ts  (123 行)
+  17	class	ClientSourceBackend
+      members: L22 constructor, L29 listScripts, L35 getScriptSource, L42 getSourceMap, L47 subscribe, L52 close, L59 loadCatalog, L68 register, L79 route, L86 read, L120 if
+
+### packages/experimental/inspector/src/worker/realms/client/values.ts  (163 行)
+  25	type	ClientScriptKeyMapper
+  33	fn	clientCompletion
+  50	fn	clientProperty
+  68	fn	clientInternalProperty
+  83	fn	clientException
+  101	fn	clientConsoleEvent
+  128	fn	clientRemoteObject
+  145	fn	clientHandle
+
+### packages/experimental/inspector/src/worker/realms/host/bridge.ts  (165 行)
+  7	type	HostInspectorNotification
+  21	class	HostInspectorSession
+      members: L27 constructor, L45 subscribe, L56 request, L72 close, L83 connect, L94 rewriteContextName
+  115	class	HostNotificationChannel
+      members: L120 constructor, L133 subscribe, L139 close, L144 receive
+
+### packages/experimental/inspector/src/worker/realms/host/console.ts  (91 行)
+  20	class	HostConsoleBackend
+      members: L23 constructor, L41 subscribe, L45 clear, L50 close, L54 consoleEvent, L74 exceptionEvent
+
+### packages/experimental/inspector/src/worker/realms/host/debugger.ts  (168 行)
+  19	class	HostDebuggerBackend
+      members: L22 constructor, L39 enable, L45 disable, L49 pause, L53 resume, L59 evaluateOnCallFrame, L75 subscribe, L80 close, L84 paused, L105 callFrame, L125 scope, L142 if, L152 if, L155 if
+
+### packages/experimental/inspector/src/worker/realms/host/index.ts  (68 行)
+  23	class	HostInspectorRealm
+      members: L33 constructor, L44 openSession
+
+### packages/experimental/inspector/src/worker/realms/host/runtime.ts  (339 行)
+  27	class	HostRuntimeBackend
+      members: L31 constructor, L35 enable, L39 disable, L44 evaluate, L64 getProperties, L75 callFunction, L98 awaitPromise, L106 globalLexicalScopeNames, L116 releaseObject, L120 releaseObjectGroup, L125 close, L134 completion, L143 properties, L159 property, L178 internalProperties, L190 privateProperties, L209 exceptionDetails, L231 remoteObject, L251 stackTrace, L278 observeContext, L291 identifyObject, L318 if, L323 switch
+
+### packages/experimental/inspector/src/worker/realms/host/scripts.ts  (14 行)
+  11	fn	hostScriptKey
+
+### packages/experimental/inspector/src/worker/realms/host/sources.ts  (100 行)
+  15	class	HostSourceBackend
+      members: L20 constructor, L26 listScripts, L30 getScriptSource, L38 getSourceMap, L47 subscribe, L53 close, L59 receive
+
+### packages/experimental/inspector/src/worker/realms/host/values.ts  (35 行)
+  8	fn	isNativeRecord
+  18	fn	requireNativeRecord
+  29	fn	optionalNativeField
+
+### packages/experimental/inspector/src/worker/server.ts  (112 行)
+  20	iface	InspectorWorkerRuntime
+  30	fn	startInspectorWorker
+
+## 其它关键文件
+
+### cordis.patch.yml
+# Explicitly installed bundle: the cross-realm inspector. The Host row
+# activates only where a Web server exists.
+
+- insert:
+    - id: experimental-inspector
+      name: '@deepseek-ai/dsh-experimental-inspector'
+
+
+### package.json
+{
+  "name": "@deepseek-ai/dsh-experimental-inspector",
+  "description": "Experimental cross-realm CDP hub for Host debugging and Client Runtime inspection",
+  "version": "0.1.7-rc.2",
+  "icon": "./icon.svg",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/experimental/inspector"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "dsh": {
+    "client": {
+      "inject": [],
+      "platform": "web",
+      "immediately": true
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "files": [
+    "icon.svg",
+    "locale/*.json",
+    "lib/index.js",
+    "lib/client.js",
+    "cordis.patch.yml",
+    "lib/worker.js",
+    "lib/types/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/dsh-app-boot": "workspace:*",
+    "@deepseek-ai/dsh-brand": "workspace:*",
+    "@deepseek-ai/dsh-util-crypto": "workspace:*",
+    "@deepseek-ai/schemastery": "workspace:~",
+    "ws": "^8.21.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/cordis-plugin-loader": "workspace:~",
+    "@deepseek-ai/dsh-client-modules": "workspace:*",
+    "@deepseek-ai/dsh-host-webserver": "workspace:*"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/cordis-plugin-include": "workspace:~",
+    "@deepseek-ai/cordis-plugin-loader": "workspace:~",
+    "@deepseek-ai/dsh-host-webserver": "workspace:*",
+    "@types/ws": "^8.18.1",
+    "playwright": "^1.49.0",
+    "tsx"

@@ -1,0 +1,239 @@
+# @deepseek-ai/dsh-client-ui-open-in-app
+path: packages/client/ui-open-in-app
+desc: Web Session-header "Open In..." split button opening the session workspace directory in a locally installed application
+deps: -
+peers: @deepseek-ai/cordis
+srcFiles: 6  srcLoc: 459
+
+## README.md (98 行)
+---
+description: "Web \"Open In...\" controls: the Session-header split button launching the remembered application on the workspace directory, and the document preview's default-application open and reveal controls for one file."
+kind: "package-reference"
+---
+
+# @deepseek-ai/dsh-client-ui-open-in-app
+
+English | [中文](README.zh.md)
+
+## Summary
+
+This package provides the browser surface of the open-in-app feature. A Session-header split button opens the current session's workspace directory (the summary's `cwd`) in the remembered application, and its chevron lists every catalog application the host probed as installed; availability, icons, and launches come from the host routes of [`dsh-host-open-in-app`](../../host/open-in-app/README.md), so mount the two packages together. In the right Sidebar's document preview, an "Open" split button and an empty-state button open the previewed file in its default application or show its location, through the Session Remote. A host without the capability renders none of these controls.
+
+## Table of Contents
+
+- [Use this package](#use-this-package)
+- [Understand the implementation](#understand-the-implementation)
+- [Further Exploration](#further-exploration)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="use-this-package"></a>
+## Use this package
+
+Mount this plugin in the Web composition beside [`dsh-host-open-in-app`](../../host/open-in-app/README.md); the pair composes the whole feature in two cordis.yml rows and this row takes no config. The Session header grows an "Open In..." split button whenever the host probed at least one installed catalog application and the session has a known workspace directory. The document preview of [`ui-sidebar-documentpreview`](../ui-sidebar-documentpreview/README.md) grows its file controls whenever the Host reports a desktop through the Session Remote's `session.canOpenWorkspacePath`; removing this row removes every control at once.
+
+### What to expect
+
+The Session header and document header use the same 24px-high split button with 9px corners. Both headers show only the icon; their tooltip names the default application or the reveal action. Both show the default action’s icon, mark its application with “(default)” in the menu, disable while their own gesture runs, and report failures through a transient toast. The directory adapter uses the existing cross-platform application catalog and remembers the last successful choice in `dsh.open-in-app.choice`; a missing choice falls back to the first available application.
+
+The **Open locally** shortcut captures the main Session's directory and the same remembered application as the header button. The effective binding appears in the button tooltip and `aria-keyshortcuts`; Web follows the [shortcut service’s platform defaults](../shortcuts/README.md). The command runs only while the Conversation is selected and the header button has a directory and installed application to open. An in-flight launch also blocks the command. Pointer and keyboard gestures share the controller's launch state, so repeated gestures cannot launch twice or change the remembered choice mid-launch.
+
+File menus list the discovered associated applications without a separate “Open in default app” row. “Show file location” stays in a fixed footer separated from the scrolling applications. A successful query with only one available action renders a single button without a dropdown. Initial file-association loading uses a gray skeleton icon. When the Host identifies a default application the menu marks it “(default)” and the main button opens it; otherwise the first associated application takes that place, so the main button reveals the file only when no application is registered. Directory menus have no reveal row. Choosing a file application does not change the system default. An unpreviewable file uses the same menu in a 40px-high split button with an icon and action text; its label is “Open” or “Show file location” according to the default action.
+
+Mounted controls with the same association reader and file share one query and its results; opening either menu refreshes all of them. Releasing the last control cancels the query and discards its state. Cancelled queries cannot replace another file’s results. A failed query displays a menu message and leaves reveal available as the default action. File-association discovery follows [native-command](../../util/native-command/README.md); an empty result, including a platform without a discovery adapter, uses the same reveal fallback without platform branches in the control.
+
+-----
+
+<a id="understand-the-implementation"></a>
+## Understand the implementation
+
+<details>
+<summary>Implementation internals — click to expand</summary>
+
+The plugin registers the split button on `conversation.session.header.utilities` through the standard slot/inject currency and registers the `open-in-app` dictionaries as one effect. A page-lifetime controller ([`src/client/controller.ts`](src/client/controller.ts)) owns the once-per-page availability read, the persisted choice snapshot store, and the launch POST; the component receives the shared sources through the inject `hooks` compartment, so every Session header shares one truth. Document-relative route forms and wire payload types come from the host package's browser-safe `@deepseek-ai/dsh-host-open-in-app/shared` subpath. The controller guards in-flight launches and publishes their captured directory and status; header controls derive delayed busy and transient error visuals from that source.
+
+The directory and file adapters supply application metadata and operations to [`OpenTargetButton`](src/client/OpenTargetButton.tsx), which owns menu ordering, default markers, icons, sizing, and gesture feedback. The file header and empty state share `FileOpenTarget`, while `OpenPathInjected.applications` queries `session.workspacePathApplications` through [`open-path.ts`](src/client/open-path.ts). Opening uses `session.openWorkspacePath`; the Host revalidates an explicitly selected handler before launch. The directory adapter keeps the existing catalog routes. `FileRouteAction` supplies the same control to delivery cards and change review through `deliverables.file.actions` and `deliverables.review.file.actions`; their authenticated routes retain Session file authorization. A failed or unavailable file query therefore needs no platform-specific UI implementation.
+
+</details>
+
+-----
+
+<a id="further-exploration"></a>
+## Further Exploration
+
+- [dsh-host-open-in-app](../../host/open-in-app/README.md) — the host routes serving availability, icons, and launches, and the catalog behind them.
+- [dsh-session-log-export](../../session-query/session-log-export/README.md) — the sibling Session-header action.
+- [ui-sidebar-documentpreview](../ui-sidebar-documentpreview/README.md) — the document preview declaring the header and empty-state child slots the file controls occupy.
+- [ui-deliverables](../ui-deliverables/README.md) — the delivery cards, which still open declared files through their own routes.
+- [Web client architecture](../../../.agents/notes/implemented/architecture/2026-07-19-gui-web-client-architecture.md) — how browser plugin rows load and register slots.
+
+-----
+
+<a id="model-experience"></a>
+## Model Experience
+
+None, as the split button is browser chrome; nothing here reaches a model request.
+
+#### KV Cache effect
+
+None; this package neither assembles nor sends a provider request.
+
+## Known Limitations and Deferred Work
+
+The Host verifies the path through the composed filesystem before opening or revealing it. Paths without a matching Host mapping fail without launching a native application. Default opening follows the file-type association, including HTML and SVG.
+
+<a id="known-limitations-and-deferred-work"></a>
+
+- **The dictionaries gate the menu.** A host catalog extension without a matching `app.<id>` entry in both dictionaries stays invisible instead of showing a raw id; extending the catalog means extending [`dsh-host-open-in-app`](../../host/open-in-app/README.md) and this package's locales together.
+- **Availability is read once per page.** An application installed while the page is open appears after a reload (and, host-side, after a host restart); the desktop answer behind the file controls is read once per page as well.
+- **One reveal label for every platform.** The Session Remote reports whether a desktop exists, not which file manager it runs, so the menu says "Show file location" rather than naming Finder or File Explorer as the delivery cards do.
+- **The delivery cards keep their own opener.** [`ui-deliverables`](../ui-deliverables/README.md) still opens declared files through its own Session-and-event routes; folding those cards onto the file controls here is deferred to the [Agent Note](../../../.agents/notes/implemented/feature/2026-09-16-open-in-default-app-for-sidebar-files.md).
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+The feature-level decisions, including the split into the host package and this surface, are recorded in the [promotion Agent Note](../../../.agents/notes/implemented/feature/2026-08-25-promote-open-anywhere-plugin.md); the document preview's file controls are recorded in the [default-application Agent Note](../../../.agents/notes/implemented/feature/2026-09-16-open-in-default-app-for-sidebar-files.md).
+
+</details>
+
+**Runtime invariant:** No companion is published. The plugin registers one dictionary effect and five slot entries whose disposal the HMR-safety spec proves; application availability, the choice, and the desktop answer live in the controllers' snapshot stores with no second copy to diverge.
+
+
+## 源文件与导出符号
+
+### packages/client/ui-open-in-app/src/client/FileRouteAction.tsx  (38 行)
+  26	fn	FileRouteAction
+
+### packages/client/ui-open-in-app/src/client/OpenInAppAction.tsx  (66 行)
+  11	iface	OpenInAppActionInjected
+  24	type	OpenInAppActionProps
+  35	fn	OpenInAppAction
+
+### packages/client/ui-open-in-app/src/client/OpenPathAction.tsx  (67 行)
+  14	iface	OpenPathInjected
+  24	type	OpenPathActionProps
+  39	fn	FileOpenTarget
+  64	fn	OpenPathAction
+
+### packages/client/ui-open-in-app/src/client/OpenPathEmptyAction.tsx  (22 行)
+  9	type	OpenPathEmptyActionProps
+  19	fn	OpenPathEmptyAction
+
+### packages/client/ui-open-in-app/src/client/OpenTargetButton.tsx  (161 行)
+  15	iface	OpenTargetApplication
+  22	type	OpenTargetOperation
+  25	iface	OpenTargetButtonProps
+  45	fn	useOpenTargetGesture
+  81	fn	OpenTargetButton
+
+### packages/client/ui-open-in-app/src/client/applications.ts  (41 行)
+  5	const	APP_LABEL_KEY
+
+### packages/client/ui-open-in-app/src/client/controller.ts  (112 行)
+  12	iface	OpenInAppLaunchState
+  24	class	OpenInAppController
+      members: L39 currentApp, L50 constructor, L57 load, L66 choose, L77 launch, L95 run
+
+### packages/client/ui-open-in-app/src/client/file-applications.ts  (74 行)
+  63	fn	useFileApplications
+
+### packages/client/ui-open-in-app/src/client/index.ts  (123 行)
+  declare module: declare module '@deepseek-ai/dsh-client-ui-slots' {
+  39	const	inject
+  46	fn	apply
+
+### packages/client/ui-open-in-app/src/client/locales.ts  (82 行)
+  4	const	NS
+  41	const	zh
+  61	const	en
+  81	type	OpenInAppKey
+
+### packages/client/ui-open-in-app/src/client/open-failure-toast.tsx  (27 行)
+  12	fn	useOpenFailureToast
+
+### packages/client/ui-open-in-app/src/client/open-path.ts  (97 行)
+  10	type	OpenInAppPathAction
+  13	type	OpenInAppPathFailure
+  16	iface	OpenInAppPathRemote
+  30	class	OpenInAppPathController
+      members: L38 constructor, L44 load, L56 openPath, L74 applications, L85 run
+
+### packages/client/ui-open-in-app/src/css-modules.d.ts  (7 行)
+  declare module: declare module '*.module.css' { | declare module '*.css'
+
+### packages/client/ui-open-in-app/src/index.ts  (11 行)
+  10	fn	apply
+
+## 其它关键文件
+
+### package.json
+{
+  "name": "@deepseek-ai/dsh-client-ui-open-in-app",
+  "description": "Web \"Open In...\" controls: the Session-header split button opening the workspace directory in an installed application, and the document preview's default-application controls for one file",
+  "version": "0.1.7-rc.2",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/client/ui-open-in-app"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/client.js",
+    "lib/types/**/*.d.ts"
+  ],
+  "scripts": {
+    "bundle": "tsdown",
+    "watch": "tsdown --watch"
+  },
+  "license": "MIT",
+  "dsh": {
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-api-gateway",
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-api-session-controller",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-shortcuts",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-session",
+        "@deepseek-ai/dsh-client-ui-sidebar-documentpreview"
+      ],
+      "platform": "web"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:~"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/dsh-api-gateway": "workspace:*",
+    "@deepseek-ai/dsh-api-remotes": "workspace:*",
+    "@deepseek-ai/dsh-api-session-controller": "workspace:*",
+    "@deepseek-ai/dsh-client-locale": "workspace:*",
+    "@deepseek-ai/dsh-client-store": "work

@@ -1,0 +1,241 @@
+# @deepseek-ai/dsh-client-ui-input-trigger
+path: packages/client/ui-input-trigger
+desc: Input trigger pipeline: '/' and '@' detection, candidate menu, pick routing to registered sources
+deps: -
+peers: @deepseek-ai/cordis
+srcFiles: 13  srcLoc: 1604
+
+## README.md (94 行)
+---
+description: "Input trigger pipeline for the Web GUI: / and @ detection under the caret, the grouped candidate menu, and pick routing to registered sources; for users and maintainers of slash commands and references."
+kind: "package-reference"
+---
+
+# @deepseek-ai/dsh-client-ui-input-trigger
+
+English | [中文](README.zh.md)
+
+## Summary
+
+When users type `/` or `@` at the caret in the Web GUI, this package opens a grouped menu for slash commands, file references, and session references. It supports keyboard and pointer selection, including drill-down choices and launchers that open a single candidate group over the current selection. A pick either invokes a command flow or inserts a reference for the consuming input surface to handle. The package affects browser presentation only; it does not assemble or send model requests.
+
+## Table of Contents
+
+- [Use this package](#use-this-package)
+- [Understand the implementation](#understand-the-implementation)
+- [Further Exploration](#further-exploration)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="use-this-package"></a>
+## Use this package
+
+Mount this plugin alongside `ui-conversation`; the menu then appears in the input overlay when the user types a trigger under the caret. Grouped candidates render under title rows, or under the section headings a source attaches to its own rows; a pick routes to the source, and the consuming surface applies the result — a slash command opens its popup or executes, a reference inserts its inline token. Menu icons and navigation chevrons use the `--dsw-alias-menu-icon` color. A row shows its icon, its title (the candidate `label`, or the `name` when no label is given), the `name` as a trailing alias when the label is not the name in another letter case, and the description right-aligned; a query matches either the name or the label.
+
+### Keyboard and mouse
+
+The composer surface keeps focus while the menu is open: rows pick on mousedown, the highlight rides `aria-activedescendant`, and a pointer press outside both the menu and the composer card dismisses it. Opening it from the launcher button puts the keyboard back in the editor before the menu opens, so the arrows drive it there too. Space and Enter adjudication polls the optional `matchSpace`/`matchEnter` hooks in registration order; the first non-undefined answer wins, and a source can refuse a submission it cannot consume whole. Tab acts on the highlighted completion: a candidate declaring `drill: true` routes through `onPick` with `action: 'drill'`, while an ordinary candidate settles through `action: 'pick'`; without a highlight Tab passes untouched so native focus traversal survives. Escape and Shift+Tab leave the menu instead, never settling: the exit gesture cannot consume or rewrite the draft. A dismissed menu stays dismissed: the same token re-tracked with the same query keeps its menu closed, so restoring the caret after a pointer dismissal — or after a settled command closes the surface it opened — cannot bring the menu back; typing a new query or moving to another token re-arms it. A drillable row's trailing chevron exposes the same second verb to pointer users. A source implementing the optional `header` hook additionally publishes crumbs above its group: the pipeline re-polls it on every hit with the live query and whether a drill, rather than typing, produced it, and a crumb pick routes back through `onPick` with `action: 'drill'`.
+
+A source may implement `openReference(session, reference)` to open a draft reference without submitting it. Acceptance may precede asynchronous catalog loading. Chips route by source name; editable tokens route through the current source lexicon. Returning `false`, a missing source, or a disposed controller leaves the editor gesture unchanged.
+
+-----
+
+<a id="understand-the-implementation"></a>
+## Understand the implementation
+
+Menus use the shared `MenuSurface` material, including the macOS backing for background blur; custom content follows the [menu rules](../../../docs/web-styling.md#component-rules).
+
+<details>
+<summary>Implementation internals — click to expand</summary>
+
+`src/core/` is the pure core — trigger detection, menu reduction, and exact match, with zero React/DOM/cordis — while `src/client/service.ts` wires the core to the menu snapshot store, the per-hit candidate fetch (generation-gated, `AbortSignal`-superseded, failed sources dropping silently with a console record), and the pick paths. One `InputTriggerController` resolves per session scope (`sessionOf`); the conversation wiring layer drives `track`/`arbitrate`/`onSpace`/`adjudicate` on the controller. A source is warmed into every session controller it can reach; sources whose `lexicon` rolls change after warm implement `subscribeLexicon` and the controller re-polls on each notification. `MenuView` self-registers into `conversation.input.overlay` (list kind, session scope) and renders null while closed. The `listbox` role sits on its scrolling viewport rather than the bounded shell, because a breadcrumb header is not an option and a listbox may not carry one; crumbs ride their own snapshot store beside the menu store, so the frozen reducer stays unaware of them. The overlay SlotMap merge lives here because the dependency direction (ui-conversation → ui-input-trigger) admits no reverse type import.
+
+</details>
+
+-----
+
+<a id="further-exploration"></a>
+## Further Exploration
+
+Read these pages when the trigger pipeline is not enough. They move from the pipeline to the sources that register into it and the shell that owns the input.
+
+- [ui-commands](../ui-commands/README.md) — registers the `/` command source into this pipeline and owns the command popup shell.
+- [ui-reference](../ui-reference/README.md) — registers the `@` file and session reference sources.
+- [ui-conversation](../ui-conversation/README.md) — declares the input overlay slot and owns the composer and input machine.
+- [Web client architecture](../../../.agents/notes/implemented/architecture/2026-07-19-gui-web-client-architecture.md) — how browser plugin rows load and register slots.
+
+-----
+
+<a id="model-experience"></a>
+## Model Experience
+
+None, as the trigger pipeline is browser presentation only — picks produce command claims and reference inserts whose model-visible consequences are owned by the consuming host and input-machine packages.
+
+#### KV Cache effect
+
+None; this package neither assembles nor sends a provider request.
+
+## Known Limitations and Deferred Work
+
+<a id="known-limitations-and-deferred-work"></a>
+
+
+These limits define the current trigger pipeline. They are current package constraints, not a general menu comparison or a task backlog.
+
+- **Global source layer only** — session-scope source registration (per-session shadowing) is designed but not enabled; the ledger tracks the trigger condition, a real per-session source need.
+- **Overlay SlotMap merge home is split from slot ownership** — the sole `conversation.input.overlay` merge lives here, while ui-conversation owns its anchor, children declaration, and lifecycle because the dependency direction is ui-conversation → ui-input-trigger.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>
+
+**Runtime invariant:** No companion is published. The trigger pipeline is a browser-side pure core (detect/reduce/match) plus a registry whose disposal is proven by the HMR-safety spec; it emits no cordis events and owns no cross-plugin mutable state.
+
+
+## 源文件与导出符号
+
+### packages/client/ui-input-trigger/src/client/MenuView.tsx  (223 行)
+  25	type	MenuViewProps
+  47	fn	MenuView
+
+### packages/client/ui-input-trigger/src/client/contract.ts  (26 行)
+  12	iface	InputTriggerServiceContract
+
+### packages/client/ui-input-trigger/src/client/controller.ts  (644 行)
+  40	iface	SourceRoster
+  46	iface	InputTriggerControllerDeps
+  60	class	InputTriggerController
+      members: L106 constructor, L126 track, L187 toggleSource, L214 pick, L233 pickCrumb, L250 hover, L265 arbitrate, L321 onSpace, L346 serializeReference, L360 openReference, L386 adjudicate, L403 sourceRemoved, L420 sourceAdded, L428 dismiss, L436 refreshOpenMenu, L446 dispose, L456 project, L461 execute, L478 refreshLexicon, L501 watchLexicon, L517 fetchCandidates, L546 stopFetch, L562 settle, L596 refreshHeaders, L617 setHeaders, L623 rememberDismissed, L630 clearLauncher, L634 reduce
+
+### packages/client/ui-input-trigger/src/client/index.ts  (88 行)
+  declare module: declare module '@deepseek-ai/cordis' { | declare module '@deepseek-ai/dsh-client-ui-slots' {
+  52	const	inject
+  59	fn	apply
+
+### packages/client/ui-input-trigger/src/client/locales.ts  (35 行)
+  8	const	zh
+  21	type	MenuKey
+  24	const	en
+
+### packages/client/ui-input-trigger/src/client/service.ts  (121 行)
+  inject: L32 ['sessions']
+  31	class	InputTriggerService
+      members: L41 constructor, L55 registerSource, L88 sessionOf, L115 sessions
+
+### packages/client/ui-input-trigger/src/client/slots.ts  (36 行)
+  8	iface	MenuViewInjected
+
+### packages/client/ui-input-trigger/src/core/contract.ts  (65 行)
+  11	iface	TriggerHit
+  30	type	DetectTrigger
+  33	iface	MenuState
+  49	type	MenuEvent
+  58	type	MenuReduce
+  64	type	ExactMatch
+
+### packages/client/ui-input-trigger/src/core/detect.ts  (77 行)
+  48	const	detectTrigger
+
+### packages/client/ui-input-trigger/src/core/menu.ts  (170 行)
+  20	const	MENU_CLOSED
+  30	fn	seedGroups
+  94	const	menuReduce
+  165	const	exactMatch
+
+### packages/client/ui-input-trigger/src/css-modules.d.ts  (7 行)
+  declare module: declare module '*.module.css' { | declare module '*.css'
+
+### packages/client/ui-input-trigger/src/index.ts  (10 行)
+  9	fn	apply
+
+### packages/client/ui-input-trigger/src/types.ts  (241 行)
+  29	iface	ClientSessionContext
+  34	type	TriggerChar
+  37	type	TriggerPosition
+  40	type	PickVia
+  43	type	PickAction
+  46	type	InputTriggerCandidateIcon
+  49	iface	InputTriggerCandidate
+  79	iface	InputTriggerCrumb
+  89	iface	HeaderRequest
+  108	iface	SubmitEnvelope
+  114	iface	CandidateRequest
+  125	iface	InputTriggerPick
+  142	iface	ReferenceCodec
+  160	iface	InputTriggerSource
+  237	iface	TriggerGuard
+
+## 其它关键文件
+
+### package.json
+{
+  "name": "@deepseek-ai/dsh-client-ui-input-trigger",
+  "description": "Input trigger pipeline: '/' and '@' detection, candidate menu, pick routing to registered sources",
+  "version": "0.1.7-rc.2",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/client/ui-input-trigger"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-api-session-controller",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-renderer"
+      ],
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "bundle": "tsdown",
+    "watch": "tsdown --watch"
+  },
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:~"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-client-locale": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-conversation": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-renderer": "workspace:*",
+    "@deepseek-ai/dsh-client-test-runtime": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-primitives": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-slots": "workspace:*",
+    "@types/react": "~18.3.1",
+    "@deepseek-ai/cordis": "workspace:~",
+    "react": "^18.2.0",
+    "@deepseek-ai/dsh-file-reference": "workspace:*",
+    "@deepseek-ai/dsh-api-session-controller": "workspace:*",
+    "@deepseek-ai/dsh-client-store": "workspace:*",
+    "@deepseek-ai/dsh-session": "workspace:*",
+    "@deepseek-ai/dsh-util-values": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-session": "

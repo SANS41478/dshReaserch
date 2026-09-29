@@ -1,0 +1,204 @@
+[
+  {
+    "group": "session",
+    "dir": "session-title",
+    "short": "session-title",
+    "oneLiner": "会话标题的唯一权威：折叠 session/title 事件，调度并裁决所有生成者",
+    "why": "不加载它，就没人写 session/title 事件，也没有 ctx.sessionTitle：title 投影键消失，客户端列表拿不到标题，只能按 id 展示；rename() 入口不存在，webhook 里给会话显式命名的调用直接抛错。更致命的是三个 LLM 提供者全部失去挂载点——ctx.sessionTitle.register() 无对象可注册，first-prompt、all-prompts 与任何自研策略都变死代码。确定性 fallback 也一并消失：第一条人类消息写下后，一次模型调用失败就意味着这个会话永远无名。标题还必须是日志事件而非内存字段，否则重放、恢复、分页后会丢或不一致。",
+    "position": "上游三类调用者：宿主或 webhook 用 get/rename/refresh 读写，三个 LLM 插件用 register() 登记，客户端只读投影的 title 值。下游是 inject = ['sessions', 'sessionProjections']：ctx.sessions 给存活性校验与 append；ctx.sessionProjections 既收它注册的 title、titleInput 两个单元，也提供 stateOf(session, 'titleInput') 与 turnBoundary 供它判断资格与轮次起点；它还在 'llm/stream' 上以 global+prepend 抓主请求 route。数据流：session/event 的 user/message 与 request/header 流入服务，服务把 messages、route、signal 递给 provider.generate()，拿回 title、messageSeqs、model，校验后 append('session/title') 回流日志与投影。模型侧反向绝缘：session/title 是 log-only，永不进 deriveMessages。",
+    "inside": "src/index.ts 承载全部。SessionTitleService extends Service，构造期校验 fallbackMaxWords、fallbackMaxBytes、maxTitleBytes 三个必填上限，并注册两个投影单元：客户端可见的 title（apply 只取 session/title 的 title）与 host-only 的 titleInput（折叠 first、count、lastSeq）；完整消息不进投影，执行时用 collectSessionTitleMessages() 现扫日志。契约是 SessionTitleProvider、SessionTitleProviderRequest、SessionTitleProviderResult；register() 只收一个提供者，第二次抛错，disposer 卸载时先 abort 在途工作再 drain。排期在 onUserMessage：过滤非人类文本，遇 user 源标题直接 return（rename 钉住），shouldSchedule 为 all-prompts 或（无 parentSession 且 count 为 1 且无标题），命中即 supersede 出新 revision 挂 pending，真正启动要等 onRequestHeader 或 onMainRequest 拿到一致 route。并发靠 SessionTitleWorkState：supersede() abort 旧 controller 并递增 revision，activate() 用 AbortSignal.any 合成 controller、lifetime 与调用者 signal，assertCurrent() 在 append 前复查四项，故提供者忽略取消也写不进陈旧结果。runProvider 顺序为 ensureFallback → generate → validateResult → append；defer/track/drain 兜住脱钩任务。normalize.ts 剥控制符并按 UTF-8 字节截断；invariant.ts 挂 internal/dispatch 校验 messageSeqs 与来源的对应关系。",
+    "boundary": "归它管：何时生成（cadence 的解释权）、谁能写 session/title（唯一 writer）、写入前怎么洗（normalize、字节上限、messageSeqs 归属校验）、并发谁赢（revision + AbortController + assertCurrent）、钉住与解锁（user 源 pin，refresh 是唯一 unpin）、以及两个投影单元的定义。不归它管：标题内容怎么来——generate() 归提供者，本包连 LLM 都不 import；路由、prompt、timeout 归 session-title-llm；删除、搜索、列表索引、UI 渲染都不做。划线依据：凡需跨会话持久可重放的决策归服务，凡一次性、可替换、带 token 与延迟代价的决策归提供者。",
+    "tour": [
+      {
+        "file": "packages/session/session-title/src/index.ts",
+        "line": 295,
+        "sym": "SessionTitleService",
+        "note": "唯一的 Cordis Service：inject 两个依赖，标题的调度、裁决、落盘全部收在这里"
+      },
+      {
+        "file": "packages/session/session-title/src/index.ts",
+        "line": 507,
+        "sym": "onUserMessage.shouldSchedule",
+        "note": "cadence 的解释权在服务：all-prompts 每条都排，first-prompt 仅限无父会话、count 为 1 且尚无标题"
+      },
+      {
+        "file": "packages/session/session-title/src/index.ts",
+        "line": 674,
+        "sym": "assertCurrent",
+        "note": "append 前复查 provider、revision、session、signal 四项，过期完成即使跑完也写不进日志"
+      },
+      {
+        "file": "packages/session/session-title/src/index.ts",
+        "line": 340,
+        "sym": "titleInput projection",
+        "note": "只折叠 first/count/lastSeq 的 host-only 单元，让资格判断 O(1)，完整消息留给执行时现扫"
+      },
+      {
+        "file": "packages/session/session-title/src/invariant.ts",
+        "line": 33,
+        "sym": "validate",
+        "note": "持久不变式：messageSeqs 为空当且仅当来源是 user，且每个 seq 必须指向更早的人类消息"
+      }
+    ],
+    "gotchas": "三个上限全必填、无默认，fallbackMaxBytes 大于 maxTitleBytes 构造期即抛错。register 至多一次，想组合策略须自写一个 provider 内部定优先级。rename 钉住标题后不再排自动生成，只有 refresh() 解锁；refresh 在无提供者且当前是 user 源时会用 fallback 覆盖用户标题（appendFallback 同步，注释明说覆盖就是目的）。自动失败只 warn、保留旧标题、不重试，只有显式 refresh 才 reject。自动工作永不阻塞主响应，过期完成写不进日志。fork 继承标题且不自动重生成。",
+    "analogy": "把它想成病历封面上那张贴纸的管理员：贴纸只能由他写，写完贴进病历本，翻旧档、复印、换页都还在。病人自己也可以写一张贴上去，一旦他写了，管理员就不再自动换，除非病人明确说重贴一张（refresh）。至于这句话该怎么概括，是请来的速记员（provider）干的，管理员只决定何时请、请谁、谁的稿子算数；两人同时交稿只认最新版。"
+  },
+  {
+    "group": "session",
+    "dir": "session-title-llm",
+    "short": "session-title-llm",
+    "oneLiner": "三个标题提供者的共同大脑：把路由、装帧、预算、超时、取消与输出校验做成一份策略",
+    "why": "没有它，first-prompt 与 all-prompts 就得各自实现一遍路由从哪取、prompt 怎么写、输入超限怎么办、超时怎么算、流式怎么拼、什么输出算废。两处实现必然漂移：一个截断输入另一个报错，一个等 timeout 另一个不等。更现实的是第三方接入成本：想挂自研策略的人只能照抄其中一个插件的整段实现，而其中一处的 bug 不会因另一处被修复而消失。它还把 session/title-llm-request 审计事件集中在一处，删掉它就没有任何包记录辅助请求原文，事后无法复盘错误标题是怎么问出来的。",
+    "position": "上游是两个（未来可能更多）提供者插件：它们 import registerSessionTitleLlmProvider，在 apply() 里传入自己的 id、cadence 与 selector；本包不导出 name/inject/apply，因此不是 Cordis 插件，只是被调用的库。横向上，注册期它经 ctx.sessionTitle.register 变成服务眼里的一个 provider，生成期经 ctx.llm.stream() 发辅助请求、经 request.session.append('session/title-llm-request') 写审计事件。下游依赖 dsh-llm 的 createUserMessage 与 BlockAssembler、dsh-timeout 的 deadline 与 MAX_TIMER_DELAY_MS、dsh-session-title 的 normalizeSessionTitle。数据流：generate(request) → selectMessages → frameMessages → resolveRoute → 先 append 审计事件 → stream → 拼块 → 校验 → 回结果交服务 append。取消单向往下传：服务给 signal，本包再与 timeoutMs 合成一个 deadline signal 下递。",
+    "inside": "单文件 src/index.ts 分四层。配置层：SessionTitleLlmConfig 五个必填项加可选的 provider/model 对，SessionTitleLlmConfigFields 全部 required、故意不给默认值；resolveSessionTitleLlmConfig 再复核未知 key、正整数、timeoutMs 上限、provider 与 model 同进同出，最后 deepFreeze。注册层：registerSessionTitleLlmProvider 只做校验配置、brand id、调 ctx.sessionTitle.register 三件事，其 generate 实质只有一行——selectMessages(request.messages) 后交给 generateSessionTitleWithLlm，cadence 与选消息归插件，其余全是共享策略。请求层：先 throwIfAborted，空选集抛错；frameMessages 把 { seq, text } 数组 JSON.stringify 成一条用户消息，用 JSON 而非分隔符，让人类的任意文本都破坏不了结构；先量 UTF-8 字节，超限抛错而非截断；resolveRoute 取显式 provider/model 对或日志里 request/header 的主请求 route；deadline(request.signal, timeoutMs, SESSION_TITLE_TIMEOUT_CODE) 把取消与超时合成一个 signal 给 ctx.llm.stream，options 的 purpose 为 'session-title' 且刻意不带 loop 请求身份，DeepSeek 适配器据此关 thinking。记录层：stream 之前先 append 审计事件。校验层：BlockAssembler 边收边查 signal，finishError 只放 'stop' 过，tool-call 与空文本全拒。",
+    "boundary": "归它管的是一次辅助调用的全部「怎么发」：prompt 措辞与语言目标、输入装帧与字节上限、路由来源、输出 token 上限、端到端 deadline、流式装配、什么算有效输出，以及审计事件的形状。不归它管：何时发（服务排期）、结果归谁（服务 append 并决定 warn 还是 reject）、cadence 语义（插件声明）、消息选谁（调用方传 selector）、最终字节上限（服务用 maxTitleBytes 再洗一遍）。划线依据：凡跟模型打交道的代价与安全归它，凡跟会话日志打交道的持久与一致归服务，这也是它不导出 name/apply 的原因——它不是可挂载单元。",
+    "tour": [
+      {
+        "file": "packages/session/session-title-llm/src/index.ts",
+        "line": 162,
+        "sym": "registerSessionTitleLlmProvider",
+        "note": "只做注册：cadence 与 selector 由调用方注入，策略本身不接受参数化改写"
+      },
+      {
+        "file": "packages/session/session-title-llm/src/index.ts",
+        "line": 181,
+        "sym": "resolveRoute",
+        "note": "显式 provider/model 对优先，否则沿用日志里 request/header 的主请求路由，都没有就抛错"
+      },
+      {
+        "file": "packages/session/session-title-llm/src/index.ts",
+        "line": 251,
+        "sym": "maxInputBytes check",
+        "note": "先量整个装帧后 JSON 的字节，超限抛错而不是截断，宁可失败也不静默丢上下文"
+      },
+      {
+        "file": "packages/session/session-title-llm/src/index.ts",
+        "line": 271,
+        "sym": "append('session/title-llm-request')",
+        "note": "先冻存再发出：审计事件携带 system、messages、route、maxTokens，模型失败也留原文"
+      },
+      {
+        "file": "packages/session/session-title-llm/src/index.ts",
+        "line": 210,
+        "sym": "finishError",
+        "note": "只有 stop 通过，max-tokens、tool-calls 与未知 finish reason 全部翻译成失败"
+      }
+    ],
+    "gotchas": "它不是 Cordis 插件，不能写进 plugins 列表，只能通过提供者插件间接生效。五个数值全必填且无默认，provider 与 model 必须成对，缺一个就报错；不配就依赖已入日志的 request/header，所以在首次主请求之前 refresh 必然失败。maxInputBytes 量的是整个装帧后 JSON，超限直接失败而非截断。只收纯文本输出，tool-calls、被截断、非 stop 结束一律拒绝。请求记录先于发送入日志，模型失败也不回滚。",
+    "analogy": "它是所有速记员共用的一本《速记规范》：稿纸怎么折（JSON 装帧）、最多写几行（maxInputBytes 与 maxOutputTokens）、几点交稿（timeoutMs）、什么字迹算废（只收纯文本、非 stop 全退），以及交稿前必须先把底稿存档。速记员自己只决定抄第一句还是抄整段，其余照办，所以换人也不改质量口径。"
+  },
+  {
+    "group": "session",
+    "dir": "session-title-first-prompt-llm",
+    "short": "session-title-first-prompt-llm",
+    "oneLiner": "只摘第一条人类消息去问模型的标题提供者，一条会话最多自动问一次",
+    "why": "没有它，部署方要么接受标题永远是第一句话的前几个词（fallback 的粗糙截断），要么只能上 all-prompts 那套每轮都重问的昂贵方案。它是最便宜的一档智能标题：一条会话只发一次辅助请求，输入恒定极小，几乎不可能撞上 maxInputBytes。反事实：删掉它，想要像样的标题就只剩 all-prompts，长会话的 token 与延迟成本被强加给只需要一个好开场标题的场景。",
+    "position": "叶子插件：name 为 'session-title-first-prompt-llm'，inject 为 ['sessionTitle', 'llm', 'sessions']，apply() 里只做一次 registerSessionTitleLlmProvider 调用。上游是部署配置（plugins 列表加共享 LLM 的必填配置）；向下依赖 dsh-session-title-llm 的策略与 dsh-session-title 的注册口。数据方向：服务把全量 eligible messages 交给它，selector 只取 messages[0] 丢回去，策略包装帧成一次 LLM 请求，结果回到服务 append。它只是中间一道极窄的闸门，不持有状态、不写日志、不发请求。",
+    "inside": "单文件 41 行只有两段有结构。Config 的类型别名到 SessionTitleLlmConfig，值用 SessionTitleLlmConfigFields 逐字段重建 z.object——注释明说这是 Loader 要求每个插件导出自己可静态遍历的 schema，校验器仍共享，源码里的 jscpd:ignore 就是为这段刻意重复开的。apply() 只有一行 registerSessionTitleLlmProvider，参数依次是共享配置、插件名（同时作为写进标题事件的 provider id）、cadence 字符串 'first-prompt'，以及唯一有信息量的 selector：取 messages[0]，取不到就抛，绝不退化成用全部消息。cadence 由服务在 onUserMessage 里解释——只有无 parentSession、count 为 1 且当前无标题时才排期，因此 fork、追问与 rename 之后都不再触发。",
+    "boundary": "归它管三件小事：选哪条消息（第一条）、声明 cadence（'first-prompt'）、暴露可静态遍历的配置 schema。不归它管：何时触发（服务按 cadence 排期）、怎么问模型（session-title-llm）、结果怎么洗与落盘（服务）、fork 与追问怎么处理（服务）。划线依据是插件层只保留无法从配置推导的那一点差异——一个 selector 与一个 cadence 字符串，其余全部下沉，所以两个 cadence 插件的实质差异只有两行代码。",
+    "tour": [
+      {
+        "file": "packages/session/session-title-first-prompt-llm/src/index.ts",
+        "line": 11,
+        "sym": "name",
+        "note": "插件名同时就是写进 session/title 事件的 provider id，谁生成的标题可追溯"
+      },
+      {
+        "file": "packages/session/session-title-first-prompt-llm/src/index.ts",
+        "line": 18,
+        "sym": "Config",
+        "note": "逐字段重建 schema 只为满足 Loader 的静态遍历要求，校验器与 all-prompts 共享"
+      },
+      {
+        "file": "packages/session/session-title-first-prompt-llm/src/index.ts",
+        "line": 35,
+        "sym": "apply",
+        "note": "一行注册定完 cadence 与 selector，策略、预算、取消全部委托给共享包"
+      },
+      {
+        "file": "packages/session/session-title-first-prompt-llm/src/index.ts",
+        "line": 36,
+        "sym": "selectMessages",
+        "note": "只取 messages[0]，取不到就抛错而非退回全量，保证这条 cadence 的输入恒为一条"
+      }
+    ],
+    "gotchas": "第一条消息会过时：聊到第三十轮，标题还停在开场白。自动失败只 warn 并保留 fallback，只有显式 refresh() 才重试。fork 永远不自动重取标题，即使它继承的第一条消息来自父会话。route 默认继承主请求，未配 provider/model 对又在首次主请求前 refresh 会失败。它与 all-prompts 互斥——服务只收一个 provider。",
+    "analogy": "它像前台在客人进门时记下的第一句话：只记一次，写完挂成门牌，之后聊到哪儿都不再改。好处是几乎不花钱，一条会话只麻烦速记员一次；坏处是长谈之后门牌还停在开场白，除非客人自己说重贴一块（refresh）。"
+  },
+  {
+    "group": "session",
+    "dir": "session-title-all-prompts-llm",
+    "short": "session-title-all-prompts-llm",
+    "oneLiner": "每条人类消息都重新问一次模型的标题提供者，让标题随会话演进",
+    "why": "没有它，标题在第一条消息后就冻结，长会话越来越失真：用户翻列表看到的是开场白，而不是现在真正在做的事。反事实：删掉它，需要标题跟随会话的部署只能自写一个 provider，而服务的 register 只允许一个，等于被迫换掉官方策略、自己承担路由、预算与取消的全部正确性。它还顺带覆盖 fork 与子会话——每条新的 eligible 消息一律重排，分支出去的会话也能拿到自己的标题。",
+    "position": "与兄弟插件完全对称的叶子：name 为 'session-title-all-prompts-llm'，inject 为 ['sessionTitle', 'llm', 'sessions']，apply() 里同样只有一次 registerSessionTitleLlmProvider。上游是部署配置，下游是 dsh-session-title-llm 的策略与 dsh-session-title 的注册口。数据方向：服务每 supersede 出一个新 revision，就把该 revision 之前的全量 eligible messages（含 seed 历史与子会话 prompt）递给它，恒等 selector 原样回传，结果回到服务 append 成新标题覆盖旧的。它同样不持有状态、不写日志、不发请求。",
+    "inside": "单文件 37 行，结构与 first-prompt 逐字对称：相同的 name/inject 形状、同一套用 SessionTitleLlmConfigFields 重建的 Config schema（同样带 jscpd:ignore）、同一行 registerSessionTitleLlmProvider。实质差别只有三处：插件名与 provider id 是 'session-title-all-prompts-llm'，cadence 传 'all-prompts'，selector 是恒等函数 messages => messages——不复制、不过滤、不加权。服务对 'all-prompts' 的解释是每条新的 eligible user/message 都 supersede 一次，输入随会话单调增长。它把选哪些消息彻底交还服务，自己只声明「我代表每轮重算的节奏」；路由、装帧、字节上限、超时、取消与输出校验全由共享策略包决定。",
+    "boundary": "归它管的只有：声明 cadence 为 'all-prompts'、原样透传全部消息、暴露自己的配置 schema。不归它管：何时触发（服务每收到一条 eligible 消息就排）、消息是否该裁剪或加权（它明确不做，README 把无加权、无过滤、无人工标题优先列为已知限制）、输入超限怎么办（共享策略直接失败，不截断）、结果怎么洗与落盘（服务）。划线依据与兄弟一致：插件层只保留无法从配置推导的差异，即一个 selector 与一个 cadence 字符串。",
+    "tour": [
+      {
+        "file": "packages/session/session-title-all-prompts-llm/src/index.ts",
+        "line": 11,
+        "sym": "name",
+        "note": "provider id 记进 session/title 事件，让这条标题出自哪个策略可追溯"
+      },
+      {
+        "file": "packages/session/session-title-all-prompts-llm/src/index.ts",
+        "line": 18,
+        "sym": "Config",
+        "note": "与兄弟插件同一套共享字段、无默认值，逼部署方显式给出预算与超时"
+      },
+      {
+        "file": "packages/session/session-title-all-prompts-llm/src/index.ts",
+        "line": 35,
+        "sym": "apply",
+        "note": "恒等 selector 加 all-prompts cadence 就是本包全部内容：每来一条新消息就重算一次标题"
+      }
+    ],
+    "gotchas": "输入随会话单调增长，装帧后 JSON 一旦超过 maxInputBytes 就整次失败（不截断、没有摘要的摘要），自动场景只 warn 并保留旧标题，这是长会话最常踩的雷。每个新 prompt 都可能触发一次辅助请求，成本随轮次线性增长。消息一律平等：无加权、无过滤、无人工标题优先。每次输入都是全量，开头变一个 JSON token 辅助缓存就断。它与 first-prompt 互斥。",
+    "analogy": "它像一块每来一位新客人就重写的门牌：客人每说一句，前台就重新概括整段对话再挂上去。牌子永远贴着当前话题，但聊得越久重写越贵；某天整段对话长到抄不进一张稿纸，这次重写就作废，牌子还挂着上一次的字。"
+  },
+  {
+    "group": "session",
+    "dir": "session-turn-outline",
+    "short": "session-turn-outline",
+    "oneLiner": "把整份会话日志折叠成 turnOutline 目录，让客户端能跳到任意一轮而无需加载它",
+    "why": "没有它，轮次导航只能覆盖已翻页加载进来的那一窗事件：用户想回到三天前的某一轮，客户端既不知道那一轮存在，也不知道该把窗口翻到哪个 seq 才能完整载入它，只能从头往前翻或放弃。反事实：不加载这个插件，turnOutline 键根本不存在（inject 让 fiber 保持 pending，什么都不注册），ui-chat 的轮次导轨退化成仅已加载窗口导航，长会话的历史可导航性塌掉一半。它不写事件、不发请求，塌的只是读模型这一层。",
+    "position": "上游是客户端：ui-chat 的轮次导轨消费 turnOutline 的 wire 值，preview 的截断口径与 50/120 两个预算在客户端被逐字镜像（turn-navigation.ts 明写 wire 边界禁止与 host 共享代码）。真正的驱动者是 session-projection 注册表：单元由它驱动 fold、做快照与 change feed 分发、并校验落盘恢复的值。下游：inject = ['sessionProjections'] 是唯一硬依赖，apply() 只调 ctx.sessionProjections.register()；它读的 turn/start、user/message、assistant/message、turn/end 由 agent loop 与 session 写入。数据单向：日志驱动 fold，wire 值经投影载体送客户端，客户端再拿 entry.seq 反向请求把窗口翻到该 seq。",
+    "inside": "src/index.ts 只有 30 行，注册是挂载 fiber 上的 effect，卸载即消失。src/projection.ts 承载全部机制：turnOutlineProjectionDefinition 的 key 为 'turnOutline'，stateVersion 为 2；两个预算 PROMPT_PREVIEW_LIMIT = 50 与 RESPONSE_PREVIEW_LIMIT = 120，注释说明按 13px 与 12px 在约 276px 宽度下算出，对应一行与最多三行导轨卡片。preview() 只遍历 text 块且逐块先 slice 到 limit*2 再拼——fold 跑在每条消息事件上，不能为几十字预览去正则化几 MB 文本。fold 四个 case：turn/start 追加 { turn, seq: event.seq, prompt: '', response: '' }，用 turn/start 而非 user/message 锚定，因为 loop 在 turn 的 prompt 与 steps 之前就写了它，从该 seq 往回翻一窗即完整载入整轮；turn 号不前进就原样返回 state；user/message 只认 source.kind === 'user' 且仅当最新条目 prompt 为空才填；assistant/message 把预览写进 state.draft，turn/end 再提交到最新条目的 response（turn/end 不带文本），最新带文本的消息胜出。无关事件返回同一 state 引用，draft-only 变更保持 turns 数组身份，配合注册表两道 Object.is 闸门，change feed 每轮最多推三次；wire.view 就是 state.turns，走整值规则。",
+    "boundary": "归它管的是 turnOutline 一个键的 fold 规则：什么算一轮开始、预览怎么截、draft 何时提交、以及条目严格按 turn 递增的秩序（schema 的 superRefine 在落盘恢复时校验，坏行丢弃而非喂出坏 fold）。不归它管：事件从哪来（agent loop 与 session 写 turn/start、turn/end）、值怎么送客户端（session-projection 的快照、change feed 与缓存）、turn 号怎么分配（host 在 payload 里给）、以及模型侧任何事——它不发请求、不注册 model-facing 的东西。划线依据是它是纯读模型：输入只有已提交日志，输出只有一个 wire 值。",
+    "tour": [
+      {
+        "file": "packages/session/session-turn-outline/src/projection.ts",
+        "line": 85,
+        "sym": "turnOutlineProjectionDefinition",
+        "note": "唯一部件：key、stateVersion、fold、wire view 全在这里，插件本体只有注册一行"
+      },
+      {
+        "file": "packages/session/session-turn-outline/src/projection.ts",
+        "line": 95,
+        "sym": "apply case 'turn/start'",
+        "note": "用 turn/start 的 seq 而非 prompt 的 seq 锚定，因为从它往回翻一窗就能完整载入整轮"
+      },
+      {
+        "file": "packages/session/session-turn-outline/src/projection.ts",
+        "line": 117,
+        "sym": "apply case 'assistant/message'",
+        "note": "响应先写 draft，turn/end 才提交：turn/end 不带文本，最新一条带文本的消息胜出"
+      },
+      {
+        "file": "packages/session/session-turn-outline/src/projection.ts",
+        "line": 36,
+        "sym": "preview",
+        "note": "逐块先截到 limit*2 再拼，避免为几十字预览去正则化几 MB 文本"
+      },
+      {
+        "file": "packages/session/session-turn-outline/src/index.ts",
+        "line": 28,
+        "sym": "apply",
+        "note": "注册是挂载 fiber 上的 effect，卸载即移除键；没有投影注册表时 fiber 保持 pending"
+      }
+    ],
+    "gotchas": "只有组合了 session-projection 的装配才有 turnOutline 键，别处客户端退回已加载窗口导航。整值规则意味着每次推送都是完整目录，会话越长越大（README 估算满 CJK 预算约每轮 600 字节）。响应预览只在 turn/end 提交，未闭合的轮次只有 prompt 预览。纯图片或纯命令的轮次 prompt 恒为空串，只能按 turn 号导航；无文本产出的轮次连 response 也没有。客户端 preview 是故意复制的镜像，改 host 预算须同步改 ui-chat。",
+    "analogy": "它像书前面的目录页：每章记着章节号，以及翻到第几页能完整看到这一章（turn/start 的 seq），再配一句开头和一句结尾摘录。不用摊开整本书就能跳到任意一章。摘录只取开头第一句和最后一句，所以图片章是空白，正在写的那章要写完才有结尾摘录。"
+  }
+]

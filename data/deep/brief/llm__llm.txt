@@ -1,0 +1,461 @@
+# @deepseek-ai/dsh-llm
+path: packages/llm/llm
+desc: Provider-neutral LLM service interface for the DeepSeek Harness
+deps: @deepseek-ai/dsh-util-crypto, @deepseek-ai/schemastery, @deepseek-ai/dsh-timeout, @deepseek-ai/dsh-brand, @deepseek-ai/dsh-util-values, @deepseek-ai/dsh-typert-protocol
+peers: @deepseek-ai/cordis
+srcFiles: 14  srcLoc: 3832
+
+## README.md (179 行)
+---
+description: "The provider-neutral model-call service for users and maintainers streaming requests, registering provider adapters, or resolving model metadata."
+kind: "package-reference"
+---
+
+# @deepseek-ai/dsh-llm
+
+English | [中文](README.zh.md)
+
+## Summary
+
+Use `@deepseek-ai/dsh-llm` to stream model calls through configured provider adapters, discover models, and resolve model capabilities and call defaults. Callers must keep all model-visible input reconstructable from the session log. Loop-built requests arrive deep-frozen, so extensions and adapters cannot rewrite them. Each stream is one provider attempt: provider-specific translation stays with its adapter, while the optional `@deepseek-ai/dsh-llm-retry` package re-runs failed requests. Streams always end with a terminal result, so callers can handle success, failure, and cancellation consistently.
+
+## Table of Contents
+
+- [Use this package](#use-this-package)
+- [Understand the implementation](#understand-the-implementation)
+- [Further Exploration](#further-exploration)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="use-this-package"></a>
+## Use this package
+
+`listModels` describes models offered by catalog-driven interfaces. Core resolution and streaming can still accept unlisted ids. The GUI requires catalog membership for selection and submission; adapters intended for GUI use must implement `listModels` and advertise their available models. The base implementation returns an empty list and therefore offers no GUI models.
+
+Any composition that calls a model provider — an agent loop, a session-title generator, a compaction summarizer — streams its requests through this service. Mount it together with at least one provider adapter; the service itself has no configuration and no provider wire code.
+
+### When to choose it
+
+Choose this package whenever a plugin or composition needs to call a model: it is the only supported path into provider adapters, and it keeps one vocabulary across the loop, the session log, and every consumer. Do not reach for it when you need provider-specific wire behavior (that belongs in an adapter such as `dsh-llm-deepseek` or `dsh-llm-pi-ai`) or retry execution (that belongs in `dsh-llm-retry`).
+
+### Minimal composition
+
+Mount the service and at least one adapter, then select the provider by name in every request:
+
+```yaml
+- name: '@deepseek-ai/dsh-llm'
+- name: '@deepseek-ai/dsh-llm-deepseek-api-key'
+  config:
+    apiKeyEnv: DEEPSEEK_API_KEY
+```
+
+A stream returns token-level chunks and always ends with one terminal `finish` chunk. `BlockAssembler` turns the chunks into content blocks and messages; `AssistantStreamAccumulator` preserves their exact timestamps and token boundaries in a compact representation that the loop embeds in one durable attempt settlement:
+
+```text
+for await (const chunk of ctx.llm.stream({
+  provider: 'deepseek-official',
+  model: 'deepseek-v4-flash',
+  messages: [{ role: 'user', content: [{ type: 'text', text: 'Hello' }] }],
+})) {
+  // chunks: block-start, text-delta, ..., usage, finish
+}
+```
+
+After a successful mount, `ctx.llm.listProviders()` reports the registered routes in registration order.
+
+`GenerateOptions.messages` accepts durable `Message` values and request-only `RequestUserInput` values. Request-only inputs carry user-role content with no `id` or `source`; Session writes and Agent delivery still require durable messages. Callers keep auxiliary inputs unchanged until the stream settles. A caller that records its exact request, such as session-title generation, must use durable messages.
+
+### What you can do
+
+- **Stream one model call** — `ctx.llm.stream(options)` yields raw chunks (token-level deltas) for any registered provider and model; consumers assemble them with `BlockAssembler`.
+- **Register provider adapters** — an adapter owns one or more provider routes, and its registration captures that route's retry policy; registering the same route twice fails with `DUPLICATE_ADAPTER`.
+- **Expose and activate providers through configuration** — adapters declare configurable-provider routes plus a settings namespace, so configuration surfaces can activate dormant providers and edit connection facts without a restart. `LlmConfigurableProvider.error` reports a configuration diagnostic for repair; unaffected models can remain serviceable.
+- **Discover and resolve models** — List the models an adapter advertises, interrogate an endpoint for the models it serves (candidates carry optional `inputModalities`; absence means unknown), and resolve one exact model's context window, output default, reasoning efforts, input modalities, and system prompt update mode: `LlmResolvedModelInfo.systemPromptUpdate` is `'in-history'` when the model reads the latest `system` message at any position as the effective system prompt and absent when only a leading system message is read; `normalizeModelInfo` rejects any other value with `INVALID_MODEL_INFO`.
+- **Validate call config** — an explicit or configured reasoning effort is checked against the exact model before any provider I/O, and an adapter-configured output cap is materialized when the request omits one.
+- **Read an embedded Assistant stream without expanding it** — `assistantStreamFirstTokenTime` (first token), `assistantStreamHasVisibleContent` (any visible content), and `assistantStreamHasVisibleText` (any visible text) answer their questions from the compact records with early exit; `lastAssistantStreamChunk` scans backward to the last raw chunk of one type, `assistantStreamChunks` and `joinAssistantStreamText` scan the whole stream, and `assembleAssistantStream` feeds a `BlockAssembler` one joined delta per run with the same blocks, usage, and replay state as the per-member expansion. `runFirstTokenTime` and `runFirstVisibleTime` do the early-exit scan for one packed run, and `isTokenDelta`, `isVisibleChunk`, and `chunkHasVisibleText` define the token and visibility rules for a single chunk. `expandAssistantStream` remains the validating path for records read at a durable boundary; it is not memoized, because a retained expansion costs roughly ten times the compact stream for as long as the event lives.
+
+### Failures and recovery
+
+Every stream ends in exactly one terminal `finish` chunk: `{ kind: 'error', failure }` on failure, `{ kind: 'aborted', failure }` on cancellation. Failures carry stable codes such as `NO_ADAPTER`, `MISSING_CREDENTIAL`, `AUTH`, `RATE_LIMIT`, and `CONTEXT_WINDOW_EXCEEDED`; consumers route on the code, never on message text. `QUOTA` is provider-neutral exhaustion, while `ACCOUNT_QUOTA` is reserved for a first-party account balance that the current product can replenish. A request naming an unregistered provider fails with `NO_ADAPTER`, and a malformed credential fails with `INVALID_CREDENTIAL` instead of surfacing as an opaque fetch error. This service never re-runs a request: retrying is the job of `dsh-llm-retry` at the agent's failed-step extension point.
+
+-----
+
+<a id="understand-the-implementation"></a>
+## Understand the implementation
+
+<details>
+<summary>Implementation internals — click to expand</summary>
+
+This section explains the design behind the service; the observable behavior is fully covered in [Use this package](#use-this-package).
+
+### Design philosophy
+
+The service is built on one separation: **the logical contract is provider-neutral, adapters own the wire.** It defines the canonical message, content-block, and stream-chunk vocabulary once, and every provider adapter translates only its own wire format into that vocabulary. The registry is the topology owner — adapter routes, configurable-provider entries, and discovery offers all register here and are disposed with their fiber — while an agent-loop request stays a pure function of the session log: loop-built requests arrive deep-frozen, so listeners and adapters read them and never rewrite them.
+
+### Source map
+
+| File | Role |
+|---|---|
+| [`src/index.ts`](src/index.ts) | The `LlmRuntime` service: adapter registry, configurable-provider directory, model discovery, call preparation, and the streaming boundary |
+| [`src/types.ts`](src/types.ts) | The `StreamChunk` protocol, content-block map, finish reasons, and shared vocabulary |
+| [`src/message.ts`](src/message.ts) | Immutable message constructors shared by delivery, history, and requests |
+| [`src/assembler.ts`](src/assembler.ts) | `BlockAssembler`: incremental chunk-to-block assembly |
+| [`src/assistant-stream.ts`](src/assistant-stream.ts) | Compact timed Assistant stream accumulation, strict validation, exact expansion, and record-level readers |
+| [`src/call-config.ts`](src/call-config.ts) | Call-config validation, adapter-default materialization, and request freezing |
+| [`src/retry-policy.ts`](src/retry-policy.ts) | Provider-owned retry policy resolution (normal and always modes) |
+| [`src/error.ts`](src/error.ts) | `HarnessError`/`LlmError` taxonomy and provider-neutral failure codes |
+| [`src/content.ts`](src/content.ts) | Shared file and image helpers: content walks, file projection, image offload accounting, and offloaded-image projection |
+| [`src/api-key.ts`](src/api-key.ts) | Credential format check shared by every adapter |
+| [`src/adapter-failure.ts`](src/adapter-failure.ts) | Failure normalization into terminal finish chunks |
+
+### Main flow
+
+A request is validated against its exact model's capability — context window, output default, reasoning efforts, input modalities, and `systemPromptUpdate` mode — and any adapter-configured defaults are materialized. The runtime preserves freezing for already-frozen input; hand-built callers own input immutability. `prepareCall()` binds those facts, detached context, and retry policy to the exact adapter generation that performs terminal dispatch, so HMR or dynamic settings cannot combine one generation's image capability with another generation's endpoint. An image-capable adapter projects durable references into route-specific request versions; `resolveImageAttachmentAccess()` separately maps an attachment provider's optional host object into the current tool execution world without changing the request image or its `variantId`. A text-only route receives deterministic per-image placeholders, including tool-role result images, without rewriting append-only session history. Durable `FileBlock` references never reach any adapter: request assembly replaces each one, including tool-role result occurrences, with deterministic handle text naming the file and its saved read-only path, resolved through the mounted attachment and filesystem providers. `ctx.llm.fileRequestText(ref)` exposes that exact synchronous projection to request measurement. An image occurrence derived with `offloaded: true` reaches every route as placeholder text through `projectOffloadedImages()`. An image-capable route whose retained occurrences exceed its `LlmImageRequestBudget` at their exact bytes fails with `IMAGE_OFFLOAD_REQUIRED` naming the additional oldest occurrences (`requiredImageOffload()`), never with an unlogged projection; `dsh-compaction-image-offload` logs the selected occurrences in one `image/offload` event and retries. Adapters that charge visual tokens declare per-route `imageRequestPricing`, which `ctx.llm.imageRequestPricing(provider, model)` resolves synchronously for the token meter. Dispatch goes through the `llm/stream` waterfall, then chunks return as token-level deltas and every adapter outcome reaches the consumer as one terminal `finish` chunk.
+
+File detection reads current content, including tool-role result content, on every request without caching message identities or freeze state. The [file-scan decision](../../../.agents/notes/implemented/simplification/2026-09-07-file-content-scan.md) records the measured traversal cost.
+
+### Invariants
+
+- **Model-visible ⟺ logged** — callers must keep every provider request's model-visible input reconstructable from the session log; loop-built requests arrive deep-frozen and cannot be rewritten.
+- **Replay state travels only within one adapter** — assistant replay state rides along only when the same adapter instance owns the historical and target routes; otherwise it is dropped before dispatch.
+- **Prepared calls are one-shot** — a prepared call can be dispatched exactly once, and its call-config fields must match the prepared config.
+- **Image projection follows the captured route** — durable `ImageBlock` references become route-specific request versions only for image-capable models; text-only models receive stable placeholders.
+- **File projection is unconditional** — no provider receives file bytes; every route gets one deterministic handle line per `FileBlock`, and the model reads the saved copy with its file tools on demand.
+- **Protocol ordering** — `usage` precedes `finish`, tool arguments stay raw JSON strings, and nothing follows the terminal `finish`.
+- **Registry mutations are atomic** — route and directory registration validates the whole candidate set before anything moves, so a refused change leaves the previous state serving.
+
+</details>
+
+-----
+
+<a id="further-exploration"></a>
+## Further Exploration
+
+Read these pages when the package-level contract is not enough. They move from the shared types to the concrete adapters, the retry executor, and the measurement service.
+
+- [LLM streaming subsystem](../../../docs/subsystems/llm-streaming.md) — the message and block types, compact Assistant stream records, the `StreamChunk` protocol, and the adapter contract.
+- [llm-deepseek adapter](../llm-deepseek/README.md) — the direct DeepSeek Messages implementation.
+- [llm-pi-ai adapter](../llm-pi-ai/README.md) — the pi-ai-backed multi-provider implementation.
+- [llm-retry](../llm-retry/README.md) — the retry executor that re-runs failed model requests.
+- [Token meter](../token-meter/README.md) — replay-aware request and context pressure measurement.
+- [Twin LLM adapters](../../../.agents/notes/implemented/architecture/2026-06-13-twin-llm-adapters.md) — why the DeepSeek route ships two structurally different adapters.
+- [Terminal LLM stream failures](../../../.agents/notes/implemented/architecture/2026-07-29-terminal-llm-stream-failures.md) — the service boundary between model-request outcomes and plugin failures.
+
+-----
+
+<a id="model-experience"></a>
+## Model Experience
+
+None, as the LLM service adds no content; adapters choose when to add the shared image descriptors and per-image placeholders exported by this package.
+
+#### KV Cache effect
+
+Reasoning-effort materialization preserves the assembled request prefix. Image identity and request-preview text are deterministic, while an optional execution-world path is resolved for each request; a changed path or an offload decision can prevent reuse from that image.
+
+## Known Limitations and Deferred Work
+
+<a id="known-limitations-and-deferred-work"></a>
+
+
+These limits define where this service stops and other packages or future work begin. They are current package constraints, not a task backlog.
+
+- **No retry execution, caching, or rate limiting ships in this service** — provider registration stores the retry policy, but a stream remains a single provider attempt; `@deepseek-ai/dsh-llm-retry` executes the policy at durable agent-step boundaries.
+- **`GenerateOptions` sampling is `temperature`/`maxTokens`/`stop` only** — no `tool_choice`, `top_p`, or penalty fields; the vocabulary grows when a producer lands ([dropped inert knobs](../../../.agents/notes/archived/simplification/2026-07-04-drop-inert-request-knobs.md)).
+- **Variants normally require a producer** — `prefill`, per-tool `strict`, block `cache` hints, and the `agent` message-source variant have no producer ([Agent Note](../../../.agents/notes/archived/simplification/2026-07-04-prune-producerless-vocabulary-variants.md)).
+- **`BlockAssembler` handles core block kinds only** — a plugin-added block type whose stream is never closed by `block-end` makes `blocks()` throw.
+- **`GenerateOptions.sessionId` is a locally-declared brand** — importing dsh-session's `SessionId` would create a dependency cycle.
+- **Tool updates require session history** — `GenerateOptions.tools` contains active definitions. `toolHistory` supplies the initial declarations and historically resolved additions from `Session.toolHistory()`. At adapter dispatch, `projectToolUpdates` constructs deferred declarations and retains removed definitions for `in-history`; `addition-only` omits removed definitions and removal messages. Unsupported routes receive active tools without developer messages or `deferLoading`. Missing history or a request prefix omitting recorded updates falls back to current declarations without developer messages. Explicitly deferred baseline tools remain deferred until their first retained addition block; declaring a deferred tool does not activate it.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+This Dev Note is non-authoritative working context: open questions and undecided directions. Shipped behavior and accepted rationale live in the sections above, the package code, and the linked Agent Notes.
+
+#### Open items
+
+- `GenerateOptions.sessionId` is a locally-declared brand because importing dsh-session's `SessionId` would create a dependency cycle; a future ids-owning package could dissolve the workaround.
+- Reasoning-effort identifiers are adapter-owned opaque strings resolved only against each adapter's advertised set; a shared cross-adapter effort vocabulary is not decided.
+- The `llm/adapters-updated` event is payload-free by design; consumers re-read the registries instead of receiving the new topology in the event.
+
+</details>
+
+
+## 源文件与导出符号
+
+### packages/llm/llm/src/adapter-failure.ts  (108 行)
+  16	fn	normalizeLlmFailure
+
+### packages/llm/llm/src/api-key.ts  (42 行)
+  18	type	ApiKeyRejection
+  21	type	ApiKeyCheck
+  36	fn	normalizeApiKey
+
+### packages/llm/llm/src/assembler.ts  (209 行)
+  38	class	BlockAssembler
+      members: L49 push, L98 ensure, L108 assemble, L124 mustGet, L135 assembled, L158 blocks, L169 interruptedBlocks, L182 usage, L187 finish, L196 replayState, L205 message
+
+### packages/llm/llm/src/assistant-stream.ts  (535 行)
+  14	iface	TimedStreamChunk
+  20	type	AssistantStreamRecord
+  47	type	AssistantStreamRun
+  53	type	RawStreamChunkType
+  100	class	AssistantStreamAccumulator
+      members: L108 push, L183 snapshot
+  202	fn	expandAssistantStream
+  250	fn	isTokenDelta
+  270	fn	isVisibleChunk
+  290	fn	chunkHasVisibleText
+  312	fn	runFirstTokenTime
+  323	fn	runFirstVisibleTime
+  333	fn	assistantStreamFirstTokenTime
+  349	fn	assistantStreamHasVisibleContent
+  361	fn	assistantStreamHasVisibleText
+  373	fn	lastAssistantStreamChunk
+  390	fn	assistantStreamChunks
+  406	fn	joinAssistantStreamText
+  425	fn	assembleAssistantStream
+
+### packages/llm/llm/src/attribution.ts  (69 行)
+  25	iface	AppIdentity
+  40	const	APP_IDENTITY
+  53	fn	userAgent
+  64	fn	attributionHeaders
+
+### packages/llm/llm/src/brand.ts  (77 行)
+  16	type	MessageId
+  23	fn	MessageId
+  31	type	ToolCallId
+  38	fn	ToolCallId
+  43	type	ProviderRequestId
+  50	fn	ProviderRequestId
+  55	type	LlmAttemptId
+  62	fn	LlmAttemptId
+  67	type	ReasoningEffortId
+  74	fn	ReasoningEffortId
+
+### packages/llm/llm/src/call-config.ts  (79 行)
+  23	iface	LlmCallConfig
+  36	iface	LlmCallConfigAdapterDefaults
+  49	fn	callConfigEquals
+  66	fn	markAgentLoopRequest
+  76	fn	isAgentLoopRequest
+
+### packages/llm/llm/src/content.ts  (493 行)
+  12	iface	ImageAttachmentAccess
+  22	type	ImageAttachmentAccessResolver
+  34	fn	resolveImageAttachmentAccess
+  76	fn	textOnlyImageText
+  91	fn	requestImageHandleText
+  108	fn	offloadedImageText
+  126	fn	contentHasImage
+  136	fn	contentHasFile
+  151	fn	fileHandleText
+  185	fn	projectFilesToText
+  195	fn	projectFilesToText
+  199	fn	projectFilesToText
+  251	fn	projectOffloadedImages
+  261	fn	projectOffloadedImages
+  265	fn	projectOffloadedImages
+  318	fn	requiredImageOffload
+  353	fn	projectImagesForTextModel
+  359	fn	projectImagesForTextModel
+  360	fn	projectImagesForTextModel
+  369	iface	ProjectedToolUpdates
+  424	fn	projectToolUpdates
+
+### packages/llm/llm/src/error.ts  (176 行)
+  13	class	HarnessError
+      members: L17 constructor
+  25	const	CONTEXT_WINDOW_EXCEEDED_CODE
+  28	const	QUOTA_EXCEEDED_CODE
+  31	const	ACCOUNT_QUOTA_EXCEEDED_CODE
+  42	const	EMPTY_RESPONSE_CODE
+  51	const	INVALID_CREDENTIAL_CODE
+  83	fn	isContextWindowExceededError
+  97	fn	isQuotaExceededError
+  117	fn	errorChain
+  164	fn	isHarnessError
+  175	const	IMAGE_OFFLOAD_REQUIRED_CODE
+
+### packages/llm/llm/src/index.ts  (1177 行)
+  declare module: declare module '@deepseek-ai/cordis' {
+  81	iface	LlmErrorOptions
+  96	class	LlmError
+      members: L105 constructor
+  151	fn	assertUsableApiKey
+  169	iface	PreparedLlmCall
+  195	iface	PreparedAdapterCall
+  208	class	LlmAdapter
+      members: L214 providerInfo, L223 providerRetryPolicy, L236 imageRequestPricing, L248 listModels, L261 resolveModel, L278 prepareCall, L290 stream
+  297	iface	AdapterRegistrationHandle
+  321	iface	DirectoryRegistrationHandle
+  342	class	LlmRuntime
+      members: L350 constructor, L355 emitAdaptersUpdated, L383 warnAdaptersListenerFailure, L396 registerAdapter, L432 prepareRoutes, L463 commitRoutes, L478 listProviders, L490 registerConfigurableProviders, L550 listConfigurableProviders, L564 registerModelDiscovery, L596 discoverModels, L638 remoteDiscoverModels, L663 providerRetryPolicy, L676 imageRequestPricing, L686 fileRequestText, L691 detachedModalities, L702 listModels, L740 resolveModelInfo, L748 resolveModelInfoFor, L758 normalizeModelInfo, L878 resolveCallConfig, L882 resolveCallFor, L892 resolveCallWithInfo, L936 prepareCall, L985 registration, L992 forAdapter, L1012 fileReadPath, L1135 stream, L1139 streamWithRegistration
+
+### packages/llm/llm/src/invariant.ts  (113 行)
+  10	const	name
+  12	const	inject
+  111	const	apply
+
+### packages/llm/llm/src/message.ts  (308 行)
+  10	iface	AssistantProviderMetadata
+  24	iface	ModelMessageSource
+  29	iface	ToolMessageSource
+  35	iface	SystemPromptMessageSource
+  55	type	ContextForm
+  70	iface	ContextSnapshotSection
+  86	type	ContextFormed
+  110	iface	MessageSourceMap
+  122	const	CONTEXT_SUMMARY_MAX_CHARS
+  129	fn	boundContextSummary
+  136	type	MessageSource
+  151	iface	SystemMessage
+  157	iface	DeveloperMessage
+  162	iface	UserMessage
+  167	iface	AssistantMessage
+  173	iface	ToolResultMessage
+  187	iface	MessageRoleMap
+  196	type	Message
+  212	fn	freezeMessage
+  221	fn	createMessage
+  235	fn	createDeveloperMessage
+  246	fn	createUserMessage
+  260	fn	createAssistantMessage
+  279	fn	createSystemMessage
+  288	iface	ToolResultMessageInput
+  299	fn	createToolResultMessage
+
+### packages/llm/llm/src/retry-policy.ts  (196 行)
+  27	iface	BackoffConfig
+  37	iface	NormalRetryPolicyConfig
+  49	iface	AlwaysRetryPolicyConfig
+  57	type	RetryPolicyConfig
+  60	iface	ResolvedRetryBackoff
+  67	iface	ResolvedNormalRetryPolicy
+  74	iface	ResolvedAlwaysRetryPolicy
+  79	type	ResolvedRetryPolicy
+  100	const	RetryPolicySchema
+  149	fn	resolveRetryPolicy
+
+### packages/llm/llm/src/types.ts  (554 行)
+  declare module: declare module '@deepseek-ai/cordis' { | declare module '@deepseek-ai/dsh-typert-protocol' {
+  41	iface	LlmFailure
+  62	iface	TextBlock
+  68	iface	ReasoningBlock
+  79	iface	ImageBlock
+  98	iface	FileBlock
+  105	iface	ToolCallBlock
+  115	iface	ToolAdditionBlock
+  127	iface	ToolRemovalBlock
+  137	iface	ContentBlockMap
+  148	type	ContentBlockType
+  150	type	ContentBlock
+  156	iface	FinishReasonMap
+  165	type	FinishReason
+  175	iface	TokenUsage
+  199	iface	LlmImageRequestPrice
+  212	iface	LlmImageRequestPricing
+  223	iface	LlmProviderInfo
+  231	iface	ModelModalityMap
+  237	type	ModelModality
+  245	iface	LlmConfigurableProvider
+  276	iface	LlmModelDiscoveryRequest
+  296	iface	LlmModelDiscoveryOperation
+  316	iface	LlmDiscoveredModel
+  330	iface	LlmModelInfo
+  344	iface	LlmModelContext
+  356	iface	LlmImageRequestBudget
+  370	iface	LlmReasoningEffortInfo
+  380	iface	LlmModelReasoningInfo
+  396	type	SystemPromptUpdate
+  407	type	ToolUpdate
+  410	iface	LlmResolvedModelInfo
+  430	iface	ReplayEnvelope
+  452	type	StreamChunk
+  473	iface	ToolSchema
+  487	iface	RequestUserInput
+  495	type	RequestMessage
+  498	iface	ToolHistory
+  511	iface	GenerateOptions
+
+## 其它关键文件
+
+### package.json
+{
+  "name": "@deepseek-ai/dsh-llm",
+  "description": "Provider-neutral LLM service interface for the DeepSeek Harness",
+  "version": "0.1.7-rc.2",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/llm/llm"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./invariant": {
+      "types": "./lib/types/invariant.d.ts",
+      "default": "./lib/invariant.js"
+    },
+    "./types": {
+      "types": "./lib/types/types.d.ts",
+      "default": "./lib/types/types.js"
+    },
+    "./brand": {
+      "types": "./lib/types/brand.d.ts",
+      "default": "./lib/types/brand.js"
+    },
+    "./message": {
+      "types": "./lib/types/message.d.ts",
+      "default": "./lib/types/message.js"
+    },
+    "./assistant-stream": {
+      "types": "./lib/types/assistant-stream.d.ts",
+      "default": "./lib/types/assistant-stream.js"
+    },
+    "./typert": {
+      "types": "./lib/typert.host.d.ts",
+      "default": "./lib/typert.host.js"
+    },
+    "./remote": {
+      "types": "./lib/typert.remote-client.d.ts",
+      "default": "./lib/typert.remote-client.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/invariant.js",
+    "lib/types/**/*.js",
+    "lib/types/**/*.d.ts",
+    "lib/typert.host.js",
+    "lib/typert.host.d.ts",
+    "lib/typert.remote-client.js",
+    "lib/typert.remote-client.d.ts"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:~"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-util-crypto": "workspace:*",
+    "@deepseek-ai/schemastery": "workspace:~",
+    "zod": "^4.4.3",
+    "@deepseek-ai/dsh-timeout": "workspace:*",
+    "@deepseek-ai/dsh-brand": "workspace:*",
+    "@deepseek-ai/dsh-util-values": "

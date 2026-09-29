@@ -1,0 +1,878 @@
+# @deepseek-ai/dsh-client-ui-primitives
+path: packages/client/ui-primitives
+desc: Pure React atoms for the dsh web UI: controls, icons, markdown, and JSON inspectors (zero cordis)
+deps: -
+peers: @deepseek-ai/cordis
+srcFiles: 55  srcLoc: 8230
+
+## README.md (208 行)
+---
+description: "Shared React UI atoms for the dsh web client: controls, icons, markdown and math rendering, and the terminal/read/diff/search/web output cards (zero Cordis)."
+kind: "package-library"
+---
+
+# @deepseek-ai/dsh-client-ui-primitives
+
+English | [中文](README.zh.md)
+
+## Summary
+
+Use `dsh-client-ui-primitives` to build web-client controls and render agent output with shared React UI. It includes standard controls, icons, anchored overlays, and renderers for Markdown with TeX, terminal output, file reads, diffs, search, web retrieval, and JSON. The renderers handle untrusted model output by dropping raw HTML, restricting links, and parsing ANSI escape sequences. The components import no Cordis runtime; callers supply localized labels, and theme-facing colors use `--dsw-*` design tokens.
+
+## Table of Contents
+
+- [Use this package](#use-this-package)
+- [Understand the implementation](#understand-the-implementation)
+- [Further Exploration](#further-exploration)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="use-this-package"></a>
+## Use this package
+
+`Toast` uses the theme’s toast background and label colors in both light and dark modes. `Menu` data rows and `MenuItemButton` component rows accept owner-provided effective shortcuts and align their keys at the trailing edge as muted text without a background, including submenus. `ShortcutKeys` defaults to unboxed keys for menu and inline hints. Its `tooltip` variant uses lighter keycaps over the dark bubble and groups plus-separated combinations into one filled block. `Tooltip.shortcutKeys` vertically centers keycaps beside optional localized action text, or shows only keys when the label is empty. The optional `className` supplies owner interaction styles. `Modal` and the settings shell share top-layer Escape and Tab handling through `useModalLayer`, restoring the previous focus on close. `closeTopModal(document)` requests the foreground modal’s current close action; newer menus or unregistered dialogs block dismissal of the modal behind them. Components use `isBehindModal` to avoid moving focus behind a nested dialog. Menus consume their local Escape before modal dismissal. `observeComposition` supplies the same composition-end and legacy IME guard to local modal and recording handlers; callers dispose its document listeners with their interaction lifetime.
+
+Automatic modal entry and modal/menu return focus, including after Escape and application close shortcuts, use `focusWithoutRing(element, options?)` to suppress the outline until Tab or directional navigation resumes normal focus styling. Dialog containers keep their outline-free styling. Existing borders, shadows, and error states remain intact. Mark a dialog's initial control with `data-modal-autofocus` so the modal captures its invoking control before moving focus. Controls mounted with the dialog must not use React `autoFocus`, which runs before that capture. Tab and Shift+Tab from the dialog container enter its first and last focusable controls.
+
+This package is a Web-shell build input. Its static ESM retains third-party imports and styles for Vite; independent consumers supply its development dependencies ([dependency rules](../AGENTS.md#dependency-declaration)).
+
+Compose feature UI from these atoms whenever the web client needs a standard control or an agent-output renderer. They render through React only and take `--dsw-*` design tokens from the theme, so they fit any plugin without importing the theme or the slot system.
+
+<a id="component-catalog"></a>
+### Component catalog
+
+Check this table before writing a control in a feature package. A plugin cannot import another plugin's component, so this package is the only place a control can be shared: reuse what fits, and lift a deliberate visual difference into a prop rather than starting a second copy.
+
+| Export | What it is |
+|---|---|
+| `Button` | Clickable action; `variant` selects `primary`, `ghost`, `outline`, or `toolbar`. Its ref targets the native button for focus and overlay anchoring. |
+| `Switch` | Two-state toggle, 36×20. `label` is required, so the control cannot ship unnamed. |
+| `SegmentedControl` | Tablist of two or more equal-width segments with one sliding indicator, for switching a card or panel between a few modes; the owner holds the selection and `label` names the list. `id` seeds each tab's id (`<id>-<value>`) and the panel it controls (`<id>-<value>-panel`), which the owner renders and points back at the tab with `aria-labelledby`; a segment may be `disabled` with a `title`, and `disabled` on the control locks every segment while the shown panel has work in flight. |
+| `Checkbox` | Labeled native checkbox with controlled state, keyboard interaction, and disabled styling; the caller supplies localized `label` text. |
+| `Input` | Single-line text entry for search boxes and inline forms. |
+| `Menu`, `MenuItemButton` | Dropdown of `items` data rows, separators, and group labels, with nested submenus; `children` adds component rows, each a `MenuItemButton` (`separatorBefore` starts a new group), in the same list. Every row shares the styling, the keyboard walk, and the focus return; closing stays the owner's state change for both kinds. While open, ↑/↓ (with Home and End) walk the list, Tab settles the focused row, and Escape or Shift+Tab close back to the anchor; selecting a row also returns the keyboard to the anchor unless the owner moved it itself. Only a keyboard on the anchor or inside the list is intercepted, and `autoFocus` decides solely whether opening focuses the first row. |
+| `Pill` | Selectable capsule button for view switchers and filters; takes `active` and `onClick`. |
+| `SegmentedTabs` | Controlled equal-width tabs with a sliding indicator and Left/Right, Home, and End navigation. The caller supplies labels, tab/panel ids, and panel content. |
+| `Tag` | Read-only capsule badge; `tone` selects one of eight palettes. |
+| `PathLabel` | Single-line file path with subdued directories, a primary filename, and the full path on hover. Fitting paths align left; clipped paths preserve their suffix with a left-edge fade that updates on path and size changes. |
+| `StateDot` | Solid green `done`, amber `warning`, red `error`, and neutral-grey `idle` marks in a 10px slot, plus a tertiary-grey 14px rotating `ongoing` loader whose animations pin to document time zero so every visible loader rotates in phase. `aria-hidden`, so the render site owns the name. `appearance="step"` shows a filled check for completion and a hollow pending circle. |
+| `ConnectionIndicator` | Inline connection-recovery control across outage, retry, and recovered states. |
+| `DisclosureRow` | 24px compact disclosure that lays title and content side by side. Memoized with shallow prop comparison; keep callbacks and React-node props stable when their content is unchanged. |
+| `Modal` | Centered dialog over a page mask. A nested dialog can intercept keys with `onKeyDownCapture` before document Escape handlers. The tint and dialog fade in while backdrop blur stays fully applied, honoring reduced motion. Set `backdropBlur={false}` when the caller already blurs the source page. |
+| `RiskConfirmation` | Sensitive action gated behind an explicit checkbox. |
+| `Tooltip` | Hover and keyboard-focus text anchored to a cloned child; optional `delayMs` controls hover delay and `focusDelayMs` controls keyboard-focus delay, both defaulting to 0 ms. Optional `portal` rendering escapes clipping containers and ancestor stacking contexts that cap the bubble's z-index. |
+| `HoverCard` | Hover preview the pointer can rest on and select from; optional copy button. |
+| `ImageLightbox` | Shared image modal with focus restoration and Escape dismissal. |
+| `Toast` | Transient top-center banner held for the owner's `holdMs`. |
+| `SettingsForm`, `SettingsValueField`, `SettingsSecretField` | The frame and the controls of a plugin's settings page: the frame takes its copy as `labels`, saves only on its button, and discards on unmount; a value field shows staged text with the overridden badge and reset; a secret field starts blank, requests no saved-password autofill, and reports only whether a value is configured. |
+| `SettingsFormModel`, `settingsNumberField`, `settingsTextField` | The staged-edit model behind such a page over a settings scope: drafts are staged and written on save, a field is overridden by its presence in the user layer, and a save that did not land keeps its drafts. |
+| `JsonTree`, `JsonBlock` | Read-only JSON inspection. |
+| `MarkdownText`, `MarkdownDelegateProvider`, `CodeBlock` | Untrusted GFM with TeX math, owner-delegated HTTP(S) navigation, and highlighted code. `CodeBlock` accepts opt-in `lineNumbers`; copied source excludes the gutter, and `contentRef` exposes its stable source wrapper to an owner that uses it as a scrollport. Set `showHeader={false}` when the owner supplies its own language and copy toolbar. |
+| `TerminalBlock`, `ReadBlock`, `DiffBlock`, `SearchBlock`, `WebBlock` | The agent-output card matching each tool-result intent. |
+| `icons/*`, `FishLogo`, `BrandWordmark`, `ReferenceIconRegular`/`ReferenceIconMedium`, `LinkIconRegular`/`LinkIconMedium` | Glyphs and brand marks. Use `LinkIconMedium` for 14px clickable-link categories and known-site marks. |
+| `PermissionIconReadOnlyRegular`/`Medium`, `PermissionIconWorkspaceWriteRegular`/`Medium`, `PermissionIconFullAccessRegular`/`Medium` | Permission-mode glyphs for read-only, workspace-write, and full-access choices. |
+| `PluginArtworkTerminal`/`Loop`/`Subagent`/`Search`/`Default` | Fixed-palette 36×36 plugin artwork; `Terminal` supplies the light-blue prompt in plugin cards and sidebar guide entries. `Default` marks plugins without artwork of their own. Def ids are per-instance, so the same artwork repeats safely on one page. |
+| `GuideArtworkBrowser`/`Files` | Fixed-palette 36×36 browser and folder artwork for sidebar guide entries. |
+| `FileTypeIcon`, `classifyFileType`, `fileExtension` | A category-colored 28px file or folder glyph and the shared case-insensitive filename mapping behind it. Code and configuration files use detailed full-color technology glyphs; use `LinkIconMedium` for link-leading glyphs and image previews for image content. |
+| `languageForPath`, `CODE_HIGHLIGHT_EXTENSIONS`, `useCodeHighlighter` | The lazy line-token highlighter shared by code preview and diff review. The filename grammar selection is re-exported from `@deepseek-ai/dsh-util-code-language`, the single extension table also behind the read card's persisted short-id `lang` hint. |
+
+Four pairs are easy to confuse:
+
+- **`Tag` against `Pill`.** Reach for `Tag` for a read-only badge at the 11px capsule size, and for `Pill` when the capsule is selectable (`active` and `onClick`, as view switchers and filters use) or when it must sit on a 24px text line — `TerminalBlock` renders its exit status as a static `Pill` for exactly that reason. Size decides as much as interactivity here; the two are not interchangeable.
+- **`Pill` against `SegmentedControl`.** A row of `Pill`s is a set of independent chips — each one toggles on its own, and several may be active. `SegmentedControl` is one choice among a few mutually exclusive modes, drawn as a tablist with one indicator, and it comes with the tab keyboard pattern (arrow keys walk the segments, only the selected one is in the tab sequence); the Models settings add card switches its two forms with it.
+- **`DisclosureRow` against a card.** The row lays its title and content side by side at a fixed 24px. A card that stacks a name over a description is a different layout, and belongs in the feature package — `ui-settings-plugins`' `PluginCard` is the precedent and records why.
+- **`FoldToggle` against the exported surface.** It is package-internal and not exported; the output cards use it for their head-tail fold.
+
+Writing your own component in your own package is fine when the need is genuinely specific. What is not fine is copying a control that already exists here — and once a second package needs the same control, it belongs in this package ([decision](../../../.agents/notes/implemented/architecture/2026-09-05-shared-client-control-primitives.md)).
+
+### Controls and icons
+
+The catalog above lists what each export is for; this section covers the behavior that props alone do not show. Product icon names omit artboard sizes and end in `Regular` for the supplied one-pixel artwork or `Medium` for the same geometry at a 1.3px stroke; the `size` prop controls rendered dimensions ([decision](../../../.agents/notes/implemented/architecture/2026-09-16-size-neutral-product-icon-weights.md)). Each product, reference, link, and permission glyph intentionally keeps both weight exports even when the current product uses only one, so callers can choose emphasis without adding another API later; fill-only pairs render identically. `IconWarningOutlineRegular`/`Medium` use a circle; `IconWarningTriangleOutlineRegular`/`Medium` use a rounded triangle. `FishLogo` and `BrandWordmark` fill brand slots. `FileTypeIcon` renders the traditional 28px spreadsheet, folder, HTML, image, Markdown, generic, PDF, PPT, video, and Word glyphs, and uses the imported square technology artwork for the established 48 code and configuration categories. The import replaces artwork only: archive-only categories do not extend `CodeFileType`. `classifyFileType` applies exact filename, prefix, suffix, optional project-context, and extension rules in that order; React names win over TypeScript/JavaScript, Angular suffixes win over their base extension, and a Dart file becomes Flutter only when the supplied project files contain a `pubspec.yaml` with `flutter:`. Markdown and SVG remain traditional Markdown and image files. Spreadsheet mappings include CSV, TSV, Excel workbooks and templates, OpenDocument spreadsheets, and Numbers; KEY maps to slides, while RTF/ODT/Pages map to documents. `fileExtension` exposes the same basename and final-dot parsing for adjacent metadata labels. Traditional glyphs use a solid category-colored sheet with a white mark and translucent white corner; the generic code glyph uses angle brackets and a slash at the supplied 1.35px stroke; the generic file uses a grey sheet and darker grey corner. Callers may override the sheet color through `--dsh-file-type-icon-color`. The full-color technology artwork is the deliberate exception and retains its embedded palette. All glyphs are decorative and carry no label. `LinkIconMedium` is the leading glyph for clickable artifact links — globe, folder, code, image, document, or plain paper, and for a `url` link the mark of a well-known site named by its `href` — the developer sites a transcript usually cites (GitHub, GitLab, npm, PyPI, Stack Overflow, MDN, Wikipedia, Hacker News, YouTube, X, Bilibili, Zhihu, Juejin, CSDN) and mainstream search, video, social, shopping, and reference sites (Google, Baidu, DuckDuckGo, TikTok, Netflix, Spotify, Facebook, Instagram, Reddit, Telegram, WhatsApp, WeChat, QQ, Weibo, Taobao, AliExpress, eBay, Quora, V2EX, Apple) — while `classifyLinkPath` folds the shared file types into that existing six-category vocabulary. `ConnectionIndicator` renders a warning-colored disconnected action whose permanent retry glyph marks the retry action beside the owner-supplied outage label, the shared ongoing loader in the same warning color as its label whose one-to-three dots advance every 500ms independently of retry timing, or a success-colored recovered status. Clicking either warning state requests an immediate reconnect; no hover interaction changes the copy. The pill fades in on appearance, fades out for 150ms before unmounting, and sizes to its current label. Its owner supplies visibility, the recovery hold, localized labels, and the immediate-reconnect callback; the primitive uses no native title tooltip. `useAnchoredPosition` and `useAnchoredMaxHeight` keep floating panels and bottom-anchored overlays clamped to the viewport and following their anchor; `useAnchoredMaxHeight` and portalled `Menu` widen their 12px top viewport margin to the frame's published `--dsh-frame-top-clearance`. `HoverCard` keeps its portaled preview reachable across the anchor gap and can expose a copy button through the `copyText` prop. Its `preview` variant uses the anchor or `widthAnchorRef` element’s width minus 48px, centers the panel with 24px side insets, and places it above or below the row within the viewport. The panel keeps the frame’s top clearance, caps its height at 420px, and follows content and anchor resizing; Escape or pointer and keyboard activation of the anchor dismisses it. The whole preview fades in and out over 100ms; a closing preview stops receiving pointer input and unmounts after the fade. Re-entering the anchor during the fade restores it. Reduced-motion preferences suppress the transition. Copy labels are required only when copying is enabled. A `Tooltip` nested in the anchor hides that preview while its own hover or focus label is visible; releasing, disabling, or unmounting the nested tooltip restores a still-open preview. `Toast` uses the owner's `holdMs` for both the fade delay and its hold-and-fade lifetime. Rerenders with unchanged `holdMs` do not restart that lifetime; completion uses the latest callback, and fully faded actions cannot receive input. A new component key restarts the banner. `rankByName` is the `/` menu's shared candidate ranker for the command and skill sources: the query must be a case-insensitive ordered subsequence of the name; prefix hits rank first, then alignment score, then source order. Portalled `Menu` lists follow their anchor during dragging and CSS transforms, and stop tracking when closed. `Menu.autoFocus` focuses its first enabled item, supports Arrow Up/Down and Home/End navigation, and focuses the first button in the anchor on Escape; it is opt-in for action menus.
+
+`Tooltip` reads the anchor on hover or keyboard focus and fits its bubble from `ResizeObserver` border-box sizes. The bubble stays hidden until its first fit, slides inside the horizontal viewport margin, and flips above or below only when the opposite side fits. Label-size and viewport changes reuse the anchor coordinates; fitting does not synchronously measure the bubble or trigger a React render.
+
+### Rendering agent output
+
+The nearest `MarkdownDelegateProvider` supplies optional `openExternalLink` and `openFile` navigation callbacks. Nested providers replace the enclosing capabilities, and callback changes reach already-rendered links without rebuilding Markdown. Its `openFile` makes local Markdown links clickable after settlement. Absolute and workspace-relative paths support percent escapes and `#L24` / `#L24-L30` fragments; ranges open at their first line. Literal `?` and `#` in filenames must be percent-encoded. The tooltip uses the decoded path and supplies the accessible name when the label is empty. The callback receives the decoded path and optional line, while the renderer preserves the label and displays a file icon. Without a callback, local links remain text. URL schemes, queries, unsupported fragments, and malformed destinations never reach the file opener.
+
+`MarkdownText` renders untrusted GFM and TeX math, blocks unsafe links and images, and can turn resolved file mentions into explicit controls. A surrounding `MarkdownDelegateProvider` receives sanitized HTTP(S) URLs from ordinary clicks; modified clicks and links outside a provider retain native external-anchor behavior. When the owner passes a `pathImages` vocabulary, image destinations that are local media paths rewrite to displayable URLs on settled renders only (the same streaming gate as file mentions); without a vocabulary, local destinations remain inert alt text. Rewritten images accept HTTP(S), data, blob, and the Desktop `dsh-app://app/api/file` route; authored Desktop URLs remain inert. A load or decode failure replaces the image with its authored alt text, or the original destination when alt is empty; `fileImages` additionally supplies a localized failure prefix. Changing the image source permits a fresh load. While a reply streams, it freezes completed blocks, advances a top-level open fence by completed lines, and highlights that fence from saved Shiki grammar state. Completed token lines enter fixed-size React groups, so later chunks reconcile only the growing group; an unchanged fence retains that DOM when the final full parse resolves cross-document syntax. `TerminalBlock`, `ReadBlock`, `DiffBlock`, `SearchBlock`, and `WebBlock` render the matching tool-result intent with copy controls, overflow handling, and ANSI processing where applicable. `JsonTree` and `JsonBlock` inspect JSON values read-only, while `projectUserText` projects sent user text into inline plain runs and reference chips for the message bubble and queue rows. Reference labels inherit the consumer’s wrapping policy: long names wrap within a bubble, while queue previews retain their single-line layout. When supplied with `UserTextReferences`, file and skill references become keyboard-accessible preview buttons using the same hover and focus styling as prose file links; the first pointer click can open a preview, while subsequent clicks and existing text selections retain native selection handling. Keyboard activation opens previews even when text is selected.
+
+`MarkdownText` defaults to `variant="body"`. Use `variant="compact"` for secondary content: its 13px text and 20px line height follow the content-size setting, all heading levels use the same size with weight 600, and paragraphs and lists use tighter spacing. Text, links, and code keep the tertiary color; dotted underlines distinguish links. Code headers scroll with their blocks. Tables and math stay enabled at the surrounding text size and scroll horizontally within the available width. Both variants share the parser and streaming cache.
+
+`CodeBlock.toolbarLabels` enables the shared code-card header and spacing. `ReadBlock` and `DiffBlock` use the same header: tertiary-colored language and filename text, secondary-colored copy and wrap icons, and hover or keyboard-focus tooltips. Missing or unsupported languages use the owner’s localized code-block title; mixed-language diffs use that title too. Code cards share typography and content insets; their headers and bodies use the same background in both themes. Read gutters fit the largest returned line number, and diff fills cover the full scrollable row. The wrap toggle keeps a fixed accessible name and exposes its state through `aria-pressed`; its tooltip describes the next action. Wrapping is local to each mounted card and never changes copied text; code fences start wrapped, while reads and diffs preserve source columns until wrapping is enabled. Compact Markdown shares this toolbar, spacing, and code typography while retaining monochrome text. With `toolbarLabels`, source previews can pass `wrap` to follow their owner’s preference and show only the language and copy icon; owner CSS retains the source layout.
+
+`DiffBlock` compares the old and new content by line. It shows actual additions and deletions with up to three neutral context lines on each side, separates distant changes with `⋯`, and excludes shared context from tool-summary totals. The card ends after the diff body. Search stops beyond 256 line additions/deletions per fragment; those fragments display and count the complete old and new contents as a coarse replacement, including shared lines. Copy includes the full displayed diff with its prefixes. A final newline is treated as a terminator; differences only in the presence of a final newline are not displayed.
+
+`JsonTree` clamps collapsed strings to `collapsedStringLines` (three by default). Expanded strings show raw text, retain sibling commas, and fit within the window and outer scrolling containers. Resize and ancestor-scroll events update that limit. Row copy feedback updates independently of JSON value rendering; pending clipboard writes cannot update a different row or an unmounted tree.
+
+`ImageLightbox` is the shared original-image modal with focus restoration and Escape dismissal. The internal thumbnail renderer receives loading/failure labels from its owner. `HoverCard.inline` keeps a file link in the text flow and uses the shared menu material, keyboard-visible focus, and placement above or below the anchor without covering it. Escape closes an open thumbnail even when focus is elsewhere; subsequent Escape presses reach the owner. `MarkdownDelegateProvider.fileImages` supplies a decoded-path resolver and complete image labels: settled image links gain hover previews, and standalone images gain lightbox activation. Image-only anchors retain their single navigation target. The parser recovers only complete, unescaped, standalone local image references with bare spaces and an unambiguous supported image suffix; code and ambiguous destinations remain literal.
+
+### Localizing copy
+
+The atoms cannot read the application locale, so every piece of user-facing copy arrives through required label props. `HoverCard`, `TerminalBlock`, `JsonTree`, `CodeBlock`, `MarkdownText`, `JsonBlock`, `ConnectionIndicator`, `Modal`, `DiffBlock`, `ReadBlock`, `SearchBlock`, and `WebBlock` accept complete localized labels. The package owns no language fallback; omission fails typechecking, and each feature maps its typed `t` seat into the primitive's label interface.
+
+-----
+
+<a id="understand-the-implementation"></a>
+## Understand the implementation
+
+`Button` uses H36/R12 for `md` and H28/R8 for `sm`, including outlined controls. Menus and cards follow the [shared radius rules](../../../docs/web-styling.md#corner-radii-and-settings-cards); feature classes preserve control geometry.
+
+`Menu.listClassName` styles the menu card independently of the anchor wrapper, including in portal mode. Leading icons use the `--dsw-alias-menu-icon` color; destructive icons retain their error color.
+
+`Menu` delegates its card material to `MenuSurface`; custom menus use the same component. `MenuSurface` forwards div props and refs, uses translucent fill and blur, and accepts `compact` for the smaller radius. Its default relative positioning contains the material layer; caller classes can supply fixed or absolute placement. On macOS, its non-interactive backing follows the card through CSS anchors and unmounts with it; the backing requires the Web shell’s isolated body. Feature classes control layout and elevation, while the component owns material and outer radius ([menu rules](../../../docs/web-styling.md#component-rules)). Modal masks retain their dark translucent fill without background blur.
+
+<details>
+<summary>Implementation internals — click to expand</summary>
+
+The package enforces one separation: presentational React atoms with zero Cordis and zero slot knowledge, styled only through `--dsw-*` tokens, while every feature-specific concern (locale, session data, composition) stays in the composing plugin.
+
+### Source map
+
+| File | Role |
+|---|---|
+| [`src/index.ts`](src/index.ts) | Public atom exports |
+| [`src/markdown/`](src/markdown/) | Markdown and math pipeline: micromark parsing, KaTeX typesetting, incremental streaming renderer, `CodeBlock`/`JsonBlock` |
+| [`src/TerminalBlock.tsx`](src/TerminalBlock.tsx) | ANSI escape parsing (`anser`) and terminal card rendering |
+| [`src/ReadBlock.tsx`](src/ReadBlock.tsx) / [`src/DiffBlock.tsx`](src/DiffBlock.tsx) | Read and diff cards |
+| [`src/SearchBlock.tsx`](src/SearchBlock.tsx) / [`src/WebBlock.tsx`](src/WebBlock.tsx) | Search and web-retrieval cards |
+| [`src/icons/`](src/icons/) | Size-neutral `Regular` and `Medium` product glyph components |
+| [`src/code-highlighting.ts`](src/code-highlighting.ts) | Shared filename grammar selection and lazy line highlighting |
+| [`src/input-modality.ts`](src/input-modality.ts) | Document-wide input modality published on `<html>` |
+| [`src/plugin-artwork.tsx`](src/plugin-artwork.tsx) | Fixed-palette plugin artwork with per-instance SVG def ids |
+| [`src/useAnchoredPosition.ts`](src/useAnchoredPosition.ts) / [`src/useAnchoredMaxHeight.ts`](src/useAnchoredMaxHeight.ts) | Floating-panel and overlay geometry hooks |
+| [`src/settings-form/`](src/settings-form/) | The settings page kit: the staged form model over a settings scope, the value and secret fields, and the form frame |
+
+<a id="input-modality"></a>
+### Input modality
+
+[`input-modality.ts`](src/input-modality.ts) tracks input for tooltips and publishes `data-input-modality` on `<html>` for the [theme's focus styles](../ui-theme/README.md#understand-the-implementation). `pointerModality()` is true after pointer input and false after any key, including IME composition keys; `Tooltip` uses it to decide whether focus may show a bubble. The published attribute stays `pointer` until a non-composing navigation key (Tab, arrows, Home/End, PageUp/PageDown), or focus on a different control after a non-composing key. Refocusing the same control does not restore keyboard modality. Pointer input, an IME composition key, and window blur each clear the pending key; focus changes without a pending key leave the modality unchanged. The listeners live for the document lifetime; Node imports install none. The focus-change rule observes events exposed to window; components own additional navigation inside shadow roots that do not expose those events.
+
+### Streaming markdown
+
+While a reply streams, `MarkdownText` parses incrementally: all but the trailing two blocks freeze as cached React elements and only the source tail re-parses per chunk, so per-chunk work tracks the tail instead of the whole reply. A final unclosed top-level fence keeps its parsed code node and sends only the last completed line plus the current partial line through the same GFM grammar; a closing fence or ambiguous parse returns to the ordinary tail path. Highlighting likewise resumes from saved Shiki grammar state and publishes only newly completed lines plus the mutable tail. `CodeBlock` seals completed lines into fixed-size React groups, reuses earlier groups, and retains the whole highlighted tree across settlement when code and language are unchanged. The settled full parse still resolves references that crossed the freeze boundary.
+
+### Geometry and overflow
+
+The output cards share one geometry model: `white-space: pre` with horizontal scrolling so column-aligned content keeps its alignment, and a head-plus-tail slice behind an expand button past `maxLines` (default 16) so a long body never stretches the card. `TerminalBlock` parses ANSI into React spans with a per-line column buffer for cursor movement, honoring erase-in-line, tab stops, and character width. Hosts opt out of the shared geometry per surface: rebinding `--dsl-terminal-command-whitespace` / `--dsl-terminal-line-whitespace` to `pre-wrap` wraps commands and output in full with no sideways scroll, `maxLines: Infinity` disables the fold for hosts capping height through `--dsl-terminal-output-max-height` instead, `copyText` overrides the copy payload (and keeps the control rendered before any output), and `runStateDot: false` omits the run-state dot when the surrounding row already carries the state, reclaiming its gutter via `--dsl-terminal-gutter`. The banner divider follows the rendered body, so a running card that streams live output separates its command from the text like a settled card.
+
+</details>
+
+-----
+
+<a id="further-exploration"></a>
+## Further Exploration
+
+These pages place the atoms in the client stack and the design system.
+
+- [ui-renderer](../ui-renderer/README.md) — the React renderer that mounts the assembled application and binds slot data.
+- [ui-tool](../ui-tool/README.md) — the tool-call presentation layer that composes these output cards.
+- [ui-conversation](../ui-conversation/README.md) — the chat surface that renders markdown replies and tool cards.
+- [ui-theme](../ui-theme/README.md) — the `--dsw-*` token system these atoms style through.
+- [Web styling](../../../docs/web-styling.md) — the authoritative styling rules for web client components.
+
+-----
+
+<a id="model-experience"></a>
+## Model Experience
+
+None, as the package is a browser-side UI plugin layer that registers nothing model-facing.
+
+#### KV Cache effect
+
+None; this package neither assembles nor sends a provider request.
+
+## Known Limitations and Deferred Work
+
+<a id="known-limitations-and-deferred-work"></a>
+
+
+These limits define how the atoms behave at the edges; they are current package constraints, not a component roadmap.
+
+- **Diff search is bounded, input processing is linear** — the edit-distance limit trades precise alignment for a coarse replacement on heavily changed fragments. Normalization, fallback rows, and copied output still scale with input size; the height cap limits visible rows, not those allocations.
+- **Known-site marks are a fixed list** — only the named hosts resolve to their own mark, and every other external host keeps the globe; recognizing an arbitrary site would require fetching its icon over the network.
+- **Streaming defers cross-boundary reference resolution** — a reference-style link or footnote whose definition sits on the other side of the incremental freeze boundary renders as literal text while the reply streams; the settled full parse at finalize resolves it.
+- **A long highlighted fence retains its complete token DOM** — streaming avoids re-parsing, re-tokenizing, and reconciling the completed prefix, but it does not discard old colors or virtualize token spans. Final DOM cardinality therefore still follows the fence's token count; nested/container fences and a pathological single long line remain on the general tail path.
+- **The fish logo is a redrawn approximation** — its font glyph has no exportable vector geometry in the local design data, so a hand-authored recreation stands in until an exact export path exists.
+- **`Pill` and `Input` have no design source** — both atoms are self-defined; the sidebar search field and view-tab strip that resemble them are consumer-owned compositions, not these atoms.
+- **No `Active` `StateDot` variant** — the supported states are done, warning, ongoing, error, and idle.
+- **User-facing copy is required at the render site** — the atoms are zero-Cordis and cannot reach `ctx.locale`; each feature must supply complete localized labels through the primitive's typed props ([decision](../../../.agents/notes/implemented/architecture/2026-08-23-locale-owned-client-ui-copy.md)).
+- **`TerminalBlock` is not a terminal emulator** — it renders settled or still-running command output, not an interactive session: SGR colors, carriage return, backspace, erase-in-line, tab stops, and character width are honored; absolute cursor positioning, screen clearing, and alternate-screen sequences are stripped.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>
+
+**Runtime invariant:** No companion is published. Pure props-in React atoms with no Cordis API — no events, no services, no mutable cross-plugin state; rendering contracts are asserted directly by this package's component specs.
+
+
+## 源文件与导出符号
+
+### packages/client/ui-primitives/src/BrandWordmark.tsx  (60 行)
+  4	iface	BrandWordmarkProps
+  16	fn	BrandWordmark
+
+### packages/client/ui-primitives/src/Button.tsx  (37 行)
+  9	type	ButtonVariant
+  27	const	Button
+
+### packages/client/ui-primitives/src/Checkbox.tsx  (32 行)
+  16	fn	Checkbox
+
+### packages/client/ui-primitives/src/CodeFileIcon.tsx  (29 行)
+  12	fn	CodeFileIcon
+
+### packages/client/ui-primitives/src/CodeToolbar.tsx  (63 行)
+  10	iface	CodeToolbarLabels
+  38	fn	CodeToolbar
+
+### packages/client/ui-primitives/src/ConfigField.tsx  (54 行)
+  6	iface	ConfigFieldProps
+  33	fn	ConfigField
+
+### packages/client/ui-primitives/src/ConnectionIndicator.tsx  (104 行)
+  7	type	ConnectionIndicatorState
+  29	fn	ConnectionIndicator
+
+### packages/client/ui-primitives/src/DiffBlock.tsx  (222 行)
+  12	const	DEFAULT_DIFF_MAX_LINES
+  18	iface	DiffHunk
+  27	iface	DiffBlockProps
+  39	iface	DiffBlockLabels
+  89	fn	diffTotals
+  168	fn	DiffBlock
+
+### packages/client/ui-primitives/src/DisclosureRow.tsx  (110 行)
+  8	iface	DisclosureRowProps
+  37	const	DisclosureRow
+
+### packages/client/ui-primitives/src/FileTypeIcon.tsx  (284 行)
+  11	type	FileType
+  26	type	FileTypeKind
+  34	type	FileTypeIconProps
+  122	fn	fileExtension
+  136	fn	classifyFileType
+  275	fn	FileTypeIcon
+
+### packages/client/ui-primitives/src/FishLogo.tsx  (29 行)
+  4	const	FISH_LOGO_VIEWBOX
+  7	const	FISH_LOGO_PATH
+  15	fn	FishLogo
+
+### packages/client/ui-primitives/src/FoldToggle.tsx  (34 行)
+  19	fn	FoldToggle
+
+### packages/client/ui-primitives/src/HoverCard.tsx  (295 行)
+  36	fn	HoverCard
+
+### packages/client/ui-primitives/src/ImageLightbox.tsx  (66 行)
+  7	iface	ImageLightboxLabels
+  27	fn	ImageLightbox
+
+### packages/client/ui-primitives/src/ImagePreview.tsx  (37 行)
+  11	fn	ImagePreview
+
+### packages/client/ui-primitives/src/Input.tsx  (24 行)
+  13	fn	Input
+
+### packages/client/ui-primitives/src/JsonTree.tsx  (851 行)
+  22	iface	JsonTreeLabels
+  656	iface	JsonTreeProps
+  687	fn	JsonTree
+
+### packages/client/ui-primitives/src/LinkIcon.tsx  (119 行)
+  14	type	LinkIconKind
+  17	iface	LinkIconProps
+  33	fn	classifyLinkPath
+  107	fn	LinkIconRegular
+  116	fn	LinkIconMedium
+
+### packages/client/ui-primitives/src/Menu.tsx  (565 行)
+  16	iface	MenuItem
+  31	iface	MenuSeparator
+  37	iface	MenuLabel
+  44	type	MenuEntry
+  47	iface	MenuItemButtonProps
+  84	fn	MenuItemButton
+  168	fn	Menu
+
+### packages/client/ui-primitives/src/MenuSurface.tsx  (47 行)
+  8	iface	MenuSurfaceProps
+  20	const	MenuSurface
+
+### packages/client/ui-primitives/src/Modal.tsx  (92 行)
+  48	fn	Modal
+
+### packages/client/ui-primitives/src/PathLabel.tsx  (42 行)
+  14	fn	PathLabel
+
+### packages/client/ui-primitives/src/PermissionIcon.tsx  (93 行)
+  45	fn	PermissionIconReadOnlyRegular
+  54	fn	PermissionIconReadOnlyMedium
+  63	fn	PermissionIconWorkspaceWriteRegular
+  72	fn	PermissionIconWorkspaceWriteMedium
+  81	fn	PermissionIconFullAccessRegular
+  90	fn	PermissionIconFullAccessMedium
+
+### packages/client/ui-primitives/src/Pill.tsx  (37 行)
+  16	fn	Pill
+
+### packages/client/ui-primitives/src/ReadBlock.tsx  (152 行)
+  21	const	DEFAULT_READ_MAX_LINES
+  24	iface	ReadBlockLine
+  31	iface	ReadBlockProps
+  49	iface	ReadBlockLabels
+  69	fn	ReadBlock
+
+### packages/client/ui-primitives/src/ReferenceIcon.tsx  (50 行)
+  9	type	ReferenceIconKind
+  12	iface	ReferenceIconProps
+  38	fn	ReferenceIconRegular
+  47	fn	ReferenceIconMedium
+
+### packages/client/ui-primitives/src/RiskConfirmation.tsx  (84 行)
+  10	iface	RiskConfirmationProps
+  29	fn	RiskConfirmation
+
+### packages/client/ui-primitives/src/SearchBlock.tsx  (282 行)
+  12	const	DEFAULT_SEARCH_MAX_LINES
+  15	iface	SearchBlockLineMatch
+  23	iface	SearchFileGroup
+  50	iface	SearchBlockLabels
+  63	iface	SearchMatchesBlockProps
+  70	iface	SearchPathsBlockProps
+  77	type	SearchBlockProps
+  177	fn	SearchBlock
+
+### packages/client/ui-primitives/src/SegmentedControl.tsx  (141 行)
+  15	iface	SegmentedControlOption
+  70	fn	SegmentedControl
+
+### packages/client/ui-primitives/src/SegmentedTabs.tsx  (82 行)
+  7	iface	SegmentedTab
+  24	fn	SegmentedTabs
+
+### packages/client/ui-primitives/src/ShortcutKeys.tsx  (13 行)
+  10	fn	ShortcutKeys
+
+### packages/client/ui-primitives/src/SiteGlyph.tsx  (150 行)
+  139	fn	siteGlyph
+
+### packages/client/ui-primitives/src/StateDot.tsx  (67 行)
+  9	type	StateDotState
+  33	fn	StateDot
+
+### packages/client/ui-primitives/src/Switch.tsx  (43 行)
+  18	fn	Switch
+
+### packages/client/ui-primitives/src/Tag.tsx  (43 行)
+  9	type	TagTone
+  34	fn	Tag
+
+### packages/client/ui-primitives/src/TerminalBlock.tsx  (284 行)
+  11	const	DEFAULT_TERMINAL_MAX_LINES
+  17	iface	TerminalBlockLabels
+  46	iface	TerminalBlockProps
+  164	fn	TerminalBlock
+
+### packages/client/ui-primitives/src/TextShimmer.tsx  (24 行)
+  7	iface	TextShimmerProps
+  18	const	TextShimmer
+
+### packages/client/ui-primitives/src/Toast.tsx  (102 行)
+  46	fn	Toast
+
+### packages/client/ui-primitives/src/Tooltip.tsx  (221 行)
+  13	type	TooltipSide
+  19	const	TooltipSuppression
+  58	fn	Tooltip
+
+### packages/client/ui-primitives/src/WebBlock.tsx  (197 行)
+  11	iface	WebSourceView
+  23	iface	WebSearchBlockProps
+  38	iface	WebFetchBlockProps
+  53	type	WebBlockProps
+  56	iface	WebBlockLabels
+  194	fn	WebBlock
+
+### packages/client/ui-primitives/src/ansi.ts  (448 行)
+  24	iface	AnsiSpan
+  32	type	AnsiLine
+  433	fn	parseAnsiLines
+
+### packages/client/ui-primitives/src/clipboard.ts  (48 行)
+  11	fn	writeClipboard
+
+### packages/client/ui-primitives/src/code-file-icon-artwork.ts  (61 行)
+  8	const	CODE_FILE_ICON_ID_TOKEN
+  11	const	CODE_FILE_ARTWORK
+
+### packages/client/ui-primitives/src/code-file-types.ts  (339 行)
+  2	const	CODE_FILE_TYPES
+  54	type	CodeFileType
+  57	iface	FileTypeProjectContext
+  300	fn	isCodeFileType
+  309	fn	isLinkCodeExtension
+  320	fn	classifyCodeFileType
+
+### packages/client/ui-primitives/src/code-highlighting.ts  (26 行)
+  13	type	CodeHighlighter
+  20	fn	useCodeHighlighter
+
+### packages/client/ui-primitives/src/css-modules.d.ts  (7 行)
+  declare module: declare module '*.module.css' { | declare module '*.css'
+
+### packages/client/ui-primitives/src/darwin-desktop.ts  (12 行)
+  9	fn	isDarwinDesktop
+
+### packages/client/ui-primitives/src/file-size.ts  (17 行)
+  8	fn	fileSizeText
+
+### packages/client/ui-primitives/src/focus.ts  (30 行)
+  12	fn	focusWithoutRing
+
+### packages/client/ui-primitives/src/guide-artwork.tsx  (33 行)
+  9	fn	GuideArtworkBrowser
+  25	fn	GuideArtworkFiles
+
+### packages/client/ui-primitives/src/head-tail-cap.ts  (28 行)
+  2	iface	HeadTailCap
+  23	fn	headTailCap
+
+### packages/client/ui-primitives/src/icons/index.tsx  (1659 行)
+  19	const	SHIELD_OUTLINE_PATH
+  22	const	ICON_REGULAR_STROKE
+  25	const	ICON_MEDIUM_STROKE
+  28	const	IconNewChatOutlineRegular
+  33	const	IconNewChatOutlineMedium
+  45	const	IconSearchOutlineRegular
+  50	const	IconSearchOutlineMedium
+  55	const	IconGlobeOutlineRegular
+  60	const	IconGlobeOutlineMedium
+  72	const	IconSettingsOutlineRegular
+  77	const	IconSettingsOutlineMedium
+  89	const	IconPanelLeftOutlineRegular
+  94	const	IconPanelLeftOutlineMedium
+  107	const	IconEllipsisOutlineRegular
+  112	const	IconEllipsisOutlineMedium
+  124	const	IconPlusOutlineRegular
+  129	const	IconPlusOutlineMedium
+  140	const	IconCheckOutlineRegular
+  145	const	IconCheckOutlineMedium
+  159	const	IconBranchOutlineRegular
+  164	const	IconBranchOutlineMedium
+  175	const	IconChevronDownOutlineRegular
+  180	const	IconChevronDownOutlineMedium
+  191	const	IconChevronLeftOutlineRegular
+  196	const	IconChevronLeftOutlineMedium
+  207	const	IconChevronRightOutlineRegular
+  212	const	IconChevronRightOutlineMedium
+  223	const	IconTriangleRightFillRegular
+  228	const	IconTriangleRightFillMedium
+  239	const	IconChevronUpOutlineRegular
+  244	const	IconChevronUpOutlineMedium
+  256	const	IconCloseOutlineRegular
+  261	const	IconCloseOutlineMedium
+  273	const	IconCloseFillRegular
+  278	const	IconCloseFillMedium
+  291	const	IconCloseCircleFillRegular
+  296	const	IconCloseCircleFillMedium
+  308	const	IconCopyOutlineRegular
+  313	const	IconCopyOutlineMedium
+  325	const	IconRefreshOutlineRegular
+  330	const	IconRefreshOutlineMedium
+  341	const	IconLikeOutlineRegular
+  346	const	IconLikeOutlineMedium
+  357	const	IconLikeFillRegular
+  362	const	IconLikeFillMedium
+  373	const	IconDislikeOutlineRegular
+  378	const	IconDislikeOutlineMedium
+  389	const	IconDislikeFillRegular
+  394	const	IconDislikeFillMedium
+  405	const	IconShareOutlineRegular
+  410	const	IconShareOutlineMedium
+  425	const	IconDeliverDocRegular
+  430	const	IconDeliverDocMedium
+  442	const	IconEditOutlineRegular
+  447	const	IconEditOutlineMedium
+  460	const	IconThinkOutlineRegular
+  465	const	IconThinkOutlineMedium
+  479	const	IconAgentPresetOutlineRegular
+  484	const	IconAgentPresetOutlineMedium
+  489	const	IconBrowseOutlineRegular
+  494	const	IconBrowseOutlineMedium
+  508	const	IconContextInjectionOutlineRegular
+  513	const	IconContextInjectionOutlineMedium
+  525	const	IconLinkOutlineRegular
+  530	const	IconLinkOutlineMedium
+  542	const	IconRightUpOutlineRegular
+  547	const	IconRightUpOutlineMedium
+  561	const	IconEnhanceOutlineRegular
+  566	const	IconEnhanceOutlineMedium
+  581	const	IconTrashOutlineRegular
+  586	const	IconTrashOutlineMedium
+  599	const	IconWarningOutlineRegular
+  604	const	IconWarningOutlineMedium
+  616	const	IconCheckCircleFillRegular
+  621	const	IconCheckCircleFillMedium
+  633	const	IconWarningTriangleOutlineRegular
+  638	const	IconWarningTriangleOutlineMedium
+  650	const	IconUserOutlineRegular
+  655	const	IconUserOutlineMedium
+  669	const	IconUsersOutlineRegular
+  674	const	IconUsersOutlineMedium
+  686	const	IconPaperPlaneOutlineRegular
+  691	const	IconPaperPlaneOutlineMedium
+  702	const	IconStopFillRegular
+  707	const	IconStopFillMedium
+  718	const	IconPaperclipOutlineRegular
+  723	const	IconPaperclipOutlineMedium
+  734	const	IconLoadingOutlineRegular
+  739	const	IconLoadingOutlineMedium
+  752	const	IconDownloadOutlineRegular
+  757	const	IconDownloadOutlineMedium
+  769	const	IconPlayOutlineRegular
+  774	const	IconPlayOutlineMedium
+  787	const	IconPauseOutlineRegular
+  792	const	IconPauseOutlineMedium
+  805	const	IconFullscreenOutlineRegular
+  810	const	IconFullscreenOutlineMedium
+  824	const	IconCodeOutlineRegular
+  829	const	IconCodeOutlineMedium
+  841	const	IconCordisPluginOutlineRegular
+  846	const	IconCordisPluginOutlineMedium
+  858	const	IconApiOutlineRegular
+  863	const	IconApiOutlineMedium
+  879	const	IconPersonalizationOutlineRegular
+  884	const	IconPersonalizationOutlineMedium
+  897	const	IconProjectAddOutlineRegular
+  902	const	IconProjectAddOutlineMedium
+  914	const	IconFolderOpenOutlineRegular
+  919	const	IconFolderOpenOutlineMedium
+  932	const	IconFolderOpenRegular
+  937	const	IconFolderOpenMedium
+  942	const	IconFolderCloseRegular
+  947	const	IconFolderCloseMedium
+  958	const	IconTreeCornerRegular
+  963	const	IconTreeCornerMedium
+  982	const	IconLightOutlineRegular
+  987	const	IconLightOutlineMedium
+  998	const	IconDarkOutlineRegular
+  1003	const	IconDarkOutlineMedium
+  1015	const	IconFollowsystemOutlineRegular
+  1020	const	IconFollowsystemOutlineMedium
+  1032	const	IconDataOutlineRegular
+  1037	const	IconDataOutlineMedium
+  1052	const	IconDatabaseOutlineRegular
+  1057	const	IconDatabaseOutlineMedium
+  1069	const	IconClockOutlineRegular
+  1074	const	IconClockOutlineMedium
+  1087	const	IconGaugeOutlineRegular
+  1092	const	IconGaugeOutlineMedium
+  1104	const	IconSendOutlineRegular
+  1109	const	IconSendOutlineMedium
+  1118	const	IconQueueOutlineRegular
+  1123	const	IconQueueOutlineMedium
+  1137	const	IconChecklistOutlineRegular
+  1142	const	IconChecklistOutlineMedium
+  1157	const	IconListPenOutlineRegular
+  1162	const	IconListPenOutlineMedium
+  1176	const	IconGoalOutlineRegular
+  1181	const	IconGoalOutlineMedium
+  1194	const	IconSparkleRegular
+  1199	const	IconSparkleMedium
+  1204	const	IconInspectOutlineRegular
+  1209	const	IconInspectOutlineMedium
+  1223	const	IconSkillOutlineRegular
+  1228	const	IconSkillOutlineMedium
+  1241	const	IconQuestionOutlineRegular
+  1246	const	IconQuestionOutlineMedium
+  1262	const	IconInfoOutlineRegular
+  1267	const	IconInfoOutlineMedium
+  1281	const	IconPluginPinwheelOutlineRegular
+  1286	const	IconPluginPinwheelOutlineMedium
+  1302	const	IconAlarmClockOutlineRegular
+  1307	const	IconAlarmClockOutlineMedium
+  1320	const	IconArchiveOutlineRegular
+  1325	const	IconArchiveOutlineMedium
+  1340	const	IconWrapLinesOutlineRegular
+  1345	const	IconWrapLinesOutlineMedium
+  1358	const	IconNowrapFillRegular
+  1361	const	IconNowrapFillMedium
+  1372	const	IconWrapFillRegular
+  1375	const	IconWrapFillMedium
+  1385	const	IconCompareSplitOutlineRegular
+  1390	const	IconCompareSplitOutlineMedium
+  1399	const	IconPlanOutlineRegular
+  1404	const	IconPlanOutlineMedium
+  1416	const	IconCompactOutlineRegular
+  1421	const	IconCompactOutlineMedium
+  1432	const	IconShieldOutlineRegular
+  1437	const	IconShieldOutlineMedium
+  1455	const	IconCheckCircleOutlineRegular
+  1460	const	IconCheckCircleOutlineMedium
+  1477	const	IconUnarchiveOutlineRegular
+  1482	const	IconUnarchiveOutlineMedium
+  1494	const	IconPinOutlineRegular
+  1499	const	IconPinOutlineMedium
+  1511	const	IconPinFillRegular
+  1516	const	IconPinFillMedium
+  1529	const	IconFlatListOutlineRegular
+  1534	const	IconFlatListOutlineMedium
+  1547	const	IconWorkspaceTreeOutlineRegular
+  1552	const	IconWorkspaceTreeOutlineMedium
+  1565	const	IconChevronsUpDownOutlineRegular
+  1570	const	IconChevronsUpDownOutlineMedium
+  1595	const	IconArchiveOffOutlineRegular
+  1600	const	IconArchiveOffOutlineMedium
+  1614	const	IconArchiveCheckOutlineRegular
+  1619	const	IconArchiveCheckOutlineMedium
+  1634	const	IconSlidersTwoOutlineRegular
+  1639	const	IconSlidersTwoOutlineMedium
+  1651	const	IconMicrophoneOutlineRegular
+  1656	const	IconMicrophoneOutlineMedium
+
+### packages/client/ui-primitives/src/icons/props.ts  (9 行)
+  2	iface	IconProps
+
+### packages/client/ui-primitives/src/icons/shared-artwork.tsx  (85 行)
+  12	const	NewChatOutlineArtwork
+  26	const	ChatLinesOutlineArtwork
+  39	const	GlobeOutlineArtwork
+  53	const	CodeBracketsArtwork
+  66	const	BrowseOutlineArtwork
+  79	const	FolderCloseArtwork
+
+### packages/client/ui-primitives/src/index.ts  (114 行)
+
+### packages/client/ui-primitives/src/input-modality.ts  (60 行)
+  9	const	INPUT_MODALITY
+  12	const	INPUT_MODALITY_ATTRIBUTE
+  28	fn	pointerModality
+
+### packages/client/ui-primitives/src/keyboard-composition.ts  (37 行)
+  8	fn	observeComposition
+
+### packages/client/ui-primitives/src/markdown/CodeBlock.tsx  (213 行)
+  13	iface	CodeBlockProps
+  71	fn	CodeBlock
+
+### packages/client/ui-primitives/src/markdown/JsonBlock.tsx  (37 行)
+  8	fn	JsonBlock
+
+### packages/client/ui-primitives/src/markdown/MarkdownDelegate.tsx  (63 行)
+  10	type	MarkdownExternalLinkHandler
+  13	iface	MarkdownDelegate
+  32	iface	MarkdownDelegateProviderProps
+  42	fn	MarkdownDelegateProvider
+  60	fn	useMarkdownDelegate
+
+### packages/client/ui-primitives/src/markdown/MarkdownText.tsx  (200 行)
+  174	const	MarkdownText
+
+### packages/client/ui-primitives/src/markdown/cjkFriendlyStrong.ts  (84 行)
+  81	fn	cjkFriendlyStrong
+
+### packages/client/ui-primitives/src/markdown/file-link.ts  (33 行)
+  10	fn	parseFileLink
+
+### packages/client/ui-primitives/src/markdown/highlight.ts  (601 行)
+  244	fn	grammarForHint
+  253	fn	supportsHighlighting
+  326	fn	subscribeGrammarLoaded
+  337	fn	grammarLoadCount
+  385	fn	highlightToHtml
+  398	iface	HighlightSpan
+  466	class	StreamingHighlightSession
+      members: L481 reset, L491 tokenize, L505 updateFrame, L548 update
+  560	iface	StreamingHighlightFrame
+  585	fn	highlightLines
+
+### packages/client/ui-primitives/src/markdown/incremental.ts  (361 行)
+  41	iface	PositionedBlock
+  53	iface	IncrementalBlocks
+  176	class	IncrementalMarkdownParser
+      members: L185 constructor, L188 fenceValue, L196 openFenceState, L256 updateOpenFence, L310 update
+
+### packages/client/ui-primitives/src/markdown/katex.tsx  (91 行)
+  66	fn	renderTexToReact
+
+### packages/client/ui-primitives/src/markdown/local-image-syntax.ts  (30 行)
+  11	fn	recoverLocalImages
+
+### packages/client/ui-primitives/src/markdown/mathCompatibility.ts  (350 行)
+  347	fn	mathCompatibility
+
+### packages/client/ui-primitives/src/markdown/parse.ts  (46 行)
+  27	fn	parseGfm
+  40	fn	parseGfmWithMath
+
+### packages/client/ui-primitives/src/markdown/plain-text.ts  (122 行)
+  12	type	MarkdownPlainTextMode
+  15	iface	MarkdownPlainTextOptions
+  106	fn	extractMarkdownPlainText
+
+### packages/client/ui-primitives/src/markdown/render.tsx  (761 行)
+  38	iface	MarkdownCodeLabels
+  48	iface	MarkdownLabels
+  111	iface	ReferenceTargets
+  122	fn	createReferenceTargets
+  132	fn	collectReferenceTargets
+  156	iface	MarkdownPathImages
+  171	iface	MarkdownFileMentions
+  185	iface	MarkdownRenderContext
+  214	fn	renderBlocks
+  232	fn	wrapBlockChildren
+  720	fn	renderFootnoteSection
+
+### packages/client/ui-primitives/src/markdown/useViewportHighlighting.ts  (73 行)
+  55	fn	useViewportHighlighting
+
+### packages/client/ui-primitives/src/overlay-top-margin.ts  (20 行)
+  14	fn	overlayTopMargin
+
+### packages/client/ui-primitives/src/plugin-artwork.tsx  (111 行)
+  16	const	PluginArtworkTerminal
+  24	const	PluginArtworkLoop
+  43	const	PluginArtworkSubagent
+  69	const	PluginArtworkSearch
+  97	const	PluginArtworkDefault
+
+### packages/client/ui-primitives/src/pointer-grace.ts  (48 行)
+  8	const	POINTER_GRACE_MS
+  11	iface	PointerGrace
+  25	fn	usePointerGrace
+
+### packages/client/ui-primitives/src/rank-by-name.ts  (94 行)
+  70	fn	rankByName
+
+### packages/client/ui-primitives/src/relative-time.ts  (37 行)
+  10	type	RelativeTimeUnit
+  13	iface	RelativeTime
+  25	fn	relativeTime
+
+### packages/client/ui-primitives/src/settings-form/SettingsForm.tsx  (75 行)
+  18	iface	SettingsFormLabels
+  32	iface	SettingsFormProps
+  50	fn	SettingsForm
+
+### packages/client/ui-primitives/src/settings-form/fields.tsx  (152 行)
+  15	iface	SettingsFieldProps
+  49	fn	SettingsValueField
+  125	fn	SettingsSecretField
+
+### packages/client/ui-primitives/src/settings-form/form-model.ts  (394 行)
+  19	iface	SettingsFormScopeSnapshot
+  35	type	SettingsFormPathOp
+  40	iface	SettingsFormScope
+  59	type	SettingsFieldWrite
+  64	iface	SettingsFieldSpec
+  81	iface	SettingsSecretSpec
+  89	iface	SettingsFieldState
+  103	iface	SettingsFormShell
+  119	iface	SettingsFormActions
+  156	fn	settingsNumberField
+  177	fn	settingsTextField
+  195	class	SettingsFormModel
+      members: L210 constructor, L225 bind, L235 shell, L253 field, L274 actions, L300 save, L323 dispose, L331 plan, L354 stage, L361 spec, L369 snapshotOf, L373 sectionValue, L377 baseValue, L381 userLayer, L385 stored, L390 publish
+
+### packages/client/ui-primitives/src/use-copy-feedback.ts  (32 行)
+  8	iface	CopyFeedback
+  20	fn	useCopyFeedback
+
+### packages/client/ui-primitives/src/useAnchoredMaxHeight.ts  (46 行)
+  28	fn	useAnchoredMaxHeight
+
+### packages/client/ui-primitives/src/useAnchoredPosition.ts  (86 行)
+  16	iface	AnchoredPositionOptions
+  38	fn	useAnchoredPosition
+
+### packages/client/ui-primitives/src/useDismissOnOutsidePointer.ts  (35 行)
+  16	fn	useDismissOnOutsidePointer
+
+### packages/client/ui-primitives/src/useModalLayer.ts  (98 行)
+  8	const	modalSelector
+  17	fn	closeTopModal
+  28	fn	isBehindModal
+  46	fn	useModalLayer
+
+### packages/client/ui-primitives/src/user-text.tsx  (157 行)
+  40	iface	UserTextReferences
+  58	fn	projectUserText
+
+## 其它关键文件
+
+### package.json
+{
+  "name": "@deepseek-ai/dsh-client-ui-primitives",
+  "description": "Pure React atoms for the dsh web UI: controls, icons, markdown, and JSON inspectors (zero cordis)",
+  "version": "0.1.7-rc.2",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/client/ui-primitives"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@deepseek-ai/dsh-client-store": "workspace:*",
+    "@types/react": "~18.3.1",
+    "@types/react-dom": "~18.3.0",
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/dsh-util-code-language": "workspace:*",
+    "react": "^18.2.0",
+    "clsx": "^2.0.0",
+    "diff": "^9.0.0",
+    "react-dom": "^18.2.0",
+    "anser": "^2.3.5",
+    "katex": "^0.16.47",
+    "micromark-core-commonmark": "^2.0.3",
+    "micromark-util-character": "^2.1.1",
+    "micromark-util-classify-character": "^2.0.1",
+    "micromark-util-symbol": "^2.0.1",
+    "micromark-util-types": "^2.0.2",
+    "shiki": "^4.3.1",
+    "@deepseek-ai/dsh-util-workspace-path": "workspace:*",
+    "@shikijs/langs": "^4.3.1",
+    "@types/mdast": "^4.0.4",
+    "micromark-factory-space": "^2.0.1",
+    "micromark-extension-math": "^3.1.0",
+    "mdast-util-from-markdown": "^2.0.3",
+    "mdast-util-gfm": "^3.1.0",
+    "mdast-util-math": "^3.0.0",
+    "micromark-extension-gfm": "^3.0.0",
+    "micromark-util-sanitize-uri": "^2.0.1",
+    "simple-icons": "16.31.0"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/**/*.css",
+    "lib/types/**/*.d.ts"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:~"
+  }
+}
+

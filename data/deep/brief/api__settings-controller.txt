@@ -1,0 +1,166 @@
+# @deepseek-ai/dsh-api-settings-controller
+path: packages/api/settings-controller
+desc: Remote owner for the configuration surfaces over the settings-domain seams
+deps: @deepseek-ai/schemastery
+peers: @deepseek-ai/cordis, @deepseek-ai/dsh-agent-presets, @deepseek-ai/dsh-credentials, @deepseek-ai/dsh-native-command, @deepseek-ai/dsh-session, @deepseek-ai/dsh-settings, @deepseek-ai/dsh-typert-protocol
+srcFiles: 3  srcLoc: 540
+
+## README.md (72 行)
+---
+description: "Host Remote owner for settings and credential configuration surfaces, including redacted reads, writes, credential references, and native document opening."
+kind: "package-reference"
+---
+# Settings Controller
+
+English | [中文](README.zh.md)
+
+## Summary
+
+`@deepseek-ai/dsh-api-settings-controller` exposes generated `ctx.remote.settings` and `ctx.remote.credentials` namespaces for browser configuration surfaces. It returns redacted settings and credential metadata, supports settings and credential writes without returning secret values, and opens provider-owned settings or Agent preset locations on the Host desktop. When a provider is absent, the namespace remains registered and returns an actionable configuration error.
+
+## Table of Contents
+
+- [Use this package](#use-this-package)
+- [Configuration](#configuration)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="use-this-package"></a>
+## Use this package
+
+Mount this package as a Loader entry in a profile that serves browser configuration. The entry registers both namespaces independently of their providers so a missing provider produces a named configuration error at invocation. Its generated descriptors enter the strict Typert registry, while the settings and credential Definitions remain plain Cordis Services with no wire obligations of their own.
+
+`describe(refs)` answers one map keyed by the requested names, so a settings page describing every reference its rows carry settles those rows together. It accepts at most 64 names per call, reports an invalid name or empty write value as `bad-request`, and copies each answer field by field — a provider returning more than `CredentialInfo` declares cannot widen what crosses. Valid `set(ref, value)` and `unset(ref)` calls report a provider refusal as `credential-rejected`, carrying the provider's message with only the reference in its details. Secret values cross in this direction only: no method here returns one.
+
+`settings.describe()` returns deployment facts and every namespace under `redactSecrets: true`. `settings.update`, `settings.replace`, and `settings.mutate` expose the settings service's three write operations and return the namespace's new redacted view; stale writes use `settings-conflict` and other provider refusals use `settings-rejected`.
+
+`settings.openSettingsDocument()` prepares the provider-owned document and opens it with the native text editor; it accepts no browser-supplied filesystem target.
+
+-----
+
+<a id="configuration"></a>
+## Configuration
+
+| Field | Default | Meaning |
+|---|---|---|
+
+The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-api-settings-controller) is the exhaustive source for accepted fields and their JSDoc.
+
+-----
+
+<a id="model-experience"></a>
+## Model Experience
+
+None, as settings and credential configuration are browser and Host state and register no prompt, tool, or session event.
+
+#### KV Cache effect
+
+No direct effect; reading or writing these configuration values does not alter model requests already in flight.
+
+## Known Limitations and Deferred Work
+
+<a id="known-limitations-and-deferred-work"></a>
+
+- The batch bound is fixed at 64 references and is not a deployment-configurable field.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>
+
+**Runtime invariant:** No companion is published. The settings and credential seams own storage and update events, while this package only projects their methods onto the wire.
+
+
+## 源文件与导出符号
+
+### packages/api/settings-controller/src/credentials.ts  (156 行)
+  declare module: declare module '@deepseek-ai/cordis' {
+  67	class	CredentialsController
+      members: L69 constructor, L83 describe, L100 set, L113 unset, L121 provider, L141 write
+
+### packages/api/settings-controller/src/index.ts  (271 行)
+  declare module: declare module '@deepseek-ai/cordis' {
+  35	iface	SettingsControllerInternals
+  76	class	SettingsController
+      members: L85 constructor, L98 describe, L116 update, L133 replace, L152 mutate, L167 openSettingsDocument, L187 write, L216 provider, L241 if, L242 if, L259 if
+
+### packages/api/settings-controller/src/types.ts  (35 行)
+  declare module: declare module '@deepseek-ai/dsh-typert-protocol' {
+  32	iface	SettingsDocumentOpenValue
+
+## 其它关键文件
+
+### package.json
+{
+  "name": "@deepseek-ai/dsh-api-settings-controller",
+  "description": "Remote owner for the configuration surfaces over the settings-domain seams",
+  "version": "0.1.7-rc.2",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/api/settings-controller"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./types": {
+      "types": "./lib/types/types.d.ts",
+      "default": "./lib/types/types.js"
+    },
+    "./typert": {
+      "types": "./lib/typert.host.d.ts",
+      "default": "./lib/typert.host.js"
+    },
+    "./remote": {
+      "types": "./lib/typert.remote-client.d.ts",
+      "default": "./lib/typert.remote-client.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/types/**/*.js",
+    "lib/types/**/*.d.ts",
+    "lib/typert.host.js",
+    "lib/typert.host.d.ts",
+    "lib/typert.remote-client.js",
+    "lib/typert.remote-client.d.ts"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/schemastery": "workspace:~",
+    "zod": "^4.4.3"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/dsh-agent-preset-registry": "workspace:*",
+    "@deepseek-ai/dsh-credentials": "workspace:*",
+    "@deepseek-ai/dsh-native-command": "workspace:*",
+    "@deepseek-ai/dsh-session": "workspace:*",
+    "@deepseek-ai/dsh-settings": "workspace:*",
+    "@deepseek-ai/dsh-typert-protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/dsh-agent-preset-registry": "workspace:*",
+    "@deepseek-ai/dsh-credentials": "workspace:*",
+    "@deepseek-ai/dsh-native-command": "workspace:*",
+    "@deepseek-ai/dsh-session": "workspace:*",
+    "@deepseek-ai/dsh-se

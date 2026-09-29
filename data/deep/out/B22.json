@@ -1,0 +1,189 @@
+[
+  {
+    "group": "attachment",
+    "dir": "attachment",
+    "short": "attachment",
+    "oneLiner": "持久附件身份接缝：把用户上传的图片/文件变成可校验、可复用的不可变引用",
+    "why": "没有这个包，用户附加的图片和文件就没有跨重启的身份：会话日志要么塞 base64（撑爆日志、无法去重），要么存临时路径（重启即失效、无法校验）。dsh-llm 的 ImageBlock/FileBlock 之所以能携带 ImageAttachmentRef/FileAttachmentRef 进入 provider 请求，靠的就是这里定义的引用词汇与 AttachmentStore 契约。它还固化了准入语义：整批图片先全部校验再逐个提交，消息要么整体成功要么整体失败，日志里永远不会出现指向半成品归一化结果的引用；错误带稳定 code，各协议 adapter 用 isAttachmentError 按码路由，不必理解内部实现。删掉它，图片准入、文件逐字节存储、请求版本投影这三条链路同时失去契约，客户端、adapter、实现层各自发明语义。",
+    "position": "上游是三类调用方：Host 提示词管道把用户消息递给 ctx.attachments.admitPromptContent()，由它把 image part 替换成持久引用；编码式协议 adapter 调 admitEncodedFile() 并用 isAttachmentError() 识别失败；llm 的 provider adapter 在组装请求时调 readImageRequest()/readFileStream() 把引用解析成路由尺寸的字节或文本句柄。下游它本身零实现依赖（peer 仅 cordis 与 dsh-brand），真正的存储由 attachment-local 以 AttachmentStore 子类插件提供，挂成 ctx.attachments 服务。数据流是单向的：用户字节 → admission 校验/归一化 → 实现层持久化 → ImageAttachmentRef 写入会话日志 → 之后每轮读回时逐字节校验再投影成请求版本。",
+    "inside": "266 行的 index.ts 全部围绕抽象类 AttachmentStore extends Service（L53，构造即注册服务名 'attachments'）。它声明抽象方法 validateImage/saveImage/readImage（实现必须提供），并提供带默认实现的契约方法：validateImageBatch（L77）在写任何成员之前检查批内数量、聚合字节与媒体类型；saveImages（L98）先整批验证再逐个提交，保证失败不留半批引用；admitPromptContent（L114）把 prompt 里的 image part 按输入顺序替换成持久引用，纯文本 prompt 零存储操作。文件与投影方向相反：saveFile/saveFileStream/readFileStream（L188/203/219）的默认实现一律抛 ATTACHMENT_FILES_UNSUPPORTED，readImageRequest（L249）默认抛 ATTACHMENT_PROJECTION_UNSUPPORTED——接缝不假装自己会存储，'逐字节 verbatim 文件'与'请求版本派生'都明确推给实现。错误侧 AttachmentError（error.ts）刻意复刻 HarnessError 形状而不继承它，因为 dsh-llm 依赖本包，继承会造成反向依赖；消费者只用 isAttachmentError + code 判断。request-projection.ts 的 requestImageDimensions/longEdgeDimensions 是纯函数，让路由选尺寸与请求定价共享同一套几何计算。",
+    "boundary": "它管的是：附件的持久身份（引用语法、批次准入契约、错误码、读回校验要求）。它不管：字节落在哪、目录怎么组织（attachment-local 的 content-addressed 布局）、图片怎么压缩归一化（实现的 normalization）、请求字节最终编码进哪个 provider 格式（llm adapter）、工具产生的大结果往哪放（spill 家族）。划线依据是数据来源与时机：附件是用户在消息发布前给出的输入，必须在事件追加前完成校验与持久化；溢出是工具执行后产生的输出，属于另一条管线。imageHostPath/fileHostPath 只暴露给可信同进程消费者做执行世界映射，也不是公开存储接口。",
+    "tour": [
+      { "file": "packages/attachment/attachment/src/index.ts", "line": 53, "sym": "AttachmentStore", "note": "抽象服务构造即注册 ctx.attachments；接缝全部契约挂在这一个类上。" },
+      { "file": "packages/attachment/attachment/src/index.ts", "line": 98, "sym": "saveImages", "note": "整批先验证后提交的准入语义：消息要么整体成功，日志永不引用半成品。" },
+      { "file": "packages/attachment/attachment/src/index.ts", "line": 188, "sym": "saveFile", "note": "默认实现直接拒绝：接缝不含 verbatim 文件存储，逼实现层认领。" },
+      { "file": "packages/attachment/attachment/src/index.ts", "line": 249, "sym": "readImageRequest", "note": "请求版本投影在接缝层同样默认拒绝，路由相关变换全部归实现。" }
+    ],
+    "gotchas": "README 明说的限制：存储的附件永不自动删除——resumed/forked 会话共享不可变对象，引用感知 GC 被整体推迟；音频/视频无专门处理，非图片文件按原样字节存储且无大小限制；composer 未发送的草稿不落盘。代码层面还有两个反直觉点：AttachmentError 不继承 HarnessError（避免 dsh-llm 反向依赖），判断必须走 isAttachmentError 而非原型链；批量失败后已发布的内容寻址对象可能留下'不可达但存在'的对象，要等未来 retention 收割。",
+    "analogy": "附件系统像机场寄存柜：你交进去的每件行李都被贴上唯一的防伪封条（内容摘要），柜子本身编号固定（不可变对象），任何人在任何时候凭票取件时都会当场验封——封条对不上就报错，而不是把错的东西递给你。接缝包是柜台窗口的规章：它规定'怎么交、怎么验、开什么票'，至于柜子怎么造、放哪条走廊，是另一个包的事。"
+  },
+  {
+    "group": "attachment",
+    "dir": "attachment-local",
+    "short": "attachment-local",
+    "oneLiner": "DSH_HOME 下的内容寻址附件存储：hash 即身份，写入经 fsync 链、读回必校验",
+    "why": "接缝包只定契约，没有它 ctx.attachments 就没有实现，附加图片/文件这个能力整体不存在。它把'持久'做成可证明的性质：写路径不是'文件写成功就算数'，而是暂存文件 fsync、原子硬链接发布、再从发布目录逐级 fsync 到文件系统根——一个已同步的文件在目录项没落盘时照样会在崩溃中消失，而会话 checkpoint 一旦引用了它就是永久悬空。内容寻址让三个性质免费成立：相同字节天然去重（不同显示名只存一份）；读回可校验（重算摘要不符即报损坏，绝不把错的字节当对的返回）；可迁移（引用不绑定路径或会话，fork/resume 共享同一对象是安全的）。删除它，附件退化为不可信的临时文件。",
+    "position": "它是 dsh-attachment 接缝的落地实现，作为插件加载后以 LocalAttachmentStore 注册成 ctx.attachments（一个 ctx 只允许一个实现）。上游调用全部来自接缝契约：Host 管道经 admitPromptContent 间接触发 saveImages，llm provider adapter 调 readImageRequest 拿请求版本，模型用文件工具读 fileHostPath 暴露的只读路径。下游它依赖 dsh-home-paths（resolveDshHome/dshCachePath 定位存储与缓存根）、sharp（惰性 require 的图像编解码）、dsh-attachment（契约与错误类型）。数据流：源字节 → 归一化 → sha256 → v1/objects 发布；请求版本另有 cache/attachments/request-images 缓存层，清缓存不伤持久对象。",
+    "inside": "分四块。① 写路径（store.ts，459 行）：prepareImageFile（L99）解码检测、应用 EXIF 方向、剥离元数据与色彩配置，在 2048×2048 像素预算 + 8192 长边 + 4 MiB 字节目标下归一化（带 alpha 用 WebP、不透明用 JPEG，85/75/60 质量阶梯取最小合格者），算出 sha256 即 attachmentId；commitPreparedImageFile→publishImmutableObject（L214）：先 stageImmutableObject（L309）在 v1/tmp 用 O_CREAT|O_EXCL|0600 边写边算摘要并 fsync，再 link() 原子硬链接发布到 objects/<前2位>/<sha256>，EEXIST 竞态用 digestFile 复核同内容后继续（去重天然安全），然后 unlink 暂存名、chmod 0400、从父目录向上 syncDirectory 到 root。ensureDurableDirectory（L156）更狠：每个进程首写都要把 DSH_HOME 全部祖先目录逐级 fsync 到文件系统根，'目录已存在'绝不当作'已持久'。② 读路径：readImageFile（L431）重算 digest，再 probe 校验 mediaType/bytes/宽高，任一不符抛 ATTACHMENT_CORRUPT。③ 文件侧（file-store.ts）：file-objects/<digest> 存正身，files/<digest>/<name> 是只读硬链接别名，不同名字的相同字节不重复占盘。④ 请求投影（request-image.ts + index.ts requestVersion L256）：variantId 覆盖 attachment id、变换版本、目标尺寸、字节目标与编码器设置；SharedRequest（L94）做 singleflight，并发调用共享一次变换，所有 waiter 都取消才中止。",
+    "boundary": "管存储与校验的每个字节细节；不管准入策略本身（limits 是配置，接缝层执行）、不管引用如何进入会话日志（session 包）、不管模型怎么用这些路径（fs/工具层）。与 spill-local 的划线最有意思：两者都往磁盘写文件，但这里写的是'用户输入的不可变正身'，身份来自内容、永不清理；spill-local 写的是'工具输出的可丢弃副本'，身份来自会话与随机名、有清理策略。前者宁可过度保证持久（fsync 链），后者只要求私有与不可重定向（0700/0600/独占创建）——两种存储哲学由数据来源决定。",
+    "tour": [
+      { "file": "packages/attachment/attachment-local/src/store.ts", "line": 99, "sym": "prepareImageFile", "note": "归一化 + 摘要即身份：ref 的 attachmentId 就是归一化字节的 sha256。" },
+      { "file": "packages/attachment/attachment-local/src/store.ts", "line": 214, "sym": "publishImmutableObject", "note": "暂存-硬链接-去重复核-只读化的不可变发布全流程入口。" },
+      { "file": "packages/attachment/attachment-local/src/store.ts", "line": 156, "sym": "ensureDurableDirectory", "note": "逐级 fsync 祖先目录：目录存在不等于目录项已持久，崩溃安全的关键。" },
+      { "file": "packages/attachment/attachment-local/src/index.ts", "line": 256, "sym": "requestVersion", "note": "请求版本 singleflight：并发共享一次变换，最后一个 waiter 取消才中止。" },
+      { "file": "packages/attachment/attachment-local/src/store.ts", "line": 431, "sym": "readImageFile", "note": "读回必校验：摘要不符或元数据不符都报 ATTACHMENT_CORRUPT，绝不返回错字节。" }
+    ],
+    "gotchas": "永不删除（无 GC，fork/resume 共享使引用计数无从谈起）；只在本机可读，多机部署要换 backend；动图归一化只留第一帧；编码器输出被 Sharp/libvips 构建钉死，升级会改变未来字节的地址但旧对象仍有效；source 限额是写入时策略，事后收紧不会让已入库图片不可读；Windows 没有 directory fsync，syncDirectory 直接 return，靠 NTFS 元数据日志兜底。",
+    "analogy": "像一个按指纹归档的保险库：不管你存几张同样的照片，库里只留一份正身，位置由内容本身的'指纹'（哈希）决定，所以两份相同的东西永远落到同一个抽屉；每次取件都当场重新验一遍指纹，对不上宁可报错也不交付；而且它坚持'抽屉标签也钉牢了才告诉你存好了'——那个逐级 fsync 就是把每一层抽屉标签都敲钉子的动作。"
+  },
+  {
+    "group": "spill",
+    "dir": "spill",
+    "short": "spill",
+    "oneLiner": "溢出存储接缝：超大文本落盘成 artifact，换回一个不透明 locator 交模型按需取用",
+    "why": "工具动辄产出几十万字的正文（抓取的网页、截获的会话投影），全部塞进上下文既贵又容易超窗。这个包把'正文去哪、模型看什么'拆开：saveText 持久化全文，返回 locator + 精确字节数 + retrievalHint，消费方把 locator 与提示一起渲染给模型，模型用普通文件工具按需取回。删掉它，spill-policy 没有可调用的存储契约，session-reference 截断 transcript 也无处落盘；更关键的是失去'接缝只 reject 不静默降级'的约定——存储失败该由调用方决定降级方式（shipped policy 保留原内联结果），而不是接缝悄悄吞掉。",
+    "position": "上游两个消费方：dsh-spill-policy 在 tools/post-execute 里对超预算结果调 saveText；dsh-session-reference 直接保存被截断的引用 transcript，不经过 policy。下游唯一 shipped 实现是 dsh-spill-local（宿主文件系统），以 SpillStore 子类插件注册成 ctx.spillStore，一个 ctx 只容一个。peer 依赖 dsh-llm/dsh-session 仅取 ToolCallId/SessionId 类型。数据流：工具结果文本 → saveText(owner.sessionId, source, suggestedName, content) → backend 落盘 → SpillRef{locator, bytes, retrievalHint} → 消费方渲染进模型请求与会话日志。fork 的会话继承日志里已有的 locator，不复制也不改归属，fork 后新溢出才用子会话 id。",
+    "inside": "140 行，几乎是纯契约。index.ts：abstract SpillStore extends Service（L45），构造传服务名 'spillStore'；唯一抽象方法 saveText（L55），类注释写死实现必须遵守的三条语义：全文 verbatim 持久、按 owner.sessionId 分组且位置私有、真存储失败必须 reject。types.ts 是全部词汇：SpillLocator（L18）是 branded string，明确'不透明、渲染但绝不 parse'；SpillOwner（L37）只有 sessionId；SpillSource（L46）是判别联合——tool 源带 toolName/callId/label，session-reference 源带被引用会话的 sessionId，注释明说'不伪造 tool call id'；SaveTextSpill（L63）里 suggestedName 注释直接写'是提示不是路径，backend 必须消毒成单段安全名'；SpillRef（L76）三字段收尾。刻意的'一方法主义'写在模块注释里：不拥有 retention（output-retention 的）、不拥有结果替换（spill-policy 的）、不拥有检索/搜索 API——注释原文列出了这三条 NO。",
+    "boundary": "管契约与词汇、owner 命名空间、失败语义；不管何时触发溢出（spill-policy 决定）、不管落在什么介质（backend 决定）、不管模型如何取回（locator 的语义由 backend 的 retrievalHint 描述，取回靠模型自己的 read/grep 工具）。划线依据：触发时机是消费策略问题，存储介质是部署问题，接缝只保留两者都赖以成立的最小公约数——saveText 的输入输出形状。owner.sessionId 只是写侧命名空间，README 明说'存储不是访问控制'，读授权不在本接缝。",
+    "tour": [
+      { "file": "packages/spill/spill/src/index.ts", "line": 45, "sym": "SpillStore", "note": "接缝本体：注册 ctx.spillStore 的抽象服务，注释固化实现三语义。" },
+      { "file": "packages/spill/spill/src/index.ts", "line": 55, "sym": "saveText", "note": "唯一方法：一方法主义，retention/替换/检索都被注释明确排除。" },
+      { "file": "packages/spill/spill/src/types.ts", "line": 76, "sym": "SpillRef", "note": "返回三元组 locator/bytes/retrievalHint，是模型侧取回契约的全部。" },
+      { "file": "packages/spill/spill/src/types.ts", "line": 46, "sym": "SpillSource", "note": "tool 与 session-reference 两种来源的判别联合，只描述不授权。" }
+    ],
+    "gotchas": "接缝自己没有任何能力：不挂 backend 就没有 ctx.spillStore，挂第二个 backend 会因 cordis 重复服务直接失败；没有检索/删除 API，生命周期语义全部 backend 自定义；locator 不透明，消费方 parse 它是违规；owner 命名空间不构成读授权。Remote/数据库 backend、executor spill-file 集成（如 bash 临时文件规范化）、subagent rollout 的 tool-owned spill 都还停在 dev note 里。",
+    "analogy": "像图书馆的馆际寄存服务：你把一摞超厚的资料交给前台，前台只给你一张编号条和一句'去 X 层书架按编号取'。前台不管你为什么存（那是政策包的事），也不管库房怎么建（那是后端包的事），只保证：条子上的编号永远有效、字数没写错、还附一句取书指引。"
+  },
+  {
+    "group": "spill",
+    "dir": "spill-local",
+    "short": "spill-local",
+    "oneLiner": "spill 接缝的本地文件实现：私有会话目录 + 不可预测文件名 + 独占 0600 写入",
+    "why": "没有它，spill 接缝在本机部署就没有 backend，policy 存了也白存。它把'一个溢出 artifact 必须私有且不可被重定向'做成机制：root 私有 0700，会话目录是稳定 hash，叶子名带随机前缀，写入用 open 'wx' 0600 独占创建——预埋的符号链接或同名文件无法劫持这次写。suggestedName 是不可信输入，encodeSegment 把 [A-Za-z0-9._-] 与 ~ 之外的每个 code unit 转成 ~XXXX 的注入映射，../、绝对路径、NUL 乃至整段的 . 和 .. 都逃不出一个路径段。删除它，模型拿到的 locator 要么不存在，要么落在可被其他本地用户读写或篡改的位置。",
+    "position": "它是 dsh-spill 契约的 shipped 实现，加载后注册 ctx.spillStore。上游：dsh-spill-policy 的 bound() 对超预算结果调 saveText；其他调用方（session-reference）同样走接缝。下游依赖极少：schemastery（Config）、cordis；存储机制在 store.ts/cleanup.ts 两个 Cordis-free 模块里，不碰 context 就能单测。数据流：saveText → sessionDir(root, sessionId 的 sha256 前 12 位) → 随机 hex 前缀 + encodeSegment(suggestedName) → 写文件 → 返回绝对路径作为 locator，retrievalHint 固定为'用 read offset/limit 或 grep 这个路径'。",
+    "inside": "三个部件。① 存储机制（store.ts，132 行，刻意无 Cordis）：privateRoot（L36）用 mkdtempSync 建每进程私有默认根；sessionDir（L78）按会话 id 哈希前 12 位分组，同一会话的溢出文件聚在一起；saveTextFile（L108）mkdir 0700 + open 'wx' 0600，ENOENT 竞态循环重试，两次保存同名建议会得到不同随机前缀。② 服务壳（index.ts，165 行）：LocalSpillStore（L65）构造时固化 root（config.root resolve，否则 privateRoot）；saveText（L149）把 SavedText 包成 SpillLocator 并附固定 retrievalHint。③ 清理（cleanup.ts，432 行）：构造器用 ctx.effect 启动一次性 sweep（L95——启动即 launch 但不 await，yield 的 disposer await 同一个 promise，服务可用性不被拖延、fiber 卸载却能等到 quiesce）；sweepSpillRoots（L274）扫描配置 root 加上临时目录里历史版本的 dsh-spill-* 根，按 mtime 严格早于截止时间删除、剪空会话目录、只删空的旧默认根；POSIX 上只碰当前用户拥有、组/他者不可写、且祖先链不可被替换的目录，绝不跟随符号链接，用文件系统身份去重别名；一切失败都收进 warn，清理永远不能搞挂激活或并发写。",
+    "boundary": "管存储细节与清理策略；不管何时溢出（policy）、不管 locator 在别的部署怎么解释（那是别的 backend）、不管 preview 内容（output-retention 与 policy 的领地）。划线依据：README 明说 backend 只拥有 storage and artifact expiry。与 attachment-local 的对比是理解边界最好的镜子：附件是用户输入的不可变正身（内容寻址、永不删除、fsync 链证明持久），溢出是工具输出的可丢弃副本（会话寻址、30 天清理、只求私有防重定向）——同为落盘，哲学相反。",
+    "tour": [
+      { "file": "packages/spill/spill-local/src/index.ts", "line": 149, "sym": "LocalSpillStore.saveText", "note": "接缝落地点：写文件、包 locator、附固定 read/grep 检索提示。" },
+      { "file": "packages/spill/spill-local/src/store.ts", "line": 108, "sym": "saveTextFile", "note": "私有会话目录 + 随机前缀 + 'wx' 0600 独占创建，防重定向的写入核心。" },
+      { "file": "packages/spill/spill-local/src/store.ts", "line": 55, "sym": "encodeSegment", "note": "不可信名字的注入式消毒：连 . 和 .. 都被转义，路径逃逸不可能。" },
+      { "file": "packages/spill/spill-local/src/index.ts", "line": 95, "sym": "ctx.effect cleanup", "note": "启动 sweep 不拖慢服务：launch 后即返回，disposal await 同一 promise。" },
+      { "file": "packages/spill/spill-local/src/cleanup.ts", "line": 274, "sym": "sweepSpillRoots", "note": "按 mtime 的一次性清理：身份去重、不跟符号链接、失败全兜住。" }
+    ],
+    "gotchas": "一次性 sweep 只在激活后跑，长驻进程内跨过 30 天线的溢出文件要等下次重启才回收；locator 只有同机文件系统消费者能用，远程/虚拟化部署需要另一个 backend；默认 root 在 OS 临时目录，重启可能被系统清掉（这既是特性也是坑）；检索模型假设模型的 read/grep 能访问该路径——未来 workspace 收敛策略要么显式放行 spill 路径，要么换非文件 backend。",
+    "analogy": "像公司里每层楼的自助档案盒：每个项目（会话）一个盒子，文件名机器随机生成防止有人顺走或调包，盒子只有你和系统打得开（0700/0600）；前台定期来清点，超过保管期的就碎掉——但只在你上班开门时清点一次，中间过期的不算。"
+  },
+  {
+    "group": "spill",
+    "dir": "spill-policy",
+    "short": "spill-policy",
+    "oneLiner": "工具结果溢出策略：超 token 预算的结果换成 head/tail 预览 + 全文落盘路径",
+    "why": "没有它，一次 web_fetch 抓回的大页面、一个 dump 出来的长日志会原样进入模型请求——轻则烧钱撑爆上下文，重则被 provider 截断后模型拿到断头内容还自以为完整。它是'正文落盘、引用进日志'机制里的决策者：在 post-execute 管道把超预算的 text/image 结果按代价保留首尾、省略中段、把全文（含每张图的可读路径行）交给 spillStore 落盘，再附上'省略了多少字节、全文在哪、怎么读'的通知。失败时是 best-effort：存储挂了、图算不出价、locator 太长，一律 warn 后保留原始内容，绝不把一次成功的工具调用变成错误或让内容消失。",
+    "position": "上游是 tools 管道：本包（inject ['tools']）prepend 一个 tools/post-execute waterfall listener，工具结果被 post-execute 策略接受之后、进入模型请求之前经过它；tools/ptc-dispatch-log 共享同一个 bound() 处理 PTC 程序的日志副本。下游：ctx.spillStore（spill-local）负责落盘；dsh-token-meter 估文本 token；当前路由的 imageRequestPricing 估图；attachments+fs 服务把附件宿主路径映射成执行世界可读路径。数据流：工具结果 ContentBlock[] → 代价求和超 maxInlineTokens → fullText 串全文 → saveText → retainContent 剪出预览 → 替换后的 blocks 回到 accept 决策，进模型请求与会话日志。",
+    "inside": "三个部件。① 决策与替换（index.ts，157 行）：apply（L48）先校验 maxInlineTokens（缺省即整个插件不装；负数/分数在加载期抛错）；bound（L91）是核心：retainable 只接受纯 text/image 序列，其他块类型原样放行；pricing（L57）给每个块定价——文本走 estimateContent，图走当前 provider/model 的 imageRequestPricing（含描述文本），算不出价直接进 best-effort 分支；超预算才行动：fullText（L78）把全文拼成文本、每个图片位换成 '[Image: <只读路径>; mediaType; WxH. Use read_image…]' 行（需要 attachments 与 fs 把宿主路径映进执行世界，映射不出就放弃替换——绝不用读不了的路径换掉图）；保存后预留通知预算，retainContent 剪首尾，formatSpillNotice 生成结尾通知，相邻 text 块合并省一个 framing。② 纯函数保留（retention.ts）：retainContent（L48）把预算对半分给 head/tail，文本用二分法 fitText 切到恰好贴合预算且不切断 UTF-16 代理对，图片只能整体保留或整体省略。③ 通知（notice.ts）：formatSpillNotice（L21）输出'省略 N 字节（M 张图）+ 全文路径 + 检索提示'，hasSpillNotice（L45）能识别历史纯字节格式的新旧通知而不改写已记录文本。",
+    "boundary": "管何时把最终接受的结果变成预览+引用、预览怎么剪、通知长什么样；不管存储（spillStore 的）、不管 preview 的文本机制本身（dsh-output-retention 的）、不管 provider 或工具在更早环节做的截断（那些内容它见不到，救不回）；read 工具明确跳过（它返回的就是给模型读别的文件的）。划线依据：它只看'最终被接受的内容'这一刀位置——早于它的截断归 provider，晚于它的呈现归 llm 请求组装。",
+    "tour": [
+      { "file": "packages/spill/spill-policy/src/index.ts", "line": 48, "sym": "apply", "note": "装两个 waterfall listener 的入口；maxInlineTokens 缺省即整体禁用。" },
+      { "file": "packages/spill/spill-policy/src/index.ts", "line": 91, "sym": "bound", "note": "定价-落盘-剪裁-通知的全流程；任何失败 warn 后保留原内容。" },
+      { "file": "packages/spill/spill-policy/src/retention.ts", "line": 48, "sym": "retainContent", "note": "首尾对半预算：文本二分贴合、代理对不切断、图片不可分。" },
+      { "file": "packages/spill/spill-policy/src/index.ts", "line": 133, "sym": "tools/post-execute", "note": "prepend 进工具管道：只处理 accept 且非 read 的最终结果。" },
+      { "file": "packages/spill/spill-policy/src/notice.ts", "line": 21, "sym": "formatSpillNotice", "note": "模型看到的那句话怎么拼：字节数+图片数+全文路径+检索提示。" }
+    ],
+    "gotchas": "文本识别不能认证输出——工具可以自己打印一模一样的通知文本，hasSpillNotice 只是约定不是证明；小预算或超长 locator 会让通知本身超限，此时放弃替换，但 spill 文件已经写了，留下一个无引用的孤儿文件；read 与 blocked/value 替换等决策不经过它；预算是估算不是 tokenizer 保证；图片需要路由定价器与可执行的附件路径，缺一个就整批保留原内容。",
+    "analogy": "像给长报告做摘要的助理：报告太厚就把它全文存档，交给你的只有开头结尾几页加一张便条'中间省略了 N 页，全文在档案室 X 柜，凭条可取'。助理很守规矩：档案馆关门（存储挂了）就把原报告原样给你，绝不给你一张去不了的字条；图片页从不撕开摘录，要么整页保留要么整页省略。"
+  },
+  {
+    "group": "credentials",
+    "dir": "credentials",
+    "short": "credentials",
+    "oneLiner": "凭据接缝：配置里只写密钥的引用（名字），值由 provider 层拥有并逐次解析",
+    "why": "没有它，settings 与 cordis.yml 要么明文写 API key（被同步、被配置 UI 渲染、换 key 要改文件重启），要么每个插件自己伸手读环境变量——没有统一的 describe、没有只读层判定、UI 无法安全呈现'配没配、从哪来、能不能改'。这个包定死两条关键语义：其一，resolve 必须逐操作调用、不许跨操作缓存——这一次读本身就是热更新机制，轮换密钥后下一个请求即刻生效，无需重启；其二，空值即不存在，空字符串永远不能冒充已配置的密钥。再加上记录半（authorization grant、provider env）的 modifyRecord 唯一写路径（锁下读-判-写，跨进程轮换 refresh token 不丢写），删掉它，配置安全模型和热轮换同时塌掉。",
+    "position": "上游：settings 各节与 cordis.yml 写 apiKeyEnv: DEEPSEEK_API_KEY 这样的引用；llm adapter 每次请求前 resolve；配置 UI 用 describe/describeRecord/listRecords 呈现状态（永远拿不到值）；authorization 的 flow 用 modifyRecord 提交授权结果；credentials/reference-updated 与 credentials/record-updated 事件供 UI 刷新徽标。下游：本包只依赖 dsh-brand（branded 类型），抽象类 CredentialProvider 注册服务名 'credentials'，实现由 credentials-local 以子类插件提供（未来可以是 keyring/KMS）。数据流：引用名 → provider 分层解析（env→file→.env）→ 值 + source 返回给当次操作。",
+    "inside": "两个键空间共享一个抽象类。引用半：credentialRef（L29）用 REF_PATTERN（L19，POSIX shell 标识符）给环境变量名打品牌——引用刻意长成环境变量的样子，因为它解析时就是要穿过环境层；isCredentialRefName（L45）给拿到外部名字的消费者做'读作未配置而非报错'的预判。resolve/describe/set/unset（L183-209）是四个抽象方法；set 的注释规定两条拒绝条件：只读层影子之下写入会'看似成功实则无效'，必须拒绝；空值必须走 unset。记录半：credentialKey（L69）构造 <scope>/<id>，scope 是注册插件名；listRecords（L234）只记录半有，因为引用可以从 settings schema 学到而记录没有发现渠道；modifyRecord（L247）是唯一写路径，mutate 在写入独占的那一刻拿到当前记录，返回 undefined 表示放弃。事件侧 notifyUpdated/notifyRecordUpdated（L269/278）汇入 fanOut（L286）：每个 listener 都执行，同步抛错或异步拒绝只告警，唯独 INVARIANT 码在全部跑完后重抛——provider 只在提交后才发事件，坏观察者永远不能让持久化看起来失败了。",
+    "boundary": "管引用语法、解析契约（逐操作、空值即无、影子拒绝写）、记录的读-改-写互斥、UI 安全的状态词汇与两个更新事件；不管值存哪（credentials-local 的文件与分层）、不管授权对话（authorization 包）、不管某条 record 的 scope 是否真的有插件挂载——孤儿识别是调用方拿 listRecords 与插件注册表自己 join。划线依据：Service Definition 只定义'答什么问题'，'值从哪来'是 Service Provider 的事，'怎么获得值'是与存储正交的第三种能力。",
+    "tour": [
+      { "file": "packages/credentials/credentials/src/index.ts", "line": 170, "sym": "CredentialProvider", "note": "双键空间共用一个抽象服务，注释写明空值即不存在与逐操作解析。" },
+      { "file": "packages/credentials/credentials/src/index.ts", "line": 29, "sym": "credentialRef", "note": "引用即 POSIX shell 标识符：它天生要能穿过环境变量层解析。" },
+      { "file": "packages/credentials/credentials/src/index.ts", "line": 247, "sym": "modifyRecord", "note": "唯一写路径：锁下读-判-写，两个进程轮换同一 refresh token 不丢写。" },
+      { "file": "packages/credentials/credentials/src/index.ts", "line": 286, "sym": "fanOut", "note": "受控事件分发：listener 失败只告警，INVARIANT 例外，坏观察者不伤提交。" }
+    ],
+    "gotchas": "引用不可枚举——UI 靠 settings schema 才知道有哪些引用名；引用是平面命名空间，富地址（<owner>/<id>）只在记录半；进程环境变量变化不可观测（无事件可发），UI 只能自己重读 describe；record 的 owner 就是 scope，seam 不验证它是否挂载。还有一个结构反直觉：invariant 伴侣（dsh-credentials/invariant）在运行时检查'reference-updated 只在服务存活时发出'——服务销毁后还发事件意味着 provider 的收尾泄漏了工作。",
+    "analogy": "像酒店前台不放现金、只认登记名的做法：账单上写'押金从 DEEPSEEK_API_KEY 账户扣'，前台每次办事都现查账（绝不记在小本本上），所以你刚充了值下一次消费就能用上；问前台'这个账户配了吗'，他只会说'配了/没配、来源是哪、能不能改'，永远不会把余额念给你听。"
+  },
+  {
+    "group": "credentials",
+    "dir": "credentials-local",
+    "short": "credentials-local",
+    "oneLiner": "文件后端凭据 provider：启动环境 > 存储文件 > 项目 .env > 家目录 .env 的固定分层",
+    "why": "接缝需要有人真的持有值。它提供默认本地实现：.credentials.yaml 一个版本化 YAML 文档同时装两个键空间（refs + records），可用 UI 存、可直接编辑（chokidar 热重载，写跨进程锁）。删掉它，ctx.credentials 无实现，UI 保存密钥、轮换立即生效、授权流提交记录全部失效。它把'env 优先于 .env'做成诚实的原则：启动环境（DEEPSEEK_API_KEY=… dsh、CI secret、容器 -e）是本次运行的显式意图，进程内改不了，所以只读且写入被拒绝（assertUnshadowed）；存储文件赢过两个 .env，所以 UI 存的 key 立即压过旧 .env 值——同一把 key 不会出现'存了却不生效'的灵异现象。启动校验极严：任何读不懂的结构都 fail loud，因为'存在但不可信'的凭据文档绝不能当空库用。",
+    "position": "它是 dsh-credentials 接缝的默认 provider，加载后 LocalCredentialProvider（L513）注册 ctx.credentials。上游：llm adapter、authorization flow、配置 UI 全部经由接缝抽象调用它，不知道文件存在。下游：launch-environment（读启动时冻结的环境快照而非 process.env，分层 process/project-env/user-env 与 app-boot 对齐）、atomic-write（跨进程 withFileLock + writeFileAtomic）、home-paths（默认路径）、chokidar（watch）。数据流：resolve 沿 env→file→project-env→user-env 找第一个非空值；写则进单条互斥操作链排队，行级编辑文档后原子落盘并发一次 update 事件。",
+    "inside": "单文件 936 行。① 解析（L609 resolve / L619 describe）：inherited（L554）读启动快照的 process 层，dotenvFallback（L564）读 project-env/user-env；空值一律视为无；describe 同序只回 configured/source/writable，唯独 env 层 writable:false。② 写路径（L739 write）：先 assertUnshadowed（L780）拒绝被环境影子的写，再 enqueue（L721）排进唯一互斥链，链内 withFileLock 跨进程锁 → reconcileFromDisk（L869）把盘上尚未观察到的外部编辑折进来（绝不让行编辑复活陈旧文档）→ renderRef 行级编辑（保注释、条目上方注释随条目删除）→ writeFileAtomic 0600 → notifyUpdated 恰好一次。记录走同一链条：modifyRecord（L666）在锁下重读、把现状交给 mutate、准入校验（grant payload 必须过 JSON round trip）后整条渲染提交。③ 热重载：chokidar watch（awaitWriteFinish 用 debounceMs），事件 queueRefresh 进同一条链，reconcileFromDisk 文本没变（含自写抑制）即 no-op，解析失败保留最后好快档只告警——热重载永不弄挂进程；watcher ready 时补一次 reconcile 关闭初始化竞态窗口。④ 文档纪律：version: 1 严格 schema，未知顶层键/空值/重复键/未知 record 标签全部拒绝；预发布平铺布局在启动时锁下原位迁移（migrateFlatDocument L823）；YAML 解析器的报错会引用出错行——在这份文档里那就是密钥本身——所以所有诊断只带 code 与位置，永不引用值。",
+    "boundary": "管本机文件存储、分层顺序、写互斥、权限（0600 文件 0700 目录，POSIX 上拒绝加载他用户可读的文件）；不管接缝语义（credentials 的）、不管'agent 能不能读到密钥'这个部署问题——README 明说 agent 的工具进程与你同 UID，文件权限挡不住它，产品只是不给路径、不进环境，这是谨慎不是边界。划线依据：一个 harness 自己拥有、且从不物化进环境的文档，才不会反过来冒充用户的 .env 层遮蔽非密钥条目——这就是它不用 dotenv 格式的原因。",
+    "tour": [
+      { "file": "packages/credentials/credentials-local/src/index.ts", "line": 609, "sym": "resolve", "note": "三层顺序一目了然：env 赢一切、文件赢 .env、空值视为无。" },
+      { "file": "packages/credentials/credentials-local/src/index.ts", "line": 739, "sym": "write", "note": "互斥链+跨进程锁+先折盘上变化再行编辑：并发写永不互相覆盖丢条目。" },
+      { "file": "packages/credentials/credentials-local/src/index.ts", "line": 780, "sym": "assertUnshadowed", "note": "环境影子的写直接拒绝：只读层的语义落在具体报错里。" },
+      { "file": "packages/credentials/credentials-local/src/index.ts", "line": 869, "sym": "reconcileFromDisk", "note": "热重载与写路径共用的对账原语：文本没变（含自写）即 no-op。" },
+      { "file": "packages/credentials/credentials-local/src/index.ts", "line": 797, "sym": "loadInitial", "note": "启动 fail loud：读不懂的凭据文档绝不当作空库，平铺旧布局原位迁移。" }
+    ],
+    "gotchas": "同一引用的并发写是 last-write-wins，无修订检查；同 UID 进程（含 agent 工具进程）读得到文件，OS keychain provider 是被推迟的答案；环境层冻结在启动快照，运行后 export 的变量既进不了 resolve 也进不了 describe，改环境凭据要重启；继承自 atomic-write 的原子性不等于崩溃持久性，靠启动重读兜底；Windows 跳过属主检查（没有 mode 可查）而不是假装查过。",
+    "analogy": "像家里的收件规则：门口贴的临时字条（启动环境）最大，今天的事今天算，而且你不能撕它；你自己的笔记本（存储文件）第二，随手记随时改；上个月留的便签（项目 .env）和搬家前的旧本子（家目录 .env）垫底。谁在前谁说了算，顺序永远不变，所以你永远不会疑惑'我明明存了新密码怎么还是旧的'。"
+  },
+  {
+    "group": "credentials",
+    "dir": "authorization",
+    "short": "authorization",
+    "oneLiner": "授权流接缝：注册'怎么拿到这个凭据'的对话流程，把人拉进来完成配置",
+    "why": "有些凭据配置永远给不了——OAuth 跳浏览器登录、粘贴一次性代码、选个账号，本质上都需要和人对话。这个包把'跟人对话拿凭据'独立成能力：插件注册 flow（知道自己凭据怎么拿的只有它自己），任何 surface 发起 attempt 并渲染对话。为什么必须是独立包？因为它承载一整套与存储正交的语义：一次一个 attempt 的生命周期、交互随请求走（prompt 只到发起页面，headless 调用者给一个必然拒绝的 interaction）、'不是结果不是故障'（拒绝/撤回=cancelled，其他失败才是 error）、以及最关键的提交确认——authorized 严格等于'本次尝试中亲眼看到记录被提交且仍在'。塞进 credentials 会把存值和对话协议耦死；塞进各插件则每个 UI 都得为每家 provider 单独写渲染。",
+    "position": "上游：配置 UI / ACP 等表面调 begin() 发起尝试、cancel() 响应取消按钮、list()/describe() 展示可授权项；各凭据持有插件（如 llm-pi-ai）调 registerFlow() 注册流程。下游：static inject ['credentials']——flow 的 commit 与提交确认都走 ctx.credentials.modifyRecord/describeRecord；peer dsh-llm 只为 HarnessError 错误基类。数据流：begin(key, interaction) → flow.run(AuthorizationSession) → session.notify/prompt 到 interaction → commit → credentials.modifyRecord → record-updated 事件被 seam 观察 → run 结束后 describeRecord 复核 → authorized/cancelled 或异常；authorization/settled 事件广播结局（key 已释放后才发）。",
+    "inside": "AuthorizationService（L189）里两个 Map：flows 与 running。registerFlow（L209）用 ctx.effect 挂注册，DUPLICATE_FLOW 拒绝重复认领（两个插件写同一个 key 的记录会互相产出对方读不懂的 payload），disposer 撤 flow 时连带 cancel 未竟尝试。begin（L283）：NO_FLOW/UNKNOWN_METHOD/ALREADY_IN_FLIGHT 三道校验，已中止的请求直接返回 cancelled 且不占槽、不跑 flow。attempt（L368）是机制核心：Promise.race(flow 运行, withdrawn)——signal 一响立即返回 cancelled，孤儿 flow 不再被等待（catch 标记 handled 防止搞挂进程），但它若仍成功提交，那是人确实授权过的记录；prompt 包装记录 observed.declined（只有 AuthorizationDeclinedError 算拒绝——flow 自己撤掉输掉竞速的问题不算）；同时监听 credentials/record-updated 记录 observed.committed；run 结束后检查 committed 且 describeRecord 仍 configured，否则 NOT_COMMITTED（L443）——重授权场景下记录早已存在，'在场'不证明'这次写了'，所以必须'本次尝试中观察到'。session.commit（L400-408）进入提交态后 cancel 不再中止（提交中的写不可撤）；settle（L338）在 key 释放之后才 fanOut authorization/settled，listener 立刻发起下一次尝试也不会被拒。交互词汇刻意小：notice 单向不载密、prompt 三形态（text/secret/select）各带自己的 signal，'能渲染一种 flow 的 surface 就能渲染所有 flow'。",
+    "boundary": "管对话的编排、生命周期、结果语义与提交确认；不管任何具体授权协议（OAuth 设备码、magic link 全是各 flow 的事，本包一个都不带）、不管凭据存哪（credentials 的）、不管吊销（登出=deleteRecord，不通知 issuer，服务端 revoke 无处声明）、不管可恢复的尝试（尝试活在发起进程里，页面刷新就重来）。划线依据：seam 拥有 conversation，永远不拥有 protocol——新协议作为新 flow 进来，而不是新 seam。",
+    "tour": [
+      { "file": "packages/credentials/authorization/src/index.ts", "line": 283, "sym": "begin", "note": "尝试入口：三道校验 + 已中止不占槽 + finally 里先释放 key 再 settle。" },
+      { "file": "packages/credentials/authorization/src/index.ts", "line": 368, "sym": "attempt", "note": "核心机制：与撤回赛跑、观察 decline 与 commit、run 后复核提交。" },
+      { "file": "packages/credentials/authorization/src/index.ts", "line": 443, "sym": "NOT_COMMITTED", "note": "授权成功的定义：本次尝试中观察到提交且记录仍在，缺一即拒。" },
+      { "file": "packages/credentials/authorization/src/index.ts", "line": 79, "sym": "AuthorizationDeclinedError", "note": "人的'不'是结果不是故障：只有这个类把失败归为 cancelled。" },
+      { "file": "packages/credentials/authorization/src/index.ts", "line": 209, "sym": "registerFlow", "note": "一 key 一 flow 的注册契约，disposer 撤 flow 连带撤未竟尝试。" }
+    ],
+    "gotchas": "尝试不可恢复——浏览器刷新等于重来，持久化尝试需要本 seam 没有的 store；没有 revoke 语义，登出只是忘掉本地记录；没有 flow 认领的 key 完全惰性——卸载插件留下的记录可删但不可再授权，孤儿识别是调用方的事；surface 渲染 notice 失败被吞掉（fire-and-forget），页面断连只丢通知不丢尝试；invariant 伴侣包检查 authorization/settled 永远指向已释放的 key——卡死的 key 从外面和忙着的 key 无法区分，只有重启能救。",
+    "analogy": "像银行开户的专员：他手里的流程册（flow）知道办这张卡要去哪个网页、输哪个码，但他不替你保管卡（credentials 的事）；他只对你这个窗口（interaction）说话，不会隔着大厅喊；你转身走人（拒绝/撤回）算'今天不办了'，不算银行出错；而且只有他亲眼看到卡进了你的账户，才宣布'办成了'。"
+  },
+  {
+    "group": "settings",
+    "dir": "settings",
+    "short": "settings",
+    "oneLiner": "用户设置接缝：把插件 Config 的 volatile 字段投影成表单，经 revision 防冲突地改",
+    "why": "没有它，配置 UI 只能裸编辑 cordis.yml：不知道哪些字段是'给用户动的'（volatile）、当前生效值被哪层覆盖、secret 字段不能出现在线上响应里；两个页面并发写同一节会互相覆盖，没有乐观并发控制。它把这些做成机制：describe 输出 value/base/user 三层投影加 revision，secret 角色（role('secret')）在值、继承层、覆盖层、默认值里统一脱敏成 presence 标记；写路径在 configEditor.edit 内重读 describe 并比对 expectedRevision，不符抛 SettingsConflictError（SETTINGS_CONFLICT）——refuse stale write 是硬语义。删除它，设置表单、热重载广播（settings/document-updated）、旧 settings.yaml 导入都没有着落点，插件间也没有统一的'我这个插件不想自动生成页面'（configure({auto:false})）声明渠道。",
+    "position": "上游：client 的 ui-settings 等页面经 api 层调 describe/update/replace/mutate；业务插件从 apply 里 ctx.inject(['settings'],…) 子 fiber 调 configure() 注册页面策略。下游：static inject ['configEditor','profileContext']——表单投影的数据源是 Loader 的配置分层（entry/inherited/override），持久化委托 configEditor.edit 落到活动 profile 的 Cordis patch。数据流：Config schema（声明期）→ volatileForm 过滤出 volatile 字段 → describe 拼三层 + revision → UI 编辑 → write 校验后写回 profile patch → Loader 热应用 → app-boot/config-reload 触发 invalidate → 重算 describe 并 emit settings/document-updated。构建期还监听 root loader 就绪后一次性导入旧版 settings.yaml。",
+    "inside": "核心 432 行的 index.ts。① 投影（schema.ts + describe L302）：volatileForm 从插件 Config schema 里剥出 volatile 子树，普通字段与 runtime 引用被剥掉——业务插件照常直接读自己的 Config 引用，表单只管用户可动的那部分；describe 遍历 configEditor.configuration()，只保留 ACTIVE fiber 且有 volatile 字段的 entry，用 entry.fiber.uid+schema+config 的 JSON 快照推进 revision（变了才 +1），变化时 emit 'settings/document-updated'；value 用 fiber 当前生效配置，base 用 resolveConfig 解析的继承层，user 用 profile override。② 写路径（update/replace/mutate L347/357/367 汇入 write L377）：cloneJsonShaped（L134）在持久化前单趟走完脱附+校验——只放行 JSON 数据，Date/Map/BigInt/循环引用都拒绝，因为 structuredClone 会放走它们而 YAML 存储会在重载时静默失真；mergeLayers（L175）做稀疏合并（对象递归、数组整体替换、undefined 不删下层键）；mutate 的 applyPathOp（L86）是给持有脱敏视图的调用方的：按路径 set/unset，不必复述线上从未返回的 secret 字段（整节 replace 会把没见过的 secret 全删掉），unset 数组下标是删元素。③ 冲突与边界：SettingsConflictError（L45）带 expected/actual；write 内 validatePaths 确认最终只动了 volatile 路径。④ 生命周期：构造时 ctx.on('app-boot/config-reload', invalidate)（L234）——热重载到达时排一个微任务重算 describe 并重发 document-updated；importLegacyDocument（L241）在 loader 就绪后把旧 settings.yaml 按节先改名 .imported 再写入同 id entry。",
+    "boundary": "管表单投影、乐观并发、secret 脱敏、页面策略（autoGenerate）与遗留导入；不管持久化介质本身（configEditor 与 profile patch 的）、不管非 volatile 的普通配置（那仍是 Cordis 配置文件的领地）、不管设置语义如何被消费（业务插件读自己的 Config）。划线依据：它是'用户可动字段'的投影层而不是配置的权威——权威始终是 Loader 的分层配置，这正是它不需要 invariant 伴侣的原因：它投影而非另立真相。",
+    "tour": [
+      { "file": "packages/settings/settings/src/index.ts", "line": 302, "sym": "describe", "note": "三层投影 + revision 推进 + document-updated 事件，接缝的读全貌。" },
+      { "file": "packages/settings/settings/src/index.ts", "line": 377, "sym": "write", "note": "所有写汇入此处：edit 内重读 describe 比对 revision，拒过期写。" },
+      { "file": "packages/settings/settings/src/index.ts", "line": 45, "sym": "SettingsConflictError", "note": "乐观并发的硬失败：SETTINGS_CONFLICT 带期望/实际两个 revision。" },
+      { "file": "packages/settings/settings/src/index.ts", "line": 86, "sym": "applyPathOp", "note": "为脱敏视图设计的路径编辑：不重述 secret 也能精确改一个字段。" },
+      { "file": "packages/settings/settings/src/index.ts", "line": 241, "sym": "importLegacyDocument", "note": "先改名再导入：旧 settings.yaml 的部分失败永不重复执行。" }
+    ],
+    "gotchas": "只有 .volatile() 字段进表单，普通配置仍走配置文件；嵌套 Include 各自为政，不在活动 profile 表单里；字段级 reset 恢复继承值，删不掉更低配置层提供的值，只有数组 unset 真删元素。另外本仓库快照的 src 与 lib 不同步——构建产物里有抽象 SettingsProvider（register/watch/publish 的新接缝，settings-file 依赖的正是它），src 里只有 SettingsForms，读代码时别把两套 API 混为一谈。",
+    "analogy": "像商品房的精装选项单：每户（插件）交房时给一张单子，上面只列'你可以改的那几项'（volatile），标着'现状/原设计/你改过的'三栏（value/base/user）；装修公司每次动工前都要核对单子版本号，你对着的还是旧单子就拒绝开工；贵重物品（secret）在单子上只画个锁的图标，你指哪改哪，不用把没见过的东西重抄一遍。"
+  },
+  {
+    "group": "settings",
+    "dir": "settings-file",
+    "short": "settings-file",
+    "oneLiner": "settings 的文件后端：settings.yaml 一个文档装所有 namespace，外改热生效",
+    "why": "settings 接缝需要有人真的存盘。它把所有 namespace 装进用户 harness home 下的一个 YAML/JSON 文档，并给两个关键保证：其一，外部编辑热生效——chokidar 监视文档，变更经同一条互斥操作链对账后发布回接缝，所以你用编辑器手改、UI 保存、另一个进程写入，最终都收敛到同一份快照；其二，写是'补丁'不是'重写'——renderYaml 用 yaml Document 做叶子级 diff，只有变化的值 setIn、删除的键 deleteIn，节内兄弟字段的注释、锚点、缩进原样幸存，UI 保存不会抹掉用户写的批注。删掉它，接缝的持久化退化为内存态，重启即丢；或被换成粗暴整文件重写的实现，用户注释全灭。",
+    "position": "它是 dsh-settings 接缝的默认 provider，加载后 FileSettingsProvider（lib/index.js L70）注册 settings 服务，extends 接缝包构建产物中的抽象 SettingsProvider（load/persist/documentPath/writable 四个契约点）。上游：settings 表单层经接缝抽象调 persist 与读；本地配置 surface 用 documentPath 定位文档交给原生编辑器。下游：atomic-write（withFileLock + writeFileAtomic）、home-paths（默认 <DSH_HOME>/settings.yaml）、chokidar、yaml。数据流：文件文本 ↔ parse → namespace sections → publish 进接缝；写则反向：section → 锁下对账 → 叶子级 patch → 原子落盘 → 文本缓存更新（自写抑制）。",
+    "inside": "单类实现（本快照只有 lib/index.js，无 src）。① 定位与格式（resolveSpec L31）：显式 path 胜出，否则 <DSH_HOME>/settings.yaml；扩展名决定 yaml/json，其他扩展名启动即抛。② 互斥链（enqueue L151）：watcher 重载与文档写共享一条 settled-tail 操作链，写永远不会从正在被替换的文本上渲染，重载也读不到半提交的写。③ 持久化（persistSection L163）：锁下先 reconcileFromDisk（L245）把盘上最新内容对账进来，再 renderYaml（L270）——parseDocument 保留注释树，patchNode（L53）递归做 map 对 map 的叶子 diff（数组与标量不等则整块替换），renderJson 则整节替换；writeFileAtomic 0600/0700 落盘后更新 text 缓存——这份缓存同时是自写抑制器：watcher 事件带来的相同文本直接 no-op。④ 热重载（Service.init L178）：chokidar watch 配 awaitWriteFinish 防抖；事件 queueRefresh → refresh（L229）→ 对账发布，解析失败只 warn 并保留最后好文档——热重载永不弄挂进程；watcher ready 时补一次 reconcile，关闭'初始读与 watcher 就绪之间'的竞态窗口；disposal 先 closed 再关 watcher 再排空操作链，发布不会活过 teardown。⑤ prepareDocument（L112）：文档不存在时以 wx 0600 独占创建空文档并发布空快照，原生编辑器才有东西可打开。",
+    "boundary": "管文档的读写、格式、热重载与注释保真；不管 namespace 的注册与 schema 校验（接缝抽象的 register/validate 的事）、不管表单投影与冲突控制（settings 表单层）、不管跨文档的层叠语义。划线依据：它是'一处文档 ↔ 一组 namespace 快照'的搬运工，publish 之后的理解与生效全部留在接缝层——所以换一个 backend（数据库、远端）不动任何消费者。",
+    "tour": [
+      { "file": "packages/settings/settings-file/lib/index.js", "line": 70, "sym": "FileSettingsProvider", "note": "接缝的文件落地：extends 抽象 SettingsProvider，注册 settings 服务。" },
+      { "file": "packages/settings/settings-file/lib/index.js", "line": 53, "sym": "patchNode", "note": "叶子级 diff：只动变化的值，节内兄弟字段的注释与格式幸存。" },
+      { "file": "packages/settings/settings-file/lib/index.js", "line": 245, "sym": "reconcileFromDisk", "note": "文件与快照的对账原语：相同文本（含自写）no-op，变更才发布。" },
+      { "file": "packages/settings/settings-file/lib/index.js", "line": 178, "sym": "Service.init", "note": "watcher 生命周期：防抖热重载 + ready 补对账 + disposal 排空队列。" },
+      { "file": "packages/settings/settings-file/lib/index.js", "line": 270, "sym": "renderYaml", "note": "注释保真写入：yaml Document 补丁而非整文件重写。" }
+    ],
+    "gotchas": "本仓库快照里这个包没有 src/，只有编译产物 lib/，tour 行号指向 lib/index.js；它依赖的抽象 SettingsProvider 同样只存在于 dsh-settings 的 lib 构建产物中，src 里没有——两包 src/lib 不同步是这一家子的共性问题。此外：只有 .yaml/.yml/.json 三种扩展名，其余启动即抛；JSON 路径的写是整节替换，注释保真只是 YAML 的待遇；热重载失败的策略是保留旧快照告警继续跑，文档真坏了要靠用户自己发现。",
+    "analogy": "像一本全家共用的留言簿：谁写了新留言（UI、另一个进程、你自己拿笔改），挂在墙上的小铃铛（watcher）都会响，管家先看看本子和自己记的是否一致，再誊给全家人；管家替你写留言时只擦掉要改的那一行，你给别的留言画的下划线和小注释都还在。"
+  }
+]

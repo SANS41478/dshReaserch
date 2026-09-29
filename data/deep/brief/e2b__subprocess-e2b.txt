@@ -1,0 +1,11 @@
+# @deepseek-ai/dsh-subprocess-e2b
+path: packages/e2b/subprocess-e2b
+desc: E2B subprocess implementation for DeepSeek Harness
+deps: @deepseek-ai/schemastery
+peers: @deepseek-ai/dsh-e2b, @deepseek-ai/dsh-subprocess, @deepseek-ai/dsh-timeout, @deepseek-ai/cordis
+srcFiles: 6  srcLoc: 1829
+
+## README.md (1 行)
+
+
+## 源文件与导出符号

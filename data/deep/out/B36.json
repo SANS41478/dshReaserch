@@ -1,0 +1,187 @@
+[
+  {
+    "group": "e2b",
+    "dir": "e2b",
+    "short": "e2b",
+    "oneLiner": "E2B 云沙箱的共享生命周期服务，fs/subprocess 远程提供者共同 awaiting 的那个接缝",
+    "why": "不加载它，ctx.e2b 这个 Service 就不存在，fs-e2b 与 subprocess-e2b 各自调用 Sandbox.create 会造出两个互不相见的远程 Linux 世界：文件写进 A 沙箱、进程在 B 沙箱跑，tool-fs 与 tool-bash 立刻互相失明，模型『写了文件再跑脚本』这条最基本的链路直接断掉。它还收拢了三件必须统一的事：沙箱在插件构造时创建、在 teardown 时 kill（含 SandboxNotFoundError 容错）的完整生命周期；控制面 URL 的推导与代理路由（防止把控制面流量连同 API key 交给错误协议的代理）；以及 cwd 与 .dsh-e2b runtimeRoot 这套『所有 provider 私有状态都放在远端同一个根下』的目录约定。删掉它，两个远程提供者连启动都过不了 validate 的 apiKey 检查——E2B 部署整体无法成立。",
+    "position": "上游：e2b/fs-e2b 与 e2b/subprocess-e2b 通过 static inject = [\"e2b\"] 注入 E2BRuntime，各自的每次操作前 await getSandbox() 拿同一个 SDK 句柄；基于 subprocess 的 shell/terminal 工具链因此间接依赖它。下游：E2B 官方 SDK（e2b 包的 Sandbox），控制面 URL 由 e2bApiUrl() 按 E2B_API_URL > E2B_DEBUG > https://api.$E2B_DOMAIN 的顺序推导，再经 dsh-http-proxy 的 proxyRouteFor() 决定是否套代理。数据流是单向的『构造即建世界』：constructor 里 this.ready = this.open() 异步创建沙箱、mkdir cwd 与 runtimeRoot，之后所有 provider 的每次 fs/进程调用都是一次对 E2B 控制面的网络往返；teardown 时 ctx.effect 的回调负责 kill 沙箱。",
+    "inside": "核心只有一个类：E2BRuntime（lib/index.js:62），extends Service，服务名 \"e2b\"。Config 三项：apiKey（兜底读 E2B_API_KEY）、cwd（默认 /home/user/workspace）、timeoutMs（默认 30 万毫秒）；validate() 要求 apiKey 非空、cwd 是绝对 POSIX 路径、timeoutMs 为正。open()（lib/index.js:120）用 Sandbox.create({ secure: true, lifecycle: { onTimeout: \"kill\" } }) 建沙箱（超时直接杀），随后 sandbox.files.makeDir 建 cwd 和 runtimeRoot，getInfo 校验 runtimeRoot 是真目录且不是符号链接，再 chmod 700；任何一步失败都回滚 kill。getSandbox()（lib/index.js:109）把 ready promise 发给所有 adapter，disposed 后抛 \"E2B sandbox service is disposing\"。三个辅助函数构成全家族的控制原语：e2bApiUrl（lib/index.js:25）与 SDK 完全同源地推导控制面地址，注释里写明了为什么其余流量不该走代理（会拿走 loopback 调试面的 API key）；quoteE2BShellArg（lib/index.js:43）把不透明参数单引号转义，抵御 SDK 强加的 /bin/bash -l -c 层；e2bControlEnvs（lib/index.js:51）给控制命令一个随机 HOME（/.dsh-e2b-control-<uuid>），隔离 E2B 硬编码 login shell 会加载的 profile 和环境凭据。最后重导出 SDK 错误类型 CommandExitError / FileNotFoundError / SandboxNotFoundError / FileType，供 provider 做错误映射。",
+    "boundary": "只管四件事：沙箱单例的生命周期、控制面 URL 与代理、共享目录约定（cwd/runtimeRoot）、shell 转义与控制环境原语。明确不管：任何文件语义（归 fs-e2b）、任何进程/PTY 语义（归 subprocess-e2b）、超时策略的细节（timeoutMs 只是透传给 SDK 的 kill 时限）。划线依据：fs 和 subprocess 两个世界必须共享同一个 Sandbox 句柄才能算『一个远程世界』，把这件事收进唯一的 Service 后，provider 只剩语义映射可写，接缝自然清晰。",
+    "tour": [
+      { "file": "packages/e2b/e2b/lib/index.js", "line": 62, "sym": "E2BRuntime extends Service", "note": "整个 e2b 家族的共享单例：fs/subprocess 两个 provider 都注入它拿同一个沙箱句柄" },
+      { "file": "packages/e2b/e2b/lib/index.js", "line": 120, "sym": "E2BRuntime.open", "note": "构造即异步建世界：create 带 secure+onTimeout:kill，再布 cwd/runtimeRoot 并校验非符号链接" },
+      { "file": "packages/e2b/e2b/lib/index.js", "line": 86, "sym": "runtimeRoot", "note": "cwd/.dsh-e2b 是 provider 私有状态的远端根，subprocess-e2b 的进程/终端状态目录都挂在这" },
+      { "file": "packages/e2b/e2b/lib/index.js", "line": 25, "sym": "e2bApiUrl", "note": "与 SDK 同源的控制面 URL 推导，注释解释为何控制面流量不能误配代理" },
+      { "file": "packages/e2b/e2b/lib/index.js", "line": 43, "sym": "quoteE2BShellArg", "note": "所有远端控制命令共用的注入防线：SDK 强制的 bash -l -c 层之外唯一的安全通道" }
+    ],
+    "gotchas": "apiKey 必须来自 config 或 E2B_API_KEY，缺了构造即抛错；timeoutMs 到点 SDK 会直接 kill 整个沙箱（onTimeout: \"kill\"），长会话要自己续命；远程世界永远是 Linux/POSIX 路径语义，与 host 平台无关；本包在本地 checkout 中只有编译产物 lib/（无 src、无 README、git 未跟踪），底料符号表为空，解读完全基于 lib/index.js 的 145 行编译代码。",
+    "analogy": "像一栋出租的云端工作间（E2B 沙箱），这个包是唯一的『物业前台』：所有租客（文件服务、进程服务）都从前台领同一把钥匙，而不是各配一把；前台负责签租约（创建）、到期清场（kill），还规定了一个公共储藏室（.dsh-e2b）的用法，并替所有租客把电话线（控制面 URL/代理）接对。"
+  },
+  {
+    "group": "e2b",
+    "dir": "fs-e2b",
+    "short": "fs-e2b",
+    "oneLiner": "把 FileSystem 接缝整体搬到 E2B 沙箱：路径、内容与原子写全部发生在远端 Linux 世界里",
+    "why": "不加载它，ctx.fs 就是本地实现，模型『看到』的文件与 E2B 沙箱里 subprocess 跑出来的文件是两个世界：tool-bash 在云端生成的产物，tool-fs 读的是本地根本不存在的路径。挂上它，readText/editText/stat/listDir 的对象就是与 subprocess-e2b 共享的那个沙箱里的同一棵目录树，远端命令的输出文件能被文件工具直接读到、直接编辑。删掉它，E2B 部署里所有文件工具塌成指向不存在本地路径的摆设，整个『远程开发环境』的半边天没了；同时乐观锁版本、原子写、CRLF 保真这些本地实现里白给的安全性，也没有任何远端等价物来接盘。",
+    "position": "上游：注册为 dsh-fs FileSystem 接缝的后端，core/tools 的文件读写工具经 ctx.fs 无感地调用它，与 fs-local 构成可互换的两端。下游：static inject = [\"e2b\"]（lib/index.js:116）拿 E2BRuntime 的共享沙箱；实现基类 FileSystem 与错误词汇 FsError/FsTargetKey/FsVersion 来自 dsh-fs，控制原语 quoteE2BShellArg/e2bControlEnvs 来自 dsh-e2b。数据流：每次操作 = resolve（远端跑 realpath -mz | base64 把显示路径折算成规范 targetKey）→ sandbox.files.read/write/list 的 SDK 调用 → 控制面 HTTP 往返返回结果；写路径额外携带版本元数据与 CAS 前置检查。",
+    "inside": "一个类扛全部：E2BFileSystem（lib/index.js:115）extends FileSystem。路径解析：resolve()（lib/index.js:118）调 canonicalPath()（lib/index.js:370），在远端跑 `realpath -mz -- <path> | base64 -w0`，decodeCanonicalPath 校验 NUL 分帧的 base64 后得到绝对规范路径作为 targetKey——符号链接在 resolve 时就被折掉。版本与乐观锁：entryVersion（lib/index.js:89）把远端 entry 的 path/type/size/mode/mtime/symlinkTarget 事实做 sha256 得 FsVersion(\"e2b:...\")，writeText/editText 拿它做 replaceIfVersion 比对。写路径：writeText/editText 都进 withLock（lib/index.js:360，按 targetKey 串行的 promise 链，进程内互斥），再进 writeAtomic（lib/index.js:426）：建 .dsh-<uuid>.tmp 私有 staging 目录并 chmod 700 → 写入带 dsh-version 元数据的临时文件 → chmod 还原原有权限 → createIfAbsent 场景用 `ln -T` 硬链接原子占位（目标已存在则报 FS_NOT_OBSERVED），普通场景 sandbox.files.rename 提交 → 清理 staging。edit 是远端 read-modify-write：literalEdit（lib/index.js:98）统计 oldString 命中数，非 replaceAll 多命中报 FS_AMBIGUOUS_EDIT；CRLF 用 detectsCrlf/restoreLineEndings 往返保真。读侧：前 8192 字节采样含 NUL 判为二进制（FS_NOT_TEXT），流式读用 fatal UTF-8 解码器逐段校验。所有 SDK 错误经 mapError（lib/index.js:91）映射到 FS_NOT_FOUND / FS_PERMISSION_DENIED / FS_ABORTED / FS_IO_ERROR 等接缝错误码。",
+    "boundary": "只做『本地 fs 语义的远端等价物』：withLock 是进程内锁不是分布式文件锁，writeScopes/权限审查属上层工具与团队策略；符号链接在 resolve 时折算成目标、lstat 才暴露 symlink 类型，这是接缝约定而非本包发明。与 fs-local 的划线依据相同：同一个 FileSystem 抽象的两个可互换后端，选择权在组合层。与 subprocess-e2b 的边界：它只碰 sandbox.files 加少量控制命令，绝不 spawn 长驻进程——文件世界和进程世界各自有门。",
+    "tour": [
+      { "file": "packages/e2b/fs-e2b/lib/index.js", "line": 115, "sym": "E2BFileSystem extends FileSystem", "note": "接缝的远端后端本体，inject [\"e2b\"] 挂在共享沙箱上" },
+      { "file": "packages/e2b/fs-e2b/lib/index.js", "line": 370, "sym": "canonicalPath", "note": "realpath -mz | base64 -w0：显示路径到远端规范路径的唯一折算点，NUL 分帧防编码损坏" },
+      { "file": "packages/e2b/fs-e2b/lib/index.js", "line": 426, "sym": "writeAtomic", "note": "私有 staging 目录 + dsh-version 元数据 + rename/ln -T 提交：远程世界的原子写全靠这套编排" },
+      { "file": "packages/e2b/fs-e2b/lib/index.js", "line": 360, "sym": "withLock", "note": "按 targetKey 的进程内 promise 串行锁，写写互斥的最低保障" },
+      { "file": "packages/e2b/fs-e2b/lib/index.js", "line": 89, "sym": "entryVersion", "note": "把远端 entry 元数据哈希成乐观锁版本，支撑 FS_STALE_VERSION 的 CAS 语义" }
+    ],
+    "gotchas": "延迟是结构性成本：每次 stat/read 都是一次控制面 HTTP 往返，listDir 对每个符号链接条目还要额外 realpath 探测；edit 需要全文件下载再整体回写，远端大文件编辑代价高；二进制检测只采样前 8 KiB；版本哈希基于远端 entry 元数据，与本地实现不是同一种字节承诺；本地 checkout 只有编译 lib/（474 行），底料为空。",
+    "analogy": "相当于把文件柜从你桌边搬进了云端工作间，并在每个抽屉上贴了号码牌（canonical path）和版本贴纸（FsVersion）：你每开一次抽屉都要打电话问前台（HTTP 往返），换东西前先核对贴纸防拆错，但所有租客看到的永远是同一个柜子——这正是远程开发环境想要的。"
+  },
+  {
+    "group": "e2b",
+    "dir": "subprocess-e2b",
+    "short": "subprocess-e2b",
+    "oneLiner": "E2B 远程子进程与 PTY 提供者：用自生成的 bash 包装脚本在云端重现本地进程组语义",
+    "why": "不加载它，ctx.subprocess 还是本地实现，E2B 沙箱里就只有一个空有文件的 Linux 世界——没有任何进程能在那里跑：tool-bash/terminal 等一切执行类工具在 E2B 部署下全部失效。这个包是整个家族里最重的语义投影：本地 child_process 的退出码、信号、进程组终止阶梯、stdin 管道、输出上限与 spill、PTY 前台进程组，每一样都要在『唯一通道是控制面 HTTP 往返』的约束下重新发明。删掉它，fs-e2b 建好的世界是个无声电影片场：布景都在，没人演戏。",
+    "position": "上游：注册为 ctx.subprocess（E2BSubprocessRuntime extends SubprocessRuntime，lib/index.js:1329），shell/terminal 工具接缝的消费者与 subprocess-local 完全互换。下游：inject [\"e2b\"] 拿共享沙箱；复用 dsh-subprocess 的 SENSITIVE_ENV_PATTERN（凭据形状环境名）与 dsh-timeout 的 MAX_TIMER_DELAY_MS。数据流：spawn() 同步返回 handle 并异步开跑 → 生成远端 bash 包装脚本经 sandbox.commands.run(background: true) 启动 → 包装脚本把进程组 id 写进远端 pid 文件、stdout/stderr 经内联 node base64 编码器流回 SDK 回调 → host 侧轮询远端 exit-code 文件与 ps 探活直至收尾。",
+    "inside": "四段结构。环境段：readRemoteEnvironment（lib/index.js:29）用 `env -0 | base64` 读回完整远端环境，scrubRemoteEnvironment（lib/index.js:55）剔除 DSH_* 与凭据形状名字，bootstrapEnvironment（lib/index.js:68）在控制 shell 里把这些名字置空，防止凭据渗入用户命令的 bootstrap。进程段：commandText（lib/index.js:338）拼出一个先自检九个工具存在性、再 `setsid --wait` 成新进程组、把 pgid 发布到 pid 文件、`env -i` 加载环境文件后 exec 用户命令的包装脚本；输出经进程替换接 OUTPUT_ENCODER_SOURCE（lib/index.js:285，内联 node 脚本逐块 base64 分帧），E2BBase64Decoder（lib/index.js:95）增量解帧并以保留帧 !dsh-e2b-output-complete! 证明干净 EOF；E2BSubprocessHandle（lib/index.js:404）轮询远端状态文件等退出，collect 模式配 E2BOutputReader（lib/index.js:139）维护内存尾部上限与远端 spill 文件；终止走统一阶梯 terminate() → signalRemoteGroups（lib/index.js:275，TERM 与 KILL 共用同一个容错函数）→ groupAlive（lib/index.js:853，ps/awk 探活）超 graceMs 升级强杀。终端段：spawnE2BTerminal（lib/index.js:1213）建 PTY 后向 bootstrap shell 注入 `exec /bin/bash runner.bash`，runner（TERMINAL_RUNNER_SOURCE，lib/index.js:887）输出一次性 marker（BootstrapOutputFilter，lib/index.js:903 据此过滤引导噪声）后 `exec env -i` 真正 argv；E2BTerminalHandle（lib/index.js:1064）按 sid 清点会话内全部 pgid 做退出清扫。服务段：E2BSubprocessRuntime 管 live/terminals/terminalSetups 三个集合与 teardown 顺序，resolveExecutable（lib/index.js:1366）在远端 `command -v` 解析可执行文件。",
+    "boundary": "只负责『把进程跑在远端并忠实投影本地语义』：退出码/信号/进程组/输出上限/spill/PTY 前台组。不管输出的模型呈现（shell 与 tool 层的事）、不管文件语义（fs-e2b 的门）。与 subprocess-local 的划线：同一 SubprocessRuntime 接缝的两个后端；连 graceMs 的可表示性检查（requireRepresentableGrace，lib/index.js:1319）都刻意与本地一致，保证远程强杀期限永远可达。终端不允许对自身 shell 发 SIGKILL（lib/index.js:1110），这条守则也来自接缝语义而非实现偏好。",
+    "tour": [
+      { "file": "packages/e2b/subprocess-e2b/lib/index.js", "line": 1329, "sym": "E2BSubprocessRuntime extends SubprocessRuntime", "note": "接缝的远端后端：inject [\"e2b\"]，管 live 集合、teardown 与 pollMs 轮询节奏" },
+      { "file": "packages/e2b/subprocess-e2b/lib/index.js", "line": 338, "sym": "commandText", "note": "生成的远端包装脚本是全部魔法的载体：setsid 成组、pgid 发布、env -i、base64 输出编码全在里面" },
+      { "file": "packages/e2b/subprocess-e2b/lib/index.js", "line": 95, "sym": "E2BBase64Decoder", "note": "跨 SDK 回调边界的增量解帧器，用保留 EOF 帧证明输出传输干净完成" },
+      { "file": "packages/e2b/subprocess-e2b/lib/index.js", "line": 275, "sym": "signalRemoteGroups", "note": "pgid 进程阶梯与 sid 终端阶梯共用的信号原语，容错 kill 失败与沙箱消失两种结局" },
+      { "file": "packages/e2b/subprocess-e2b/lib/index.js", "line": 1064, "sym": "E2BTerminalHandle", "note": "PTY 会话的属主：按 sid 清点全部进程组做 TERM→KILL 清扫，拒绝杀自身 shell" }
+    ],
+    "gotchas": "延迟与轮询是常态：退出检测靠 pollMs（默认 20ms）轮询远端文件与 ps；输出走 base64 有约 1.33 倍放大；输出 drain 宽限一旦到期就 disconnect 并 invalidateSpill（spill 不再可信）；环境继承自远端镜像而非 host；每个命令在 .dsh-e2b 留私有状态目录，失败清理不净会抛 AggregateError；本地 checkout 只有编译 lib/（1462 行），底料为空。",
+    "analogy": "像在云端工作间里雇了一名『现场监工』（bash 包装脚本）：开工前先清点工具、给工人编组挂牌（pgid 写进 pid 文件）、按名单核对工牌（环境脱敏），再把工人喇叭里的声音逐字抄成摩尔斯电码（base64 帧）传回总部；你这边一句『下班』要先礼貌敲钟（TERM），到点没走就断电（KILL），临走还要点名确认工位上没人（groupAlive 探活）。"
+  },
+  {
+    "group": "experimental",
+    "dir": "code-runtime-python",
+    "short": "code-runtime-python",
+    "oneLiner": "Python 版代码执行后端：每个程序一个全新 CPython 子进程，fd 3 上跑 JSON-lines 绑定协议",
+    "why": "不加载它，CodeRuntime 接缝只剩 worker-thread 的 JS 后端，模型无法执行任何 Python 程序，数据科学和脚本场景直接没有执行 substrate。它还独占了一份公共词汇：fd-3 线协议（boot/boot-ack/run/call/log/done/reply）的 host 侧编解码与全部敌意帧校验器（validateChildFrame、checkDoneValue、encodeJsonPlain、hasUnsafeIntegerToken、hostFrameParseCeiling）都被重导出，任何消费这条线的包共享同一套定义；删掉它，协议词汇就没有家了。与 TS 版对照：worker-thread 把代码跑在 worker 线程里，这里换成每个 run 一个 setsid 的 CPython 进程组，隔离从线程级换到进程级（RLIMIT_CPU + RLIMIT_AS + 墙钟 + 进程组信号）。",
+    "position": "上游：注册为 codeRuntime 服务（PythonCodeRuntime extends CodeRuntime，lib/index.js:1043），CodeRuntime 接缝的工具层按 language/isolation 路由到它（language=\"python\"、isolation=\"process\"）。下游：继承 dsh-code-runtime 的抽象基类与 PORTABLE_RESERVED_WORDS/RESERVED_BINDING_GLOBALS 等共享约束，用 util-values 的 snapshotJsonValue 序列化绑定返回值；再往下 spawn 真实 python3 跑 materializePyScripts 落地的 bootstrap.py。数据流：host 写 boot 帧（预算+绑定名单）→ 子进程 boot-ack → host 写 run 帧 → 子程序 await host 绑定函数时经 fd 3 发 call 帧，host 执行后回 reply；log/done 帧逐条计量校验，最终 settle 成 CodeRunResult（value 或分类错误）。",
+    "inside": "三层。门面与校验：PythonCodeRuntime 的构造器是一道配置审计墙——每项预算为正、cpuSeconds 是整数、maxWallMs/graceMs 不超 setTimeout 上限、maxLogBytes ≥ 64（截断标记自身必须能装进预算）、预算×12 倍最坏 Unicode 膨胀必须塞进 RLIMIT_AS 扣掉 64MiB 解释器基线后的余量（lib/index.js:1085）、hostFrameParseCeiling（lib/index.js:709）按 heap_size_limit 推导本进程能安全 JSON.parse 的最大帧；Windows 直接拒绝加载；validatePythonBin（lib/index.js:834）探针确认 CPython ≥ 3.10。执行：run()（lib/index.js:1119）→ validateBindings（保留字/运行时自有全局名冲突）→ materializePyScripts（lib/index.js:538，每次 run 把 py/ 拷进 mkdtemp 临时目录，防模型改写 bootstrap.py 毒化下一次运行；刻意同步执行以免错过已触发的 abort）→ execute()（lib/index.js:1188）：spawn detached python（四路 stdio 管道，fd 3 为协议通道），注册墙钟 timer 与 abort 监听，先发 boot 帧，bootAckGate.run 收到 boot-ack 后才发 run 帧。收发与结算：fd 3 接收侧先按帧原始字节截断（防 decode 放大 OOM），hasUnsafeIntegerToken 跳过会丢精度的整数 token，validateChildFrame（lib/index.js:400）把每个帧逐字段重建（模型代码能伪造 fd 3 流量，类型联合在此不算数）；done 值经 checkDoneValue 计量 maxValueBytes 且拒绝非无损数字，log 走逐字符序列化成本计量，stray stdout/stderr 经 accrueStrayCost（lib/index.js:929）按 UTF-8 合法性计费；reply 由 sendReply/drainReplies 排队背压，超 MAX_PENDING_REPLIES 即判 worker-exit。收尾：killGroup（lib/index.js:1648）读 /proc 起始时间防 pid 复用误杀无关进程，TERM → graceMs → KILL 整组；settle（lib/index.js:1684）删临时目录、轮询 groupEmpty、closeDeadline 兜底 setsid 逃逸者。",
+    "boundary": "只管 CPython 子进程 substrate 与 fd-3 线协议；JS 后端归兄弟包 code-runtime-worker-thread（同一 CodeRuntime 接缝按 language+isolation 分家的两个后端），执行工具的 prompt/呈现归上层，安全边界明确不存在——模块头注释写明这是 containment 不是 security boundary，模型代码持有 bash 等价信任级。协议词汇反而下沉进本包重导出：一条线只有一个家，这是接缝里少见的『实验包养公共协议』安排。",
+    "tour": [
+      { "file": "packages/experimental/code-runtime-python/lib/index.js", "line": 1043, "sym": "PythonCodeRuntime extends CodeRuntime", "note": "后端本体：language=python / isolation=process，构造器同时是配置审计墙" },
+      { "file": "packages/experimental/code-runtime-python/lib/index.js", "line": 1188, "sym": "execute", "note": "spawn 四路 stdio 的 detached CPython，fd 3 承载 boot/call/log/done 全部协议流量" },
+      { "file": "packages/experimental/code-runtime-python/lib/index.js", "line": 400, "sym": "validateChildFrame", "note": "模型代码可伪造 fd 3：每个入站帧都被重建校验，垃圾静默丢弃防 host 崩溃" },
+      { "file": "packages/experimental/code-runtime-python/lib/index.js", "line": 538, "sym": "materializePyScripts", "note": "每 run 拷贝 bootstrap.py 到 mkdtemp：子进程与宿主同 UID，共享副本会被改写毒化" },
+      { "file": "packages/experimental/code-runtime-python/lib/index.js", "line": 1648, "sym": "killGroup", "note": "读 /proc 起始时间防 pid 复用，再对负 pid 发整组信号——进程级隔离的牙齿" }
+    ],
+    "gotchas": "仅 Unix：构造器在 win32 直接抛错（依赖 POSIX rlimits、fd-3 stdio、进程组信号）；setsid 逃逸的孤儿进程不在 kill(-pid) 射程，是 README 级 Known Limitation；完成值超预算不截断而是整个 run 失败为 output-limit（接缝禁止替换值）；本包是实验性质无稳定承诺；本地 checkout 只有编译 lib/（1836 行），py/bootstrap.py 源码未随库可核对，Python 侧行为的解读依据弱于 host 侧。",
+    "analogy": "像每次现开一间『只放一台电脑』的临时小隔间跑 Python 作业：作业卡住时举手（call 帧）问前台，前台逐条查证后才递纸条回答（reply）；隔间的电闸（RLIMIT）、闹钟（墙钟）和保洁（用完即删的临时目录）在作业开始前就装好，结束连隔间一起拆——连作业本（bootstrap.py）都是每次新印的，防止上一份被涂改过。"
+  },
+  {
+    "group": "experimental",
+    "dir": "agent-team",
+    "short": "agent-team",
+    "oneLiner": "隐式根 Agent Teams 服务：花名册、持久信箱与共享任务板，全部重放自 Lead Session 日志",
+    "why": "不加载它，ctx.agentTeams 不存在，tool-agent-team 的全套工具与 client-ui 面板同时失效——这是一根三端的承重柱。没有它，模型只能靠通用 subagent 工具做一次性委派：队友没有持久名字、消息随进程死掉、任务没有 CAS 版本防互相覆盖。删掉它，团队协作塌回『派出去就管不了』的单发 subagent 模式，且已写进历史 Session 日志里的 team/member、team/message、team/task 事件无人再能重放解读。它是『durable log、derived state』这条设计承诺的唯一 host 端事实源：roster/mailbox/task 全是 Lead Session 日志的投影，重启即重放。",
+    "position": "上游：inject ['agents','sessions','sessionPersistence','sessionProjections','subagents']（src/index.ts:57），向 cordis Context 注册 agentTeams: TeamService；监听 session/event（喂 mailbox）、agent/created（排恢复）、agent/status（唤醒 waiter）。下游：TeamRoster 经 ctx.subagents.startContinuable 创建可续子 Agent，投递走 Agent.steer 与 host-only 的 steerHostSubagentPrompt；持久层是 Lead Session 日志（经 sessions.flush 落盘），浏览器视图经 teamProjectionDefinition 注册进 sessionProjections。数据流：模型工具层（caller Agent 即授权凭据）→ TeamService 门面 → roster/mailbox/tasks → journal.appendAndFlush 写 Lead 日志 → activity.notify 唤醒 waiter → projection 推给浏览器。",
+    "inside": "一个门面加五个 owner。TeamService（src/index.ts:56）是纯门面：每个方法都要求传入 exact live Agent 作为授权凭据，spawnTeammate/sendMessage/createTask 等只是转发；scheduleRecovery（src/index.ts:235）在 agent/created 后先 roster 后 mailbox 排一次恢复。TeamJournal（src/journal.ts:12）把 Team 事件串行追加进 Lead Session，appendAndFlush（src/journal.ts:60）flush 完成才返回或唤醒；./invariant 伴生插件在 append 前重放候选事件校验迁移合法性。TeamRoster（src/roster.ts:58）：每个普通 runtime 根 Session 隐式成为 Lead（TeamId=SessionId，无创建事件）；spawnAdmitted（src/roster.ts:246）先写 provisioning 成员事件再 startContinuable，创建失败写 durable failed，名字永久保留永不复用；checkpointInitialPrompt（src/roster.ts:340）等子 Session 真正落盘首条消息才提交 active；重启时 reconcileProvisioning（src/roster.ts:392）拿持久化子 Session 与 provisioning 记录对账，赢不了同进程竞态就报 TEAM_PROVISIONING_CONFLICT。TeamMailbox（src/mailbox.ts:27）：sendAdmitted（src/mailbox.ts:109）先 append team/message/queued 再尝试即时投递，per-target 的 serializeDispatch 保证按 durable 顺序；dispatchOnce（src/mailbox.ts:235）对 Lead 直接 root.steer、对队友走 host-only Steer 通道（能冷恢复不活跃目标且不冒充 Lead）；checkpointDelivered/markDelivered（src/mailbox.ts:273/285）只在目标 Session 持久持有消息身份后才记 delivered——保证是『进程内重试 + 目标去重』，不是跨进程 exactly-once。TeamTaskBoard（src/task-board.ts:28）：完整版本化快照 + expectedRevision CAS（update 在 src/task-board.ts:105，stale 报 TEAM_TASK_STALE_REVISION），task-<n> id 耗尽报 TEAM_TASK_LIMIT 而非复用，删除留 tombstone。TeamActivity（src/activity.ts:11）是 waitForChange 的一次性 change waiter 底座。",
+    "boundary": "只管协调状态与授权：名册、信箱、任务、等待、中断。工具面（spawn_teammate 等 8 个工具与协作政策）推给 tool-agent-team；浏览器投影与 UI 推给 client-ui-agent-team；profile 组合与默认值推给 agent-team-profile。划线依据：一个实验横跨 host/client/profile 三端，本包是唯一持有事实的 host 端，其余两端只是它的视图（projection）与开关（patch 文档），谁都不能私藏状态。",
+    "tour": [
+      { "file": "packages/experimental/agent-team/src/index.ts", "line": 57, "sym": "TeamService.inject", "note": "五个上游服务一次看全：agents/sessions/sessionPersistence/sessionProjections/subagents" },
+      { "file": "packages/experimental/agent-team/src/index.ts", "line": 150, "sym": "spawnTeammate", "note": "门面方法的样板：caller Agent 是授权凭据，直接转发 roster.spawn" },
+      { "file": "packages/experimental/agent-team/src/roster.ts", "line": 340, "sym": "checkpointInitialPrompt", "note": "子会话首条消息持久落盘后才提交 active——durable-before-claim 承诺的最重一笔" },
+      { "file": "packages/experimental/agent-team/src/mailbox.ts", "line": 235, "sym": "dispatchOnce", "note": "Lead 走 root.steer、队友走 host-only Steer 通道，投递语义的分岔点" },
+      { "file": "packages/experimental/agent-team/src/task-board.ts", "line": 105, "sym": "TeamTaskBoard.update", "note": "expectedRevision CAS：stale 调用者收到 TEAM_TASK_STALE_REVISION 而非静默覆盖" }
+    ],
+    "gotchas": "README 明列的坑：单进程单共享 checkout——成员共享 cwd，无 worktree/远程成员/合并/文件锁；writeScopes 只是告警，Bash 与格式化工具可以绕过文件版本守卫；不活动、中断、进程退出都不会自动释放任务 owner；名册扁平不可嵌套、不可改名、名字永不复用（连失败的创建也占名）；信箱不是跨进程 exactly-once，多进程同时操作一个 Team 属不支持场景。整个包是实验原型，无稳定承诺。",
+    "analogy": "像一个写进公司台账（Lead Session 日志）的项目小队：队长可以雇人（spawn_teammate），大家有内部邮箱（断电也不丢信，收到才算送达）和一块共享看板（改之前要报版本号，报错就拒）；白板和邮箱都是从台账誊出来的——台账丢了才叫丢，白板随时可以重画。"
+  },
+  {
+    "group": "experimental",
+    "dir": "tool-agent-team",
+    "short": "tool-agent-team",
+    "oneLiner": "Agent Teams 的模型工具面：8 个 Team 工具加一段协作政策，按成员身份 scoped 安装到每个 Agent",
+    "why": "不加载它，ctx.agentTeams 虽然在运行，但模型没有任何工具能触达：spawn_teammate、send_message、list_agents、wait_agent、interrupt_agent、team_task_create/list/get/update 全部不存在，团队服务沦为无人能用的后台库；同时注入的 'team:policy' 提示段也没了——模型不知道何时该建队（仅当用户明确要求）、写范围冲突怎么重试（FS_STALE_VERSION 先读后改）、queued 消息为何不必重发。删掉它，agent-team 退化成一个纯 API 包，整个实验对模型不可见，等于没装。",
+    "position": "上游：作为 cordis 插件被 agent-team-profile 或用户 composition 挂载，inject ['agents','agentTeams','tools','systemPrompt']（src/index.ts:14）。下游：唯一的服务依赖是 ctx.agentTeams（agent-team 包），工具注册走 dsh-tools 的 defineTool 与 Agent-scoped tools.register，政策走 systemPrompt.section。数据流：模型发 tool call → execute 里 callingAgent(exec.agent) 恢复确切调用者 → TeamService 方法（caller 即授权凭据）→ 结果按声明 schema 序列化成 JSON 文本回给模型；apply() 监听 agent/created 对每个新 Agent 重判 membership 后安装。",
+    "inside": "三块。政策：POLICY（src/index.ts:31）是给 Lead 和队友共用的一大段守则——何时建队、共享工作区的写范围纪律、stale 版本重试、queued 不重发、wait_agent 前先 list_agents 确认同侪活跃等。工具：install()（src/index.ts:164）在一个 exact Agent scope 里注册全套；spawn_teammate（src/index.ts:175）给队友的首条 prompt 前面包 <system-reminder>，教它『你的 Lead 叫 lead、用 send_message target:\"lead\" 汇报』；wait_agent（src/index.ts:242）带一个模型侧捷径：src/index.ts:262 同步读一遍活跃同侪（running/provisioning），一个都没有就立即返回 noProgress，不白等 10 秒起步的 waiter——但越界的 timeout_ms 故意绕过捷径让 TeamService 抛权威校验错误；team_task_update 的 action 枚举覆盖 claim/release/edit/set_dependencies/complete/reopen/reassign/delete，expected_revision 是 CAS 前置。安装器：apply()（src/index.ts:402）对现有及后续 agent/created 的每个 Agent 调 tryMembership，是 Team 成员才 install，agent/disposed 时卸载，effect 兜底全清。",
+    "boundary": "只做『模型语言 ↔ 服务调用』的翻译与提示工程：不含任何协调逻辑（归 agent-team）、不含 UI（归 client-ui-agent-team）、不决定哪个 profile 启用它（归 agent-team-profile）。划线依据：工具天然只能装在 Agent scope 上，而『这个 Agent 是不是 Team 成员』只有 agentTeams 能回答，所以它是 agent-team 的直接下游、也是三端里离模型最近的一端。",
+    "tour": [
+      { "file": "packages/experimental/tool-agent-team/src/index.ts", "line": 31, "sym": "POLICY", "note": "注入 Lead 与队友两端的协作守则，本包一半的价值在这段提示里" },
+      { "file": "packages/experimental/tool-agent-team/src/index.ts", "line": 175, "sym": "spawn_teammate", "note": "注册处：队友首条 prompt 包 system-reminder 教学，fork/fresh 决定走哪个 provider" },
+      { "file": "packages/experimental/tool-agent-team/src/index.ts", "line": 262, "sym": "wait_agent no-active-peer 捷径", "note": "同步读活跃同侪后立即返回 noProgress，避免必然超时的空等" },
+      { "file": "packages/experimental/tool-agent-team/src/index.ts", "line": 402, "sym": "apply", "note": "按 tryMembership 对每个 Agent 安装/卸载工具，随 agent/created 动态跟随" }
+    ],
+    "gotchas": "fresh/fork provider 默认 spawn/fork，fork 继承 Lead 已完成轮次而 fresh 从零开始；工具只在 Team 成员 scope 存在，非 Team subagent 完全看不到；wait_agent 的 noProgress 快捷路径必须与活跃性读保持同一同步段（代码注释明言中间 await 会丢边）；timeout_ms 越界时故意不走捷径，让服务端抛权威错误。实验包，无稳定承诺。",
+    "analogy": "队伍服务是公司后台系统，这个包是给每位员工工位上装的内线电话加看板 App，墙上还贴了一页《协作守则》；没装它，后台系统再完善，员工也打不了卡、发不了消息——它不是又一层功能，而是模型能看见团队的全部窗口。"
+  },
+  {
+    "group": "experimental",
+    "dir": "client-ui-agent-team",
+    "short": "client-ui-agent-team",
+    "oneLiner": "浏览器端 Agent Teams UI：会话头部的成员/任务下拉，只读 agentTeam projection，零 Team RPC",
+    "why": "不加载它，浏览器里完全看不见团队：没有花名册下拉、没有成员运行状态圆点、没有任务板视图，用户只能盯着 Lead 会话的文本流猜后台发生了什么；agent-team-profile 里 ui-agent-team 的插槽也随之空缺。它把 host 端 durable 状态翻译成用户可感知的协作现场——谁在跑、谁歇着、哪块活儿被谁认领——这是『一个实验横跨 host/client/profile 三端』里 client 端的那一块，缺了它实验只剩后台自嗨。",
+    "position": "上游：作为浏览器发现的 UI 插件，宿主 client 运行时调用 ./client 导出的 registerAgentTeamUi，inject ['sessions','uiWorkspace','slots','locale']（src/client/mount.ts:21）；主机半 src/index.ts 只有一个空 apply()。下游：数据全部来自共享 Session store 里 Lead Session 的 agentTeam projection（由 agent-team 的 teamProjectionDefinition 发布）、导航走 uiWorkspace.openSession、挂载点走 slots 的 'conversation.session.header.actions'、文案走 locale 的 'agent-team' 命名空间。数据流：Lead Session projection 变化 → store → React 组件重渲；用户点成员 → openTeammate 回溯 Lead 后以 continuable 子会话方式打开。全程声明不做任何 Team RPC。",
+    "inside": "两个文件扛全部。mount.ts：registerAgentTeamUi（src/client/mount.ts:29）做三件事——ctx.locale.register(NS, {zh, en}) 注册双语字典；组装 openTeammate 动作（src/client/mount.ts:37），先经 subagent address 回溯 Lead 会话，再 uiWorkspace.openSession({parentSessionId, childSessionId, mode:'continuable'})；ctx.slots.inject('conversation.session.header.actions', ..., TeamAction)（src/client/mount.ts:53，order -20）把组件挂进会话头部。TeamAction.tsx（358 行）：TeamMemberRow（src/client/TeamAction.tsx:78）把 durable phase（projection 的 active/provisioning/failed）与 Session 实时状态（useSessionStatus.running）叠加成四态 running/inactive/provisioning/failed，failed/provisioning 与当前会话置灰；任务行用 taskReady 与 writeScopeWarnings 画 StateDot（pending 且未 ready = warning 色）；所有数据经 useSessions 选择器读 store，面板自己零请求零写路径。",
+    "boundary": "只读渲染与导航：任务创建/更新、成员管理全部由 Team Agent 经服务与模型工具完成，UI 不提供任何写路径，也不发自己的网络请求。划线依据：client 端约定 UI 只消费 Session projection，写操作必须回到会话内的 Agent——保持『日志是唯一事实源』的架构纪律延伸到了浏览器。",
+    "tour": [
+      { "file": "packages/experimental/client-ui-agent-team/src/index.ts", "line": 4, "sym": "apply", "note": "主机半是空壳：行为全在 ./client 浏览器导出，这个包的『两端一体』结构一眼可见" },
+      { "file": "packages/experimental/client-ui-agent-team/src/client/mount.ts", "line": 29, "sym": "registerAgentTeamUi", "note": "浏览器注册入口：locale + openTeammate 动作 + slots 挂载三件事" },
+      { "file": "packages/experimental/client-ui-agent-team/src/client/mount.ts", "line": 53, "sym": "slots.inject", "note": "挂进 conversation.session.header.actions（order -20），UI 的唯一落点" },
+      { "file": "packages/experimental/client-ui-agent-team/src/client/TeamAction.tsx", "line": 78, "sym": "TeamMemberRow", "note": "durable phase 与实时 Session 状态叠加成四态成员行，读模型的核心样本" }
+    ],
+    "gotchas": "README Known Limitations：全量广播——任一名册或任务变化都会把完整 roster 加任务板发给每个连着的浏览器，哪怕它在看别的 Session；openTeammate 依赖当前会话仍在主视图保留（retainInfo().mainView 为 0 时静默不动作）；只能打开 continuable 子会话；deleted 任务在视图里被省略（组件里有对应 v8 ignore 注释）。实验包，无稳定承诺。",
+    "analogy": "会议室墙上的一块小队看板：谁在跑、谁歇着、哪些活儿被谁认领，抬头一眼看清。但看板只读——想改看板得回工位用工具干，不能伸手到墙上擦；这也正是这块看板值得信的原因：它画的就是台账的影子。"
+  },
+  {
+    "group": "experimental",
+    "dir": "agent-team-profile",
+    "short": "agent-team-profile",
+    "oneLiner": "Agent Teams 的一键 profile 层：patch 掉直委派工具、插入 team 三件套的 cordis.patch.yml 载体",
+    "why": "没有它，启用 Teams 要手写一套容易出错的组合：禁用 4 个通用直委派/子代理工具（tool-subagent-control、tool-subagent-list-agents、tool-subagent、tool-subagent-fork），再按正确顺序插入 agent-team、tool-agent-team、ui-agent-team 三个插件并配好默认限额。profile 层把这套『替换+插入』固化成可组合的补丁文档，最重要的是防止两套并行的协作面同时暴露给模型——通用 subagent 工具和 Team 工具语义相近但保证不同（无持久名册 vs 持久团队），并存会打架。删掉它，三件套的装配知识散落在每个用户手里。",
+    "position": "上游：被 bundle/profile 加载器读取，注释明示『Apply after dsh-base so these replacements keep direct delegation on the Team tools』——应用顺序决定覆盖关系。下游：无任何运行时逻辑（src/index.ts 全文 8 行，只有 export {}），运行时内容就是 cordis.patch.yml：向 composition 插入三个 @deepseek-ai/dsh-experimental-* 插件并带默认 config。数据流：加载器解析 patch → disable 列表下线旧工具插件 → insert 列表安装 Team 三件套 → 三件套分别在 host（agent-team）、模型（tool-agent-team）、浏览器（client-ui）三端生效。",
+    "inside": "全部内容是一个 33 行的 cordis.patch.yml：4 个 `- id: ... / disabled: true`（第 4-14 行）关闭通用 subagent 直委派工具；`- insert:` 块（第 16 行起）依次插入 agent-team（第 17-24 行，maxMembers 默认从服务的 16 收紧到 8，maxTasks 256、maxPendingMessagesPerMember 64、maxMessageBytes 65536、disposalTimeoutMs 5000）、tool-agent-team（第 26-30 行，freshProvider spawn / forkProvider fork）、ui-agent-team（第 32-33 行）。src/index.ts 只是模块占位让包有合法入口；locale/icon/README 是发布面。",
+    "boundary": "只做组合与默认值，不含一行行为代码；它是『一个实验横跨 host/client/profile 三端』里 profile 端的那一块。划线依据：dsh 的 profile 机制要求配置决策与实现分离——行为在 agent-team/tool-agent-team/client-ui-agent-team 三个实现包里，这里只决定『谁被换下、谁被装上、默认参数是什么』。",
+    "tour": [
+      { "file": "packages/experimental/agent-team-profile/cordis.patch.yml", "line": 4, "sym": "disable tool-subagent-control", "note": "禁用清单的开头：4 个直委派工具让位给 Team 工具，防两套协作面并存" },
+      { "file": "packages/experimental/agent-team-profile/cordis.patch.yml", "line": 16, "sym": "insert 块", "note": "插入清单的开始，三件套按 host/工具/UI 的顺序入场" },
+      { "file": "packages/experimental/agent-team-profile/cordis.patch.yml", "line": 17, "sym": "insert agent-team", "note": "插入 agent-team 并给默认限额，注意 maxMembers 是 8 不是服务默认 16" },
+      { "file": "packages/experimental/agent-team-profile/src/index.ts", "line": 8, "sym": "export {}", "note": "运行时面为空：这个包的全部行为都是声明式 patch 文档" }
+    ],
+    "gotchas": "禁用清单必须与 base profile 的工具 id 保持同步，base 改名即静默失效；注释要求在 dsh-base 之后应用，顺序错了覆盖关系会乱；profile 的 maxMembers 8 与服务默认 16 不同，是有意收紧而非笔误；实验包，无稳定承诺。",
+    "analogy": "一张施工清单：它自己不搬砖（无代码），只告诉装修队——把原来那几扇门封上（禁用 subagent 工具），再按这个顺序装上三件新家具（team 三插件），连家具的出厂参数都替你填好了。"
+  },
+  {
+    "group": "experimental",
+    "dir": "agent-team-web-profile",
+    "short": "agent-team-web-profile",
+    "oneLiner": "Agent Teams Web profile 的空壳载体：只注册 invariant 伴生插件名的发布占位包",
+    "why": "Web 端组合 Team 预览时需要一个与 agent-team-profile 平行的 web 侧包位：它的存在价值主要是让 invariant 体系有登记项（apply 里 ctx.invariants.register(PACKAGE_NAME)），并占住包名与发布位，使 web profile 的组合链可以引用这个名字。删掉它，web 组合少一个登记点，但对运行时几乎无可观察影响——这本身就是信息：它是一个声明性骨架，真正的 web 组装行为要么尚未写入、要么不在这个 checkout 可见的文件里。",
+    "position": "上游：web profile 组合链。下游：唯一的运行时接触面是 ctx.invariants（invariant 伴生机制）。本地 checkout 只有编译产物 lib/：lib/index.js 字面是 `export {}`（1 行），lib/invariant.js 定义伴生插件。没有 README、没有 package.json、没有 src、没有 patch 文档——它比 agent-team-profile 还空，连补丁 yaml 都没有。",
+    "inside": "两个文件。lib/index.js：1 行 `export {}`，纯占位。lib/invariant.js：PACKAGE_NAME（lib/invariant.js:3）、伴生插件名 \"agent-team-web-profile-invariant\"（lib/invariant.js:5）、inject = [\"invariants\"]（lib/invariant.js:7）、空 install 与 apply（lib/invariant.js:14，register 后即返回）。没有任何事件流、状态或可变数据——完全符合其组内『build-time/声明性 pass 无运行时伴生』的措辞。",
+    "boundary": "全部是占位：与 agent-team-profile 的唯一结构差别是后者携带真实的 cordis.patch.yml 补丁，而本包在可见范围内连补丁都没有。与 invariant 体系的边界：它只是登记名字，不声明任何不变量检查（install 为空函数）。",
+    "tour": [
+      { "file": "packages/experimental/agent-team-web-profile/lib/index.js", "line": 1, "sym": "export {}", "note": "整个包的运行时面就是这一行——占位程度的最直接证据" },
+      { "file": "packages/experimental/agent-team-web-profile/lib/invariant.js", "line": 5, "sym": "name", "note": "伴生插件名 agent-team-web-profile-invariant，唯一可见的身份标识" },
+      { "file": "packages/experimental/agent-team-web-profile/lib/invariant.js", "line": 14, "sym": "apply", "note": "向 ctx.invariants 注册空 install：登记存在性，不做任何检查" }
+    ],
+    "gotchas": "这是十个包里依据最薄弱的一个：本地 checkout 只有 git 未跟踪的编译产物（无 src/README/package.json/cordis.patch.yml），无法确认完整发布内容里是否还有 web 侧 patch 文档；lib/index.js 仅 1 行。任何关于它在 web 组合中实际作用的论断都应保守看待。",
+    "analogy": "一间只挂了门牌的空办公室：牌子挂上了（invariant 体系里登记了名字），里面没有家具也没有员工——它存在的意义目前就是『这个名字有人在用』，等 web 组装方案落地后这间屋子才会被真正装修。"
+  },
+  {
+    "group": "experimental",
+    "dir": "webworker-packer",
+    "short": "webworker-packer",
+    "oneLiner": "构建期 VFS 打包器：把组合 profile 压成浏览器 worker 挂载的确定性 gzip tar 镜像与数据 overlay",
+    "why": "构建链里缺了它，experimental web 预览部署没有任何可执行物：浏览器 worker 无文件系统可挂、无插件 roster、无模块可达性闭包，『在浏览器里跑 dsh』这个实验整体不存在。它还兑现一条调试承诺——基础镜像携带仓库的真实构建产物而非重新编译，预览里跑的字节就是部署发的字节。删掉它，webworker-runtime 有加载器却没有可加载的世界：就像造好了码头但没有船。",
+    "position": "上游：CLI `dsh-pack-vfs-image`（src/bin.ts）被 apps/web 的 build:preview 在预览壳构建后调用；库 API packVfsImage/packVfsOverlay 供参数化打包。下游：读 cordis-plugin-include 组合 profile、扫描 vendor/packages/native/apps 工作区、调 webworker-runtime 提供的 module-proxy 与替换表把每个可达模块降级为 wrapper 契约。数据流：profile YAML + dsh.configTrees → roster（依赖闭包去重）→ publish view（按 files/picomatch 收集文件）→ 可达性 sweep（从非通配 workspace 运行时导出与 IMAGE_ENTRY_SEEDS 起步）→ ustar 打包 → gzipSync 压缩。",
+    "inside": "四件套分工明确。repository.ts 持有仓库形状输入：indexWorkspacePackages（src/repository.ts:63）扫工作区、composeProfile（src/repository.ts:98）走真实 CLI dump 路径组合 profile、configTrees（src/repository.ts:128）解析 CLI 包 package.json 的 dsh.configTrees 声明、previewFixtures/packPreviewFixture（preview.ts）把会话 fixture 先经 Session format catalog 升级到当前代再打包（拒绝压缩与非规范文件名，不回退）。pack.ts 是主流程：packVfsImage（src/pack.ts:602）按 roster 去重 → materialize 收集 publish view（EXCLUDE 掉 tests/sourcemap/声明，workspace 额外排除 src/dist）→ sweepImage 做可达性降低并产出 javascriptEntries/dropped/unresolved 统计 → 写 manifest（携带 WRAPPER_CONTRACT 的全有或全无声明，无法表达的模块宁可 fail 整个 pack 也不发半降级镜像）→ compressImage（src/pack.ts:584，把 gzip 头的 OS 字节改写为 255，保证同一棵树在任何平台逐字节一致）；packVfsOverlay（src/pack.ts:666）把不透明数据树压成有序 overlay，挂载点限制在 home/、workspace/ 等运行时数据目录，防止 overlay 覆盖配置/manifest/模块。rules.ts 是全部判断的集中地：EXCLUDE（src/rules.ts:16）、EXCLUDE_WORKSPACE（src/rules.ts:37）、PAGE_ASSETS（src/rules.ts:53，lib/client.js 页面包原样发运因为页面有自己的模块系统）、IMAGE_ENTRY_SEEDS（src/rules.ts:67，worker 装配直连的 5 个入口）。",
+    "boundary": "只做构建期打包，绝不编译——假设 lib/ 已构建，过时字节照样打进镜像（README 明示）；无运行时伴生、无事件流、无可变数据。与 webworker-runtime 的划线：那边定义 loader 与 wrapper 契约的运行时语义，这边在打包时对同一契约做 lowering；判断题（排除规则、页面包、入口种子）与机制（tar/gzip/sweep）分离在 rules.ts 与 pack.ts，新资源类型加表行而不是改扫描器。",
+    "tour": [
+      { "file": "packages/experimental/webworker-packer/src/pack.ts", "line": 602, "sym": "packVfsImage", "note": "主流程：roster → materialize → sweep → manifest → 压缩，四步看尽镜像生成" },
+      { "file": "packages/experimental/webworker-packer/src/pack.ts", "line": 584, "sym": "compressImage", "note": "改写 gzip 头 OS 字节为 unknown：同一棵树跨平台逐字节可复现" },
+      { "file": "packages/experimental/webworker-packer/src/rules.ts", "line": 67, "sym": "IMAGE_ENTRY_SEEDS", "note": "worker 装配直连的可达性种子，与 runtime worker-host 的 require 调用必须人工同步" },
+      { "file": "packages/experimental/webworker-packer/src/repository.ts", "line": 98, "sym": "composeProfile", "note": "走真实 CLI dump 路径组合 profile：打包看到的就是部署跑的" },
+      { "file": "packages/experimental/webworker-packer/src/bin.ts", "line": 1, "sym": "dsh-pack-vfs-image CLI", "note": "构建入口：apps/web 的 build:preview 在预览壳之后调它" }
+    ],
+    "gotchas": "README Known Limitations：规则表是判断题（exclude globs、页面包、入口种子），新资源要加表行；可达性只识别精确请求形式——computed import、存储的 createRequire 结果解析不了，目标需显式种子；vendored 包的 src/*.ts 被排除（运行时无解析路径）；不编译，stale lib 打出 stale 镜像；CLI 必须在原仓库位置运行（依赖 checkout 相对定位）；fixture Session 只收原始 JSONL。实验包，无稳定承诺。",
+    "analogy": "出口货物的装箱清单执行者：按客户订单（profile）列箱单，把每个零件（构建产物）塞进集装箱（tar.gz），箱上贴封条编号（WRAPPER_CONTRACT manifest）——少一个零件宁可整箱拒发也不发半箱，落地后工人（worker loader）按封条验货；打包机本身从不动手造零件（不编译）。"
+  }
+]

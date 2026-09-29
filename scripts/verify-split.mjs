@@ -8,7 +8,9 @@
    跑法：node scripts/verify-split.mjs
    ============================================================ */
 
-import { chromium } from 'playwright'
+import { createRequire } from 'node:module'
+const require = createRequire(import.meta.url)
+const { chromium } = require('C:/Users/admin/.workbuddy/binaries/node/workspace/node_modules/playwright/index.js')
 
 const BASE = 'http://127.0.0.1:5319/'
 

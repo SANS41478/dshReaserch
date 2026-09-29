@@ -1,0 +1,244 @@
+# @deepseek-ai/dsh-api-workspace-controller
+path: packages/api/workspace-controller
+desc: Workspace Remote commands and reconnect-safe state transport
+deps: @deepseek-ai/dsh-deque
+peers: @deepseek-ai/cordis, @deepseek-ai/dsh-api-gateway, @deepseek-ai/dsh-client-connection, @deepseek-ai/dsh-host-directory-picker, @deepseek-ai/dsh-session, @deepseek-ai/dsh-storage-domain, @deepseek-ai/dsh-typert-protocol, @deepseek-ai/dsh-workspace
+srcFiles: 8  srcLoc: 1414
+
+## README.md (75 行)
+---
+description: "Host and Client workspace control: mutate workspace navigation and follow its complete projection."
+kind: "package-reference"
+---
+# Workspace Controller
+
+English | [中文](README.zh.md)
+
+## Summary
+
+`@deepseek-ai/dsh-api-workspace-controller` owns the Host `ctx.workspaceController` service and the generated Client `ctx.remote.workspace` namespace. Its Remote methods create, rename, remove, and reorder Workspaces, reorder Sessions within a Workspace, archive and unarchive Sessions from Workspace navigation, and follow the complete Workspace projection. Use it through API Gateway when a Client must change or follow Workspace navigation. The package also owns `ctx.directoryPickerController` and the generated `ctx.remote.directoryPicker` namespace, because the directory-picking seam it carries is abstract and never a Loader entry of its own.
+
+## Table of Contents
+
+- [Use this package](#use-this-package)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="use-this-package"></a>
+## Use this package
+
+The Host controller serializes mutations whose correctness depends on current registry state and throws `RemoteError` with a stable error code for expected failures. Its `follow()` stream synchronously attaches to durable Workspace changes, emits one complete baseline first, then emits ordered `upsert`, `remove`, `order`, `archived`, and `pinned` increments. Archive and pin sets are Session id arrays, with the most recently pinned id first in the pin array. A reconnect starts another generation with a replacement baseline, so consumers do not depend on receiving every increment while disconnected. `archiveSession` without `stopActivity` refuses a Session with running work as `workspace/session-active`, whose details list that work by family (`turn`, `subagent`, `job`, `schedule`) with item ids and labels; with `stopActivity: true` the registry's providers stop the work first and the response arrives once the archive set is durable, while the stops settle in the background.
+
+The Client entry provides `ClientWorkspaceModel` and `createWorkspaceStateStream()`. The model owns Workspace rows, registry order, archived and pinned Session identities, unary mutation echoes, and stream/unary race resolution. A newer Host row wins by `updatedAt`; a committed stream order outranks an older unary response; a removed Workspace id cannot be resurrected by delayed data. Pin snapshots change only when their identities or order change. The package exposes framework-neutral snapshots and subscriptions, leaving navigation policy and React hooks to the UI owner. `WorkspaceController.archiveSession(sessionId, { stopActivity })` throws `WorkspaceArchiveError` with the Host's `rpcError`, so a surface can tell the running-work refusal from a missing Session or a carrier fault and offer to stop the work.
+
+<a id="first-use-workspace"></a>
+### First-use Workspace
+
+`workspace.initializeDefault()` returns the durable default Workspace; the Client service exposes it as `workspaces.initializeDefault(signal?)`. It takes no request: the Host owns the fixed `default-workspace` directory name, and the registry derives the initial title from that same segment, so one installation keeps one on-disk path and one stored title in every language. The Host places the directory under its account's `<Documents>/deepseek-harness`, including on remote Web hosts. OS filename restrictions apply. Linux system lookup requires `xdg-user-dir` with an enabled Documents directory; hosts without it must configure `documentsDirectory` or use the folder picker.
+
+The [Workspace registry](../../workspace/workspace/README.md#first-use-workspace) owns eligibility, directory creation, and durable initialization. An existing default Workspace is returned without another Documents lookup and is never renamed or relocated. Ineligible first use returns `undefined`, so startup can leave directory selection to the user. Lookup and creation failures use standard Remote error handling. Initialization creates no Session and sends no message.
+
+`DEFAULT_WORKSPACE_DIRECTORY` and `workspaceDisplayTitle(title, localizedDefault)` are published from `./default-workspace` for browser consumers: a Workspace still carrying the automatic title reads as the reader's localized default name, and every other title reads verbatim. A Workspace the user renamed to exactly `default-workspace` — or a folder of that name adopted from the picker — is labeled as the default; nothing else depends on the distinction.
+
+| Configuration | Default | Purpose |
+| --- | --- | --- |
+| `documentsDirectory` | System Documents directory | Fully qualified Host directory override |
+| `documentsLookupTimeoutMs` | `10000` | Positive maximum duration of OS directory lookup, in milliseconds |
+
+Documents lookup holds the registry mutation queue, so other Workspace mutations, including registration of a picked directory, can wait up to `documentsLookupTimeoutMs`. Cancellation can stop the lookup; after resolution succeeds, it does not roll back creation or registration.
+
+-----
+
+<a id="model-experience"></a>
+## Model Experience
+
+None, as Workspace organization is browser and Host control state and registers no prompt, tool, or session event.
+
+#### KV Cache effect
+
+No direct effect; Workspace mutations do not alter model requests.
+
+## Known Limitations and Deferred Work
+
+<a id="known-limitations-and-deferred-work"></a>
+
+- `follow()` replaces the whole projection after reconnect and has no durable cursor or incremental catch-up protocol.
+- Process-local deletion markers prevent delayed data from reviving a removed Workspace only for the lifetime of the Client model.
+
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>
+
+**Runtime invariant:** No companion is published. Workspace Registry owns persistence; every stream generation is a full projection.
+
+
+## 源文件与导出符号
+
+### packages/api/workspace-controller/src/client/index.ts  (126 行)
+  declare module: declare module '@deepseek-ai/cordis' {
+  28	type	WorkspaceStateStream
+  41	const	inject
+  47	fn	apply
+  63	iface	WorkspaceStateStreamOptions
+  78	fn	createWorkspaceStateStream
+
+### packages/api/workspace-controller/src/client/model.ts  (468 行)
+  26	type	WorkspaceRemote
+  29	type	WorkspaceListPhase
+  32	iface	WorkspaceSnapshot
+  44	iface	WorkspaceFollowSink
+  62	class	ClientWorkspaceModel
+      members: L89 constructor, L98 create, L109 initializeDefault, L121 rename, L132 delete, L144 insertBefore, L170 insertSessionBefore, L191 archiveSession, L215 unarchiveSession, L232 pinSession, L249 unpinSession, L264 replaceBaseline, L278 upsertView, L283 removeView, L288 replaceOrder, L297 replaceArchived, L306 replacePinned, L312 handleCarrierFailure, L322 handleStreamFailure, L334 subscribe, L343 getSnapshot, L348 buildSnapshot, L359 installArchived, L366 installPinned, L373 installOrder, L384 upsert, L400 remove, L414 installViews, L423 invalidate, L442 flush, L449 refreshSnapshot, L461 if
+
+### packages/api/workspace-controller/src/client/service.ts  (192 行)
+  11	class	WorkspaceCreateError
+      members: L15 constructor
+  25	class	WorkspaceArchiveError
+      members: L29 constructor
+  35	iface	WorkspaceSource
+  47	iface	IWorkspaces
+  118	class	WorkspaceController
+      members: L125 constructor, L130 create, L136 initializeDefault, L142 rename, L148 delete, L153 insertBefore, L158 archiveSession, L163 unarchiveSession, L168 pinSession, L173 unpinSession, L178 insertSessionBefore
+
+### packages/api/workspace-controller/src/commands.ts  (253 行)
+  34	class	WorkspaceCommands
+      members: L38 constructor, L45 create, L71 rename, L98 delete, L112 insertBefore, L132 insertSessionBefore, L162 archiveSession, L192 unarchiveSession, L202 pinSession, L224 unpinSession, L229 requireWorkspace, L235 enqueue
+
+### packages/api/workspace-controller/src/default-directory.ts  (79 行)
+  21	fn	validateDocumentsDirectory
+  37	fn	defaultWorkspaceDirectory
+
+### packages/api/workspace-controller/src/default-workspace.ts  (31 行)
+  16	const	DEFAULT_WORKSPACE_DIRECTORY
+  28	fn	workspaceDisplayTitle
+
+### packages/api/workspace-controller/src/directory-picker.ts  (175 行)
+  inject: L42 ['directoryPicker']
+  declare module: declare module '@deepseek-ai/cordis' {
+  41	class	DirectoryPickerController
+      members: L45 constructor, L55 pick, L72 list, L88 createDirectory, L106 requireCapability, L140 if, L167 if, L168 if
+
+### packages/api/workspace-controller/src/feed.ts  (194 行)
+  23	fn	workspaceView
+  47	class	WorkspaceFeed
+      members: L55 constructor, L72 baseline, L98 changed, L141 publish, L155 push, L162 close, L179 wait
+
+### packages/api/workspace-controller/src/index.ts  (201 行)
+  inject: L52 ['typert', 'workspaceRegistry']
+  declare module: declare module '@deepseek-ai/cordis' {
+  33	iface	Config
+  51	class	WorkspaceController
+      members: L67 constructor, L86 create, L99 initializeDefault, L115 rename, L125 delete, L135 insertBefore, L145 insertSessionBefore, L155 archiveSession, L165 unarchiveSession, L175 pinSession, L185 unpinSession, L195 follow
+
+### packages/api/workspace-controller/src/types.ts  (172 行)
+  declare module: declare module '@deepseek-ai/dsh-typert-protocol' {
+  18	iface	WorkspaceView
+  65	iface	WorkspaceCreateRequest
+  70	iface	WorkspaceCreateValue
+  76	iface	WorkspaceRenameRequest
+  82	iface	WorkspaceValue
+  87	iface	WorkspaceDeleteRequest
+  92	iface	WorkspaceDeleteValue
+  97	iface	WorkspaceInsertBeforeRequest
+  103	iface	WorkspaceOrderValue
+  108	iface	WorkspaceInsertSessionBeforeRequest
+  115	iface	WorkspaceArchiveSessionRequest
+  128	iface	WorkspaceUnarchiveSessionRequest
+  133	iface	WorkspaceArchiveValue
+  138	iface	WorkspacePinSessionRequest
+  143	iface	WorkspaceUnpinSessionRequest
+  148	iface	WorkspacePinValue
+  153	iface	WorkspaceBaseline
+  161	type	WorkspaceFollowIncrement
+  169	type	WorkspaceFollowFrame
+
+## 其它关键文件
+
+### package.json
+{
+  "name": "@deepseek-ai/dsh-api-workspace-controller",
+  "description": "Workspace Remote commands and reconnect-safe state transport",
+  "version": "0.1.7-rc.2",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/api/workspace-controller"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./types": {
+      "types": "./lib/types/types.d.ts",
+      "default": "./lib/types/types.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./default-workspace": {
+      "types": "./lib/types/default-workspace.d.ts",
+      "default": "./lib/types/default-workspace.js"
+    },
+    "./typert": {
+      "types": "./lib/typert.host.d.ts",
+      "default": "./lib/typert.host.js"
+    },
+    "./remote": {
+      "types": "./lib/typert.remote-client.d.ts",
+      "default": "./lib/typert.remote-client.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "external": [
+        "@deepseek-ai/dsh-api-gateway/client"
+      ],
+      "inject": [
+        "@deepseek-ai/dsh-api-gateway",
+        "@deepseek-ai/dsh-client-connection"
+      ],
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "bundle": "tsdown",
+    "watch": "tsdown --watch"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/client.js",
+    "lib/types/**/*.js",
+    "lib/types/**/*.d.ts",
+    "lib/typert.host.js",
+    "lib/typert.host.d.ts",
+    "lib/typert.remote-client.js",
+    "lib/typert.remote-client.d.ts"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/dsh-deque": "workspace:*",
+    "@deepseek-ai/dsh-native-command": "workspace:*",
+    "@deepseek-ai/schemastery": "workspace:~",
+    "zod": "^4.4.3"
+  },
+  "peerD

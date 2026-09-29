@@ -1,0 +1,304 @@
+# @deepseek-ai/dsh-typert-generator
+path: packages/typert/generator
+desc: TypeScript project analyzer and model-driven Typert artifact generator
+deps: -
+peers: @deepseek-ai/cordis
+srcFiles: 8  srcLoc: 6381
+
+## README.md (146 行)
+---
+description: "The build-time Typert generator: source type analysis, compiler-independent models, and artifact emission for maintainers wiring Typert publication or consuming generated artifacts."
+kind: "package-library"
+---
+
+# @deepseek-ai/dsh-typert-generator
+
+English | [中文](README.zh.md)
+
+## Summary
+
+`dsh-typert-generator` lets maintainers turn public TypeScript types into build artifacts and compiler-independent models. Packages opt in through the `./typert` and optional `./client/typert` exports, and generation rejects declarations, publish lists, Remote exports, or Zod projections that it cannot represent correctly. Repository builds emit executable schema factories and matching declarations, while tools can call `WorkspaceAnalyzer` for inspection or catalog generation without publishing artifacts. Generation runs only at build time and never in a live agent session.
+
+## Table of Contents
+
+- [Use this package](#use-this-package)
+- [Understand the implementation](#understand-the-implementation)
+- [Further Exploration](#further-exploration)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="use-this-package"></a>
+## Use this package
+
+This package is for package and repository maintainers who wire Typert generation into a build or consume generated artifacts. Publication is opt-in: declare the export entries, run the build, and the artifacts appear in `lib/`; static analysis needs no artifact.
+
+### Publishing Typert artifacts from a package
+
+A contributing package declares the host-face artifact export in `package.json`; packages that contribute both faces also declare `./client/typert`, and packages with Remote methods declare `./remote`:
+
+```yaml
+exports:
+  "./typert":
+    types: "./lib/typert.host.d.ts"
+    default: "./lib/typert.host.js"
+files:
+  - "lib/typert.host.js"
+  - "lib/typert.host.d.ts"
+```
+
+After the build, `lib/typert.host.js` and `lib/typert.host.d.ts` exist and the [loader](../loader/README.md) registers the contribution in Loader compositions. The generated declaration file exposes `TYPERT` as `unknown`, so contributing packages never depend on the runtime registry. The generator fails the build when a declaration is missing, points at the wrong file, or publishes Remote artifacts without Remote methods; unsupported Zod projections fail with a `TypertEmitError` naming the construct instead of flattening or weakening the source type.
+
+### Analyzing a workspace statically
+
+Static consumers call `WorkspaceAnalyzer` directly against the workspace's `tsconfig.host.json` and `tsconfig.client.json` aggregates, select a face and package subset, and read the resulting `FaceModel` and type graph without emitting or loading runtime artifacts. `analyzeInBatches()` processes a large package selection through bounded compiler programs with the same model shape, and `discoverPackages()` finds contributing packages without building a type-checker program.
+
+### Running generation inside a tsdown build
+
+The package's `./tsdown` subpath provides `typertPlugin()` for the root tsdown config: it lowers standard decorators in TypeScript dependencies before bundling and emits the model-driven face artifacts at the package output root. In `package` mode it emits only the bundled package; in `workspace` mode it emits every explicit contributor once.
+
+-----
+
+<a id="understand-the-implementation"></a>
+## Understand the implementation
+
+<details>
+<summary>Implementation internals — click to expand</summary>
+
+This section explains how the generator reaches a compiler-independent model and what it emits; the observable build behavior is covered in [Use this package](#use-this-package).
+
+### Design concept
+
+The generator is built on one separation: extraction and emission are decoupled through the compiler-independent model. `WorkspaceAnalyzer` reads TypeScript programs seeded from the face aggregate tsconfigs and produces `FaceModel` and `TypeGraph` data; `FaceModelEmitter` consumes only that model and never receives compiler nodes. The model retains declaration identity, generic parameters and applications, explicit inheritance, conditional and mapped types, import attributes, abstract modifiers, and source JSDoc, and excludes constructors, static members, and non-public members.
+
+### Source map
+
+| File | Role |
+|---|---|
+| [`src/index.ts`](src/index.ts) | Public API: analyzer, emitter, workspace generator, renderer, catalog projection |
+| [`src/analyzer.ts`](src/analyzer.ts) | `WorkspaceAnalyzer`: face programs, check/write modes, batching, discovery, source index |
+| [`src/model.ts`](src/model.ts) | Compiler-independent model types |
+| [`src/emitter.ts`](src/emitter.ts) | `FaceModelEmitter`: Zod schema and declaration emission, Remote declarations |
+| [`src/workspace.ts`](src/workspace.ts) | `WorkspaceTypertGenerator`: discovery, generation, export and files validation |
+| [`src/tsdown-plugin.ts`](src/tsdown-plugin.ts) | tsdown plugin face: decorator lowering and artifact emission |
+| [`src/cordis-catalog.ts`](src/cordis-catalog.ts) | Catalog projection used by the generated Cordis catalogs |
+
+### Analysis and faces
+
+Host and Client are independent TypeScript programs. Direct project references establish compiler-face membership, while `dsh.client` package subpaths establish runtime-face contribution; `package.json#exports` marks every cross-package public boundary, and imports or re-exports are the only cross-face edges. A relative import that resolves inside the referencing package is followed through that module's re-exports until a package specifier appears, so package-local forwarding modules keep their original declaration references; a relative import that resolves into another package fails. `check` mode fails on syntax or semantic diagnostics, missing public annotations, private cross-package references, and reachable declaration merges the model cannot retain losslessly; `write` mode inserts checker-derived annotations and returns a clean check-mode model. Types owned by NPM dependencies remain `external` references instead of being expanded. A stream method's return type may be `Iterable<Out>`, `AsyncIterable<Out>`, or the protocol's `RemoteStream<Out, In>`, recognized by symbol and declaring package like the standard-library wrappers; a second type argument other than `never` yields the descriptor's uplink codec, and the generated Client signature returns `RemoteStreamHandle<Out, In>`.
+
+### Emission and publication contract
+
+`FaceModelEmitter` emits executable JavaScript containing success-cached Zod schema factories and the `TYPERT` contribution, plus a declaration file whose factories return `z.ZodType<SourceType>` through the package's public export; unsupported Zod projections fail. The Host face with Remote methods additionally emits `typert.remote-client.*` projections of Host Remote contracts for the Client. `WorkspaceTypertGenerator` validates each contributor's `package.json`: `./typert` and `./client/typert` (and `./remote` when Remote methods exist) must point at the exact generated files, and the `files` list must include them.
+
+[Unary binary results](../protocol/README.md) are recognized after generic type resolution. Their codecs validate the byte-array type and JSON metadata without iterating, copying, or freezing the byte payload; generated Client declarations retain the authored metadata and narrow the byte backing to `ArrayBuffer`.
+
+### Catalog projection
+
+The runtime type closure indexes exported workspace declarations and referenced framework enums. Vendored declarations stay outside business API discovery; their enums remain available when a public result refers to them.
+
+The root export includes the model-driven extraction, completeness checks, and deterministic text renderers used by this repository's Cordis catalogs. They accept a `CordisCatalogPolicy`; repository-owned type links, foundation and exemption classifications, and inherited Cordis entries stay in `scripts/gen-cordis-catalog.ts` and are passed in explicitly, so this package contains projection mechanics, not a hidden copy of the repository's documentation taxonomy.
+
+</details>
+
+-----
+
+<a id="further-exploration"></a>
+## Further Exploration
+
+Read these pages when the package-level contract is not enough; they move from the generated model to the runtime and the Remote-call path.
+
+- [Typert subsystem reference](../../../docs/subsystems/typert.md) — the Remote contracts and registry interfaces the generator models.
+- [Typert protocol](../protocol/README.md) — the declarations generated artifacts extend and consume.
+- [Typert registry](../registry/README.md) — the runtime store the emitted artifacts feed.
+- [API Gateway reference](../../../docs/api-gateway.md) — how generated Remote descriptors are invoked end to end.
+- [Compiler-independent model Agent Note](../../../.agents/notes/implemented/architecture/2026-07-27-compiler-independent-typert-model.md) — the model design, alternatives, and consequences.
+
+-----
+
+<a id="model-experience"></a>
+## Model Experience
+
+None, as the build-time generator runs outside any agent runtime and touches no model request.
+
+#### KV Cache effect
+
+No direct effect; generated artifacts reach a request only when a consumer places them in one.
+
+## Known Limitations and Deferred Work
+
+<a id="known-limitations-and-deferred-work"></a>
+
+
+These limits define what the generator cannot model or emit; they are current package constraints, not a task backlog.
+
+- **Package export patterns are skipped** — contributing packages need concrete export targets; wildcard export patterns are not analyzed.
+- **Namespace re-exports across faces fail** — named and star re-exports produce links, but a namespace re-export cannot be represented until `TypeTargetModel` can model a module namespace without flattening it.
+- **The Zod emitter supports a deliberate subset** — generic schema declarations and computed constructs such as conditional or mapped schema roots fail until a concrete schema-factory policy exists.
+- **No generated schema imports across faces** — cross-face links are represented for analysis, but no generated schema requires a runtime cross-face Zod import.
+- **Discovery covers concrete public exports only** — declarations neither exported nor imported by the reachable graph are intentionally outside the package model.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>
+
+**Runtime invariant:** No companion is published. The source-project analyzer and build-time emitter run outside any Cordis runtime; model snapshots, executable artifacts, and consuming-package typechecks enforce the output contract.
+
+
+## 源文件与导出符号
+
+### packages/typert/generator/src/analyzer.ts  (3286 行)
+  55	class	TypertAnalysisError
+  62	type	AnalysisMode
+  65	iface	WorkspaceAnalyzerOptions
+  85	iface	DiscoveredTypertPackage
+  92	iface	ParsedConfig
+  100	iface	PackageRegistration
+  209	class	WorkspaceCaches
+      members: L221 config, L239 programHost, L276 invalidate
+  287	class	WorkspaceAnalyzer
+      members: L298 constructor, L316 analyze, L379 analyzeInBatches, L402 discoverPackages, L430 indexSourceDeclarations, L476 loadRegistrations, L525 entrySourcePaths, L539 registrationHasSurface, L564 checkProject, L594 queueEdit, L598 applyEdit, L638 constructor, L654 analyze, L672 analyzePackage, L745 collectExports, L788 collectCrossFaceReExports, L838 moduleExports, L844 reachableFiles, L867 resolveImport, L886 packageImportOf, L913 forwardedExports, L939 collectServices, L1002 collectExplicitServices, L1032 collectInvocations, L1065 invocationModel, L1236 gatewayBinding, L1245 gatewayFieldBinding, L1271 gatewayServiceBinding, L1295 gatewayBindingArguments, L1321 remoteMarker, L1389 remoteResultType, L1418 isNeverType, L1422 isGlobalAbortSignal, L1429 lookupDeclarations, L1466 contextDeclarations, L1493 typeMetaMapMembers, L1510 remoteBoundary, L1577 resolvedRemoteCodecType, L1755 assertRemoteJsonType, L1860 isRemoteByteArray
+
+### packages/typert/generator/src/cordis-catalog.ts  (1070 行)
+  58	iface	EventEntry
+  76	iface	ServiceMethodEntry
+  86	iface	ServiceEntry
+  102	iface	InheritedEntry
+  112	iface	CordisCatalogPolicy
+  132	iface	CordisCatalogModel
+  138	class	CordisCatalogProjector
+      members: L146 constructor, L158 project, L170 renderRuntimeApi, L182 collectEvents, L259 renderableServices, L279 collectServices, L332 runtimeTypes
+  369	fn	projectCordisCatalog
+  407	fn	collectEvents
+  417	fn	collectServices
+  919	const	REGION_BEGIN
+  921	const	REGION_END
+  1015	fn	renderPageRegion
+  1044	fn	renderInheritedPage
+
+### packages/typert/generator/src/emitter.ts  (1129 行)
+  28	class	TypertEmitError
+  33	iface	ModelEmitResult
+  43	iface	RemoteModelEmitResult
+  89	class	FaceModelEmitter
+      members: L96 constructor, L105 emit, L131 runtimeModel, L167 runtimeMember, L177 runtimeTypes, L187 renderJs, L219 renderDts, L246 emitRemote, L275 invocationLiteral, L342 renderRemoteDts, L418 pushRemoteSignature, L432 pushRemoteNamespaceSignature, L444 pushMappedRemoteSignature, L466 remoteSignature, L480 remoteFunctionType, L507 if, L532 boundary, L533 encoder, L545 constructor, L547 reference, L562 definitions, L566 call, L571 body, L627 if, L630 if, L631 if, L637 for, L645 if, L647 if, L648 if, L658 constructor, L694 emit, L718 declarationDefinition, L729 declarationSchema, L748 typeSchema, L792 referenceSchema, L839 declarationArguments, L865 tupleRestSchema, L878 objectSchema, L926 exportSchemaName
+
+### packages/typert/generator/src/index.ts  (17 行)
+
+### packages/typert/generator/src/model.ts  (443 行)
+  8	type	TypertFace
+  11	type	TypeNodeId
+  14	type	SymbolId
+  17	type	KeywordTypeName
+  31	type	TypeOperatorName
+  34	iface	SourceLocation
+  41	iface	ExportModel
+  49	iface	JsDocTagModel
+  57	iface	DocumentationModel
+  65	iface	ServiceModel
+  74	iface	EventModel
+  84	iface	ObjectModel
+  91	iface	SchemaModel
+  98	iface	RemoteTypeImportModel
+  105	iface	RemoteBoundaryModel
+  117	iface	InvocationParameterModel
+  128	iface	InvocationModel
+  160	iface	PackageModel
+  172	iface	CrossFaceLink
+  182	iface	FaceModel
+  189	iface	WorkspaceModel
+  195	iface	SourceDeclarationModel
+  205	type	MemberVisibility
+  208	iface	TypeParameterModel
+  218	iface	ParameterModel
+  229	iface	SignatureModel
+  236	iface	MemberBase
+  255	iface	PropertyMemberModel
+  261	iface	MethodMemberModel
+  267	iface	AccessorMemberModel
+  273	iface	SignatureMemberModel
+  279	type	MemberModel
+  286	iface	EnumMemberModel
+  293	iface	TypeDeclarationPartModel
+  302	iface	TypeDeclarationModel
+  322	type	TypeTargetModel
+  341	iface	TupleElementModel
+  349	iface	TemplateSpanModel
+  355	type	TypeNodeModel
+  399	fn	childTypeNodeIds
+  435	iface	TypeGraph
+
+### packages/typert/generator/src/renderer.ts  (366 行)
+  21	class	TypeGraphRenderError
+  26	class	TypeGraphRenderer
+      members: L36 constructor, L53 node, L64 declaration, L75 member, L87 renderType, L175 renderSignature, L186 renderMember, L212 renderDeclaration, L240 declarationClosureForMembers, L249 declarationClosureForTypes, L253 declarationClosure, L298 renderSignatureHead, L302 renderReturn, L306 renderParameter, L313 renderTypeParameters, L319 renderTypeParameter, L331 renderObject, L336 indexParameters, L350 if, L351 if
+
+### packages/typert/generator/src/tsdown-plugin.ts  (163 行)
+  31	iface	TypertPluginOptions
+  43	fn	typertPlugin
+
+### packages/typert/generator/src/workspace.ts  (156 行)
+  15	iface	WorkspaceEmitResult
+  20	iface	WorkspaceTypertGeneratorOptions
+  32	class	WorkspaceTypertGenerator
+      members: L41 constructor, L52 discover, L66 generate, L90 validateExport, L152 if
+
+## 其它关键文件
+
+### package.json
+{
+  "name": "@deepseek-ai/dsh-typert-generator",
+  "description": "TypeScript project analyzer and model-driven Typert artifact generator",
+  "version": "0.1.7-rc.2",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/typert/generator"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./tsdown": {
+      "types": "./lib/types/tsdown-plugin.d.ts",
+      "default": "./lib/types/tsdown-plugin.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/types/**/*.js",
+    "lib/types/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@jridgewell/gen-mapping": "^0.3.13",
+    "typescript": "^6.0.3"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:~"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-tool-cordis": "workspace:*",
+    "@deepseek-ai/dsh-typert-registry": "workspace:*",
+    "@deepseek-ai/cordis": "workspace:~",
+    "zod": "^4.4.3"
+  }
+}
+

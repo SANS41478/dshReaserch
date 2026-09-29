@@ -1,0 +1,78 @@
+[
+  {
+    "group": "llm",
+    "dir": "llm-deepseek",
+    "short": "llm-deepseek",
+    "oneLiner": "DeepSeek 官方 Messages 传输库：中立请求与 /v1/messages 的双向翻译",
+    "why": "不加载它，llm-deepseek-api-key 与 llm-deepseek-account 就没有 adapter 可注册，deepseek-official 与 deepseek-account 两条路由在 ctx.llm 里根本不存在，带 provider: deepseek-official 的请求在路由解析处就失败。同时官方专属能力一并消失：thinking 签名回放、Files API 图片复用与配额回收、output_config.effort 推理档位、in-history 系统提示更新。系统不会退化成「换通用适配器照样跑」——pi-ai 那条路没有 Files 复用与官方 beta 头，图片成本与缓存命中行为都会变。",
+    "position": "上游有两个：provider 插件 llm-deepseek-api-key / llm-deepseek-account 在 apply 里调用本包导出的 registerDeepSeekProvider；真正发起调用的是 ctx.llm（LlmRuntime），受 agent-loop 驱动先 prepareCall 取能力、再 stream。数据向下：GenerateOptions 经 serialize 变成 Messages JSON，fetch 打到 baseURL + /v1/messages；向上：SSE 经 parseSse + translate 变成 StreamChunk，由 agent-loop 落库。下游依赖 dsh-llm（LlmAdapter、StreamChunk 词汇、attributionHeaders、retryPolicy）、dsh-attachment、dsh-anonymous-user-id、dsh-timeout、dsh-fs，以及可选的 ctx.deepseekLlmApiExtensions。",
+    "inside": "本包是库不是插件：src/index.ts 只有 export，装配在 host.ts:18 的 registerDeepSeekProvider——它把 provider 插件给的 options()、resolveAuth、discoverModels 连同共享 Host 服务钉进 DeepSeekAdapter，再 ctx.llm.registerAdapter([provider], adapter)（host.ts:39）。注册时唯一被捕获的事实是 retryPolicy，变更时用 registration.replace 原地换路由，不留空窗。请求生命周期在 adapter.ts：generate（51）用 idleWatchdog 把空闲变成 TIMEOUT；request（75）依次 prepareImages、resolveAuth、RequestFiles、prepareFileIds、serialize、prepareRequestExtensions，然后 fetch（120）——带上 attributionHeaders、anthropic-version、files/tool-changes beta、匿名 user id 与 session id，redirect: 'error'；2xx 后先 await extensions.accept()，再 translate(parseSse(...))。Files 解析失败整包转 inline base64，provider 报 stale-file 允许一次替换重试。配置侧 config.ts:204 resolveAdapterOptions 是唯一解析入口，volatile 配置靠 options() thunk 每次操作重读。能力声明在 model-info.ts:61 modelInfo：inputModalities、contextWindow、defaultMaxTokens，reasoning.efforts 为 off/low/high/max（thinking: disabled 只剩 off），未登记模型按 text-only 处理以免冒认图像能力。序列化在 serialize.ts:56：reasoning→thinking（带 signature）、tool-call→tool_use（历史参数非法时 toolInput 兜底 {}）、developer 消息→system 角色的 tool_addition/tool_removal、in-history 更新必须挂在 user/tool 轮之后（flushSystemUpdates），effort 落 output_config.effort，off 落 thinking.type: disabled。回程是 translate.ts:104，产出 StreamChunk 并在 finish 上挂 replayState。图片链路是 images.ts、request-pricing.ts（预算与 IMAGE_OFFLOAD_REQUIRED）、file-store.ts 的 DeepSeekFileStore（singleflight、过期刷新、配额清理）与 upload-index.ts。",
+    "boundary": "归它管：Messages 线上格式的双向翻译、图片的确定性版本与 Files 复用、模型能力声明、错误码归一（AUTH/QUOTA/RATE_LIMIT/CONTEXT_WINDOW_EXCEEDED/…）、扩展字段的 prepare/accept 事务。不归它管：凭据从哪来（resolveAuth 由 provider 插件注入，api-key 与 account 各认各的、互不回落）；注册哪条路由与目录可见性（host 与 provider 插件的 registerConfigurableProviders、discoverModels）；重试的执行（providerRetryPolicy 只是声明，重跑在 dsh-llm-retry）；历史与压缩；token 计量。划线依据：同一套传输要服务两条路由，传输与凭据/路由必须分离。",
+    "tour": [
+      { "file": "packages/llm/llm-deepseek/src/host.ts", "line": 39, "sym": "ctx.llm.registerAdapter([provider], adapter)", "note": "注册点：库不自己挂载，由 provider 插件带着凭据与目录回调来注册路由，这是传输与凭据分离的接口" },
+      { "file": "packages/llm/llm-deepseek/src/model-info.ts", "line": 61, "sym": "modelInfo", "note": "能力声明：contextWindow、inputModalities 与 off/low/high/max 四档 effort 在此决议，未登记模型按 text-only" },
+      { "file": "packages/llm/llm-deepseek/src/serialize.ts", "line": 35, "sym": "tool_use / toolInput", "note": "工具调用格式转换：tool-call 变 tool_use，历史参数非法时回退 {}，以保住 call id 与 tool result" },
+      { "file": "packages/llm/llm-deepseek/src/adapter.ts", "line": 120, "sym": "fetch(`${messagesApiRoot(...)}/messages`)", "note": "流式协议出口：一次请求的唯一 HTTP 出口，之后 translate(parseSse(body)) 把 SSE 翻成 StreamChunk" },
+      { "file": "packages/llm/llm-deepseek/src/translate.ts", "line": 161, "sym": "yield { type: 'finish', reason, replayState }", "note": "终局块带 replayState，把 thinking 签名与块级回放元数据交回 harness，供下一轮原样回传" }
+    ],
+    "gotchas": "改 models 是整体替换目录而不是追加。tool_choice 未映射。走原生 fetch，不吃共享代理。in-history 系统更新后面必须留一条 user 或 tool-result 轮，否则序列化直接 UNSUPPORTED_CONTENT。图片只支持输入，外链 URL 与 assistant 出图不支持。默认目录不探测网关，未启用的 id 会 INVALID_REQUEST。配置里残留 protocol 字段会让后续请求一直失败。文件 id 缓存按 endpoint + 凭据头哈希隔离。",
+    "analogy": "像只跑 DeepSeek 官方线路的专线物流：自己有车队（fetch）和包装拆包标准（Messages 序列化与 SSE 翻译），还有周转仓（Files 复用图片）。但它不接客——柜台是 api-key / account 两个 provider 插件，它们决定用哪张通行证、挂哪块招牌。"
+  },
+  {
+    "group": "llm",
+    "dir": "llm-pi-ai",
+    "short": "llm-pi-ai",
+    "oneLiner": "pi-ai 库驱动的多厂商适配器：一个 providers 字典接入任意目录路由与自建网关",
+    "why": "不加载它，除 DeepSeek 官方外的路由（openai、anthropic、OpenAI 兼容网关、自建 vLLM、Codex 登录）在 ctx.llm 上都没有适配器，agent 被切到这些 provider 就在路由解析处失败。Models 页面也只剩 DeepSeek，既不能新增第三方路由，也不能对端点做模型发现；OAuth 登录与刷新一并消失。还有一层不那么显眼的后果：dsh-llm 那套「提供方无关」的流词汇只剩 llm-deepseek 一个实现，孪生验证失效，抽象泄漏不再有人抓。",
+    "position": "上游是 ctx.llm（LlmRuntime）：它按 provider 找到本适配器，先 prepareCall 拿能力并绑定 generation，再 stream；配置来自 settings 的 llm-pi-ai 命名空间，Models 页的发现走 ctx.llm.registerModelDiscovery 回调。下游是 @earendil-works/pi-ai（provider catalog、api 实现、AssistantMessageEvent 词汇）与 dsh-llm、dsh-credentials（解析 apiKeyEnv、存登录记录）、dsh-authorization、dsh-attachment / dsh-fs、dsh-timeout。数据同样双向：GenerateOptions 经 toPiContext 变 pi-ai Context 交给 models.streamSimple；回程事件经 toStreamChunks 变 StreamChunk 上抛。",
+    "inside": "apply（index.ts:149）是骨架。profiles()（163）每次操作从 volatile 配置重解析并按 raw 快照身份 memo；registrationFacts（103）只含 provider、displayName、retryPolicy——注册表只在注册那一刻捕获这些，所以它们一变就用 registration.replace 原地换，路由集合为空是休眠态（298），一条都不注册。目录在 directoryEntries（124）：已安装 catalog 全量并上当前 profiles，每条带 declared = 是否 pi-ai 未 ship 该 key，只有适配器能区分「手写网关」与「被收窄的目录路由」。发现注册在 index.ts:275，discoverModels（discovery.ts:269）对目录命中的路由直接返回 installed models 不发包。快照机制是 PiAiAdapter.current()（adapter.ts:232）：createModels(auth) 建一个不可变 Models 集合，prepareCall（318）把 modelInfo 与 stream 绑在同一 generation 上。路由构造分两段：config.ts:410 resolveProfiles 解析标量默认值并捕获 catalogError/modelErrors；catalog.ts:828 resolveRouteModels materialize 模型——models 整体替换目录、modelOverrides 单改某几个、未描述容量回落 defaultContextWindow/defaultMaxTokens；再由 provider.ts:167 buildProvider 优先复用已安装 provider（保留其 API 实现与 ambient 发现），只有指了别的协议或目录不认识时才按 provider.ts:47 的三协议表自建。凭据侧 resolveApiKey（index.ts:183）走 ctx.credentials，命名了却解析不到就抛 MISSING_CREDENTIAL，绝不静默回落环境变量；auth.ts 的 credentialStoreFrom / authContextFrom 把登录结果落在 llm-pi-ai/<provider id>，login.ts:120 注册授权流。推理档位由 reasoningInfo（adapter.ts:187）决议：reasoningEfforts 的 key 是可选级别、value 是线上拼写，模型无 reasoning 元数据时整块省略。回程是 stream.ts:142 toStreamChunks；profileOptions 写死 maxRetries: 0（adapter.ts:130），把可见重试交给 dsh-llm-retry。",
+    "boundary": "归它管：providers 路由的注册与原子替换、可配置目录与 declared 标记、模型目录的 materialize 与诊断、端点发现、登录与凭据记录、pi-ai 事件到 StreamChunk 的翻译、每代快照一致性。不归它管：DeepSeek 官方专属能力（Files 复用、in-history 系统更新、dsh_session_log / dsh_plugin_packages，只走 llm-deepseek）；重试执行；历史与压缩；token 计量；凭据存储本身。划线依据是「库能表达的交给库」：端点、协议、模型能力一律走 catalog，只有库表达不了的官方专属语义才在孪生适配器里手写。",
+    "tour": [
+      { "file": "packages/llm/llm-pi-ai/src/index.ts", "line": 302, "sym": "ctx.llm.registerAdapter(routes, adapter)", "note": "注册点：路由集合来自配置字典，空集合即休眠态，变更时用同一实例 replace，冲突则保留旧路由继续服务" },
+      { "file": "packages/llm/llm-pi-ai/src/index.ts", "line": 124, "sym": "directoryEntries", "note": "目录声明：catalog 全量并上手写路由，declared 只有适配器能判断，配置面因此能给还不存在的路由开地址" },
+      { "file": "packages/llm/llm-pi-ai/src/catalog.ts", "line": 828, "sym": "resolveRouteModels", "note": "能力来源：models 整体替换、modelOverrides 单改，未描述项回落路由默认容量，诊断与可用模型并存" },
+      { "file": "packages/llm/llm-pi-ai/src/adapter.ts", "line": 232, "sym": "PiAiAdapter.current()", "note": "不可变快照：配置一变就重建集合而非修改在用的那个，保证一次请求从头到尾跑在同一代配置上" },
+      { "file": "packages/llm/llm-pi-ai/src/stream.ts", "line": 142, "sym": "toStreamChunks", "note": "流式协议回填：pi-ai 事件翻成 StreamChunk，工具参数 JSON.stringify 成原始串，错误走 finish 而非抛出" }
+    ],
+    "gotchas": "providers 是字典不是数组，models 与 modelOverrides 不能并存。pi-ai 只有一个 system 槽，非首位 system 消息折进 user，system/assistant 历史里的图片直接 UNSUPPORTED_CONTENT。GenerateOptions.stop 不支持。provider 的 HTTP status 拿不到，错误只能按文本分类。maxRequestImageBytes 只数 base64 图片。登录只活在发起它的进程里。OAuth-only provider 需补一个 api-key 方法才认显式 key。一条路由一个协议。pi-ai 升级要重打 tool-call 单次解析补丁，否则大参数流是 O(n²)。",
+    "analogy": "像一家万能货运代理：自己不开车，把货交给 pi-ai 这个平台，平台认识几十家仓库（已安装目录），也允许你手写新仓库的地址和它说的话（api、baseURL、compat）。它负责记账、办通行证，发车前拍一张不可改的快照，最后把各家回执统一翻成总部单据。"
+  },
+  {
+    "group": "llm",
+    "dir": "deepseek-llm-api-extensions",
+    "short": "deepseek-llm-api-extensions",
+    "oneLiner": "官方 DeepSeek 请求顶层字段的注册处：不改适配器也能挂自定义字段",
+    "why": "没有它，dsh_session_log、dsh_plugin_packages 这类 provider 专属元数据只有两条路：硬编码进适配器（适配器就得 import 会话与 Loader 层，依赖方向反过来，每加一字段改一次传输），或各插件自己改请求体（字段重名没人拦、HTTP 成功前不敢提交状态）。删掉这个包适配器照样能跑——它是 peer 可选的——但两个贡献者插件无法注册，官方请求不再携带会话日志与插件清单，服务端失去对账依据。",
+    "position": "上游是贡献者插件：session-log-deepseek 与 plugin-package-inventory-deepseek 在自己的 apply 里调 register 占一个字段名。下游几乎为空，peerDependencies 只有 @deepseek-ai/cordis，这也是谁都敢依赖它的原因。真正的消费方是 llm-deepseek 的 request-extensions.ts：适配器在 fetch 前 prepare、在 2xx 后 accept。它挂的 ctx 键是 ctx.deepseekLlmApiExtensions。数据是单向摘取：把已序列化的 base request 只读快照发给各 provider，收回 value 合并进 body 上行，模型永远看不到。",
+    "inside": "主体是 DeepSeekLlmApiExtensionRegistry（index.ts:66），一个 extends Service 的 Cordis 服务，靠 declare module 把 ctx.deepseekLlmApiExtensions 挂进 Context，内部只持有一个 providers: Map<field, provider>。register（79）是 effect-scoped 的独占分配：字段名空白或未 trim 直接抛，重复注册同步抛，dispose 后才释放给后来的 provider。prepare（108）是前半段生命周期：先 throwIfAborted，快照当前 provider 并并发 prepare，外面套 abortable（51）——请求取消后不再等那些忽略 signal 的 provider；结果逐个 structuredClone + freezeJson（32）深冻结，让 provider 拿不到 outgoing 请求的可变别名，返回 { fields, accept }。accept（127）是后半段：幂等，并发调用并入同一结算，全部 settle 后才报错，多个失败聚成 AggregateError（41）。types.ts 里 DeepSeekLlmApiExtensionMap（16）是个空接口，专供贡献者用 declare module 合并自己的字段名与类型；给 provider 的只有 body、sessionId、purpose 与 signal。注册中心不解释任何字段语义，只管两件事：谁拥有哪个字段名，以及「准备—接受」这两段事务。",
+    "boundary": "归它管：字段名的独占分配与释放、并发准备与取消、值的克隆与冻结、与 base request 的碰撞检测（由适配器抛 REQUEST_EXTENSION）、2xx 后的联合提交与错误聚合。不归它管：字段内容（session-log-deepseek 拥有 dsh_session_log，plugin-package-inventory-deepseek 拥有 dsh_plugin_packages）；HTTP 怎么发、失败码怎么归一；字段最终发不发得出去（序列化失败时适配器整包丢弃并跳过 accept，让贡献者下次重发）。划线依据很直白：它只有一个 cordis peer，谁都能依赖它而不被拖进适配器或会话层。",
+    "tour": [
+      { "file": "packages/llm/deepseek-llm-api-extensions/src/index.ts", "line": 66, "sym": "class DeepSeekLlmApiExtensionRegistry extends Service", "note": "把自己注册成 ctx.deepseekLlmApiExtensions，是 llm 组里唯一以「字段生命周期」为职责的服务" },
+      { "file": "packages/llm/deepseek-llm-api-extensions/src/index.ts", "line": 79, "sym": "register(field, provider)", "note": "一个字段一个所有者：effect-scoped 独占，重名与非法名同步抛，dispose 才释放——贡献者能独立成包的前提" },
+      { "file": "packages/llm/deepseek-llm-api-extensions/src/index.ts", "line": 108, "sym": "prepare(request)", "note": "并发准备 + 取消即停 + structuredClone 后深冻结，provider 只拿到只读快照，也拿不到 body 的别名" },
+      { "file": "packages/llm/deepseek-llm-api-extensions/src/index.ts", "line": 127, "sym": "accept: () => acceptance ??= acceptAll(callbacks)", "note": "幂等联合提交：HTTP 2xx 后才落定，重复调用并入同一结算，多个失败合成 AggregateError" },
+      { "file": "packages/llm/deepseek-llm-api-extensions/src/types.ts", "line": 16, "sym": "interface DeepSeekLlmApiExtensionMap {}", "note": "空接口留给贡献者声明合并：新增字段不需要改注册中心，只要在自己包里 merge 一行类型" }
+    ],
+    "gotchas": "只对官方 DeepSeek 请求生效：provider 中立的 ctx.llm 与 pi-ai 都不消费它，挂上去的字段在 pi-ai 路由不会出现。没有字段顺序契约，收件方按名字取值。字段名与 base request 撞了就是 REQUEST_EXTENSION，在 HTTP 之前失败。prepare 抛错会挡住整个请求；反过来请求体整体序列化失败时字段被整包丢弃且 accept 变 no-op，贡献者必须能在下次请求重发状态。",
+    "analogy": "像快递面单上「附加栏位」的管理处：谁想加一格先登记名字，名字不许重复，搬走就交还。装车前统一收集各家要写的内容（复印冻结，谁也改不了原件），等收件方真的签收后才统一通知各家「送到了，可以记账」。"
+  },
+  {
+    "group": "llm",
+    "dir": "plugin-package-inventory-deepseek",
+    "short": "plugin-package-inventory-deepseek",
+    "oneLiner": "把当前生效的插件包清单写进官方请求的 dsh_plugin_packages 字段",
+    "why": "没有它，官方请求不带插件清单，服务端没有可依据的事实判断「这条请求是在哪套插件组合下发出的」，线上排障只能靠用户口述版本。而这个清单又不能塞进适配器：适配器是给 api-key 与 account 两条路由复用的传输库，一旦 import Loader 与 agents 就被拖进应用装配层。独立成包后，一个 enabled: false 就能关掉这项诊断，不必动传输代码。",
+    "position": "它是函数插件，name = plugin-package-inventory-deepseek，inject 是 ['agents', 'deepseekLlmApiExtensions', 'loader']。上游没人主动调用它，它挂在注册中心上等 prepare 回调。下游读 ctx.loader 的 EntryTree、ctx.agents（用 sessionId 找还活着的 Agent）、可选的 ctx.agentPresets（动态 import standingMountFor 取 standing preset 的 Loader 树）、ctx.pluginPackages，写入端是 ctx.deepseekLlmApiExtensions。数据方向：请求到来时现读一次 Loader 树与 preset 树，产出 { version: 1, packages: [{ name, version }] }，由适配器合并进 HTTP body——字段在 messages、system、tools 之外，模型看不见。",
+    "inside": "apply（192）先判 enabled（默认 true），取 ctx.get('pluginPackages') 采样一次并构造 PackageIdentityResolver（101）——采样是终生的：服务在场就用运行时解析，不在场退回 Node 原生 require.resolve 搜索，之后即使服务再挂载也不切。接着 register('dsh_plugin_packages')（196）独占这个字段名，prepare 回调里调 collectActivePluginPackages（157）。收集分两步：activeEntries（138）从一棵 Loader 树筛出非 group、未 disabled、根 fiber 为 ACTIVE 的条目；若 sessionId 能解析到活 Agent 且 ctx.agentPresets 在场，就动态 import preset registry 拿 standingMountFor(agent.ctx)?.tree 并入（根条目用 harness base，嵌套 include 保留各自 base）。身份解析在 resolver.resolve（111）：裸包名走 ctx.pluginPackages.packageOf 或 Node 搜索，相对/绝对路径用 nearestManifest（89）向上找最近 package.json；identityFromManifest（62）要求 name 与 version 都非空否则直接抛错——宁可让这次准备失败，也不静默丢一条；manifest 无 name 的按松散模块跳过。最后按 name+version 去重，用 compareWireText（152）做与 locale 无关的排序，保证同一套插件每次产出一致。types.ts:15 用 declare module 把类型合并进 DeepSeekLlmApiExtensionMap。",
+    "boundary": "归它管：dsh_plugin_packages 这一个字段的内容、排序与版本号；判定哪些 Loader 条目算一个生效插件包。不归它管：字段怎么合并、何时 accept（注册中心与 llm-deepseek）；HTTP 与错误码（适配器）；会话日志（session-log-deepseek 拥有另一个字段）；包的安装、版本与启用状态（Loader 与 npm）。划线依据来自注册中心的独占语义：一个字段名只能有一个所有者，所以每个贡献者天然是一个独立包，各开关各的。",
+    "tour": [
+      { "file": "packages/llm/plugin-package-inventory-deepseek/src/index.ts", "line": 192, "sym": "apply(ctx, config)", "note": "enabled 为 false 直接返回；并在此刻采样一次 ctx.pluginPackages，决定终生用运行时解析还是 Node 原生搜索" },
+      { "file": "packages/llm/plugin-package-inventory-deepseek/src/index.ts", "line": 196, "sym": "ctx.deepseekLlmApiExtensions.register('dsh_plugin_packages', ...)", "note": "对字段的唯一所有权来自这里：注册中心按字段名独占，所以它与 session-log 能各自独立成包" },
+      { "file": "packages/llm/plugin-package-inventory-deepseek/src/index.ts", "line": 157, "sym": "collectActivePluginPackages", "note": "每次请求现读 host Loader 树，sessionId 命中活 Agent 时并入其 standing preset 的树，从不缓存清单本身" },
+      { "file": "packages/llm/plugin-package-inventory-deepseek/src/index.ts", "line": 101, "sym": "class PackageIdentityResolver", "note": "进程内缓存 manifest 身份：裸包名走 pluginPackages 或 Node 搜索，相对路径向上找最近 manifest，缺 version 直接抛" },
+      { "file": "packages/llm/plugin-package-inventory-deepseek/src/types.ts", "line": 15, "sym": "declare module '@deepseek-ai/dsh-deepseek-llm-api-extensions/types'", "note": "声明合并把字段类型挂进扩展表：注册中心与适配器都不必认识这个字段的结构" }
+    ],
+    "gotchas": "只认 Loader 派生的包身份：程序化挂载的子 fiber、内存动态插件、结构性 cordis: 行都不在清单里，普通依赖也不算。相对文件没有具名带版本的宿主 manifest 就是松散模块，直接跳过。manifest 身份进程内缓存，同进程换版本需重启；Loader 的启用/禁用/挂载与源码 HMR 仍会刷新。ctx.pluginPackages 必须在 Loader 条目与本插件之前挂载才生效。manifest 缺 version 会让整个请求准备失败。",
+    "analogy": "像包裹里附的一张装箱单：只列真正装上这辆车、且有正规条码（npm 的 name + version）的箱子，手写便签和临时塞进去的不算。装车前现填，谁在车上就列谁，顺序固定好让每次对账都一样；车里真正的货物完全不受这张纸影响。"
+  }
+]

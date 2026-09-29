@@ -1,0 +1,266 @@
+[
+  {
+    "group": "subprocess",
+    "dir": "subprocess",
+    "short": "subprocess",
+    "oneLiner": "子进程接缝 ctx.subprocess：把「启动、观察、整棵杀掉进程树」收敛为一个无默认值的抽象 Service。",
+    "why": "如果删掉它，bash 执行器家族、LSP host、PTY shell backend、ACP 子代理后端都得各自直接调 node:child_process，各自发明环境净化、输出上限、终止阶梯：harness 自己的 DEEPSEEK_API_KEY 这类凭证会随父环境静默漏进每个子进程；一条 bash -c 里 fork 出去的后台进程在取消时会变成无人认领的孤儿；LSP 的 JSON-RPC 与 ACP 的 ndjson 各写一套防串流的读取逻辑。更关键的是，接缝把「杀」定义为对整个 managed range 的操作：SubprocessHandle.terminate 与 waitForExit 针对的是进程范围而不只是直接子进程，done 只报直接命令的退出事实——这使上层消费者不需要知道 Linux 与 Windows 在杀树上有多大的平台差异，也保证 waitForExit 能揭穿「直接命令退了但孙进程还活着」的假静默。环境净化 scrubbedParentEnv 也以此为单源：绕不开服务的 spawner（node-pty、SDK 传输）仍然 import 同一个函数，策略不分叉。",
+    "position": "上游是所有要跑命令的消费者：dsh-bash-local（一次性 bash 命令）、LSP host（pipe 模式跑 JSON-RPC）、dsh-terminal-bash（spawnTerminal 分配 PTY）、out-of-process 子代理后端；下游是唯一的 Service Provider——组合里必须 mount 一个 SubprocessRuntime 的子类（本地世界是 @deepseek-ai/dsh-subprocess-local，远程世界可以有自己的实现），第二个 provider 加载即抛错（Cordis 单服务标准）。数据流分两股：正向是消费者构造完全显式的 SubprocessSpawnSpec（argv、cwd、每条 stdio 的处置、graceMs、abort signal、env 覆盖），provider 同步返回活的 SubprocessHandle；回流的一股是字节——pipe 模式给原始 Readable，collect 模式经 offset-based 非消耗读取器回读；另一股是事实——done 这个 Promise 报直接命令的 exitCode/signal，waitForExit 报 managed range 清空。控制方向（terminate、signal、resize）由消费者发起，provider 私有持有目标身份，调用者永远拿不到裸 pid。",
+    "inside": "全包仅 3 个源文件约 420 行，是一个纯接缝包。src/index.ts（178 行）三件事：一，SubprocessRuntime 抽象类 extends Service（117 行），只声明四个抽象方法——resolveExecutable（绝对路径验证、裸名走 PATH、带分隔符的相对路径直接拒绝）、terminalEnvironment（平台与首选 shell 事实）、spawn（完全显式 spec，接缝不施加任何默认）、spawnTerminal（唯一的深原语：普通管道无法分配控制终端，所以 PTY 分配、前台进程组、信号、全会话静默都收进这一个方法）；二，scrubbedParentEnv（66 行）：剥掉 SENSITIVE_ENV_PATTERN（47 行，/KEY|PASSWORD|SECRET|TOKEN/i）命中的名字与全部 DSH_* 前缀，再叠加 dsh-http-proxy 的 proxyEnvironmentForChild——子 Node 需要 NODE_USE_ENV_PROXY 一类的旗标才会跟随父进程的代理路由，显式 env 在净之后合并，undefined 墓碑可删除环境项；三，SubprocessExecutableNotFoundError（168 行），查找失败给稳定错误。src/types.ts（298 行）是词汇表：SubprocessSpawnSpec、SubprocessStdio（stdin: ignore/pipe/批量数据，stdout/stderr: pipe/inherit/collect 对象）、SubprocessHandle（169 行：control Duplex、collected 读取器、done、terminate、waitForExit——注释明说 waitForExit 等的是同一 managed range 清空而非直接命令退出，幸存工作保持可观察）、SubprocessTerminalHandle（257 行：write/resize/inspectForeground/inspectActivity/signalForeground/terminate，注释解释为什么这是深原语）；SubprocessTerminalSignal 与 dsh-terminal 的 TerminalSignal 刻意保持成员一致但不互相依赖。src/control.ts 定义 SUBPROCESS_CONTROL_FD=7 与 openInheritedControlChannel：消费 provider 写入的 DSH_SUBPROCESS_CONTROL=pipe 标记打开 fd 7，控制字节永不进 stdout/stderr 收集器。",
+    "boundary": "归它管：进程坐标与生命周期——argv 怎么落到一个进程、输出按什么上限收集、managed range 何时算空、服务 disposal 时全量终止并等待。明确不管：一，shell 语义——argv 永不做 shell 解释，想要 shell 的消费者自己传 ['bash','-c',cmd]（dsh-bash-local 干的事）；二，超时与 teardown 阶梯——terminate 只有信号动词和 graceMs，终止升级顺序（ACP 后端的 stdin-EOF 优先阶梯是仓内模板）归消费者；三，模型可见的输出渲染——bash 执行器家族全权负责；四，终端 readiness、scrollback、prompt 策略——spawnTerminal 只给字节管道与前景观察，PTY 消费者拥有全部策略；五，自身内嵌 spawn 的传输（SDK client、MCP）路由不到这里，只能 import scrubbedParentEnv 保环境策略单源。划线依据写在文件头注释里：service 拥有 process coordinates and lifetime，consumers own what a process means and every default——dsh-shell 的 request/spec 拆分是这套划法的所有模板。",
+    "tour": [
+      {
+        "file": "packages/subprocess/subprocess/src/index.ts",
+        "line": 117,
+        "sym": "SubprocessRuntime",
+        "note": "抽象 Service，四个抽象方法就是接缝的全部表面。注释逐条规定实现者必须遵守的语义：同步返回活 handle、非消耗读取、terminate/waitForExit 同域、disposal 全量终止。"
+      },
+      {
+        "file": "packages/subprocess/subprocess/src/index.ts",
+        "line": 66,
+        "sym": "scrubbedParentEnv",
+        "note": "所有 harness 子进程的规范环境基底：凭证名与 DSH_* 剥离、代理变量叠加。导出为普通函数正是为了让走不到服务的 spawner 共享同一定义。"
+      },
+      {
+        "file": "packages/subprocess/subprocess/src/types.ts",
+        "line": 169,
+        "sym": "SubprocessHandle",
+        "note": "done 与 waitForExit 是两个独立承诺：前者只报直接命令退出事实，后者等整个 managed range 清空。这一字段拆分就是「进程树」抽象的类型化表达。"
+      },
+      {
+        "file": "packages/subprocess/subprocess/src/index.ts",
+        "line": 47,
+        "sym": "SENSITIVE_ENV_PATTERN",
+        "note": "凭证净化是一个名字正则启发式。注释解释了为什么显式 env 在净后合并——故意转发的凭证要能存活，这是策略边界的另一半。"
+      },
+      {
+        "file": "packages/subprocess/subprocess/src/types.ts",
+        "line": 257,
+        "sym": "SubprocessTerminalHandle",
+        "note": "spawnTerminal 为什么必须是深原语：控制终端分配、前台进程组、全会话静默都无法从普通管道 stdio 重建，注释把这层因果写得很直白。"
+      }
+    ],
+    "gotchas": "凭证 scrub 是名字启发式：只拦 *KEY*/*PASSWORD*/*SECRET*/*TOKEN*，名字不同的秘密（如 *PASSPHRASE*）会穿透；白名单防过度净化是 noted future work。collect 模式读取偏移滑出内存尾时结果标 lossy，只有配了 spill 才拿得到完整流。SDK/MCP 这类自带 spawn 的传输无法路由进服务，环境策略要靠手动 import scrubbedParentEnv 维持单源。teardown 阶梯不是现成品——接缝只给信号动词和 range 等待，每个 out-of-process 消费者要自己编码对端合作形态。可观测性是 provider 特定的：原生 provider（systemd scope、Windows Job）能看见逃逸后代，fallback 只有更弱的组/树/会话视野，接缝本身不提供常驻进程表监视。同一 context 加载第二个 provider 会按 Cordis 标准直接抛错。",
+    "analogy": "像一份标准化的「外包施工合同」：甲方（消费者）只交一张完整施工单——谁来干、在哪干、水电怎么接、违约宽限多久，一项不填不开工；乙方（provider）承诺两件事：随叫随停整支施工队（含转包的零工，不是只停工头），以及书面确认工地彻底清空才算交割。至于这工程是装修还是爆破、工期多久、干完了给谁看，合同一概不写——那是甲方自己的事。"
+  },
+  {
+    "group": "subprocess",
+    "dir": "subprocess-local",
+    "short": "subprocess-local",
+    "oneLiner": "ctx.subprocess 的本地宿主实现：systemd scope、Win32 Job、进程组三级容器选择，外加 node-pty 终端与 spill 输出收集。",
+    "why": "没有它，ctx.subprocess 接缝只是一张没有施工队的合同：本地执行世界（dsh-bash-local 的每一次 bash 命令、LSP host 的语言服务器、dsh-terminal-bash 的持久 shell）全部无法启动任何进程。但这个包的真正价值不在「能 spawn」——node:child_process 十行就能 spawn——而在「能整棵杀干净并证明清空」：Linux 上它把每个目标放进 transient user-systemd scope，让 setsid、double-fork 逃出进程组的后代仍被 cgroup 成员身份罩住；Windows 上用私有 runner 独占 kill-on-close Job，子进程先 CREATE_SUSPENDED 再入 Job 再 resume，杜绝「先跑起来再圈住」的逃逸窗口；两者都不可用时才降级到 detached 进程组加 taskkill，并打一次 warn 声明保证变弱。杀完还要证明：waitForExit 轮询 scope/Job/进程表直到真空，直接命令退出不算数。它还承载全部输出策略的机械层：tail-keep 内存尾加 0700/0600 spill 文件、spill 失败静默降级、host exit 时的同步无 Promise 终结。4215 行里绝大部分是这三件事的平台细节。",
+    "position": "上游是 dsh-subprocess 接缝的调用者——dsh-bash-local、LSP host、dsh-terminal-bash——它们经由 SubprocessRuntime 抽象类到达这里，永远不知道实现细节；下游是三层：JS 层依赖 dsh-win32-process（Koffi 绑定）与 node-pty，OS 层调用 systemd-run/systemctl（Linux scope）、taskkill（Windows fallback）、私有 runner 二进制（postinstall 脚本 ensure-spawn-helper.mjs 保证就位），dsh-timeout 提供 MAX_TIMER_DELAY_MS 校验。数据流：spec 进，先 validateSubprocessSpec 同步验证，selectContainmentMode 选容器，native 路径经 launchLinuxScope/launchWindowsJob 返回 ManagedProcessLaunch，fallback 路径经 spawnSubprocess，再统一 bindManagedProcess 织出 LocalSubprocessHandle；输出字节流进 OutputCollector（tail-keep 加 spill），退出事实沿 done 与 waitForExit 两个独立 Promise 回流；服务在 ctx.effect 里注册 disposal，另挂 process 的 exit 事件做同步终结。",
+    "inside": "13 个源文件按职责分五块。一、入口 index.ts：LocalSubprocessRuntime（59 行）持有 live/terminals/controlChannels 三个 Set；构造器里 ctx.effect 注册异步 disposal（disposeManagedProcesses 逐个 terminate 再等 managed range 而非直接命令）并 prependListener('exit') 挂 terminateForHostExit——后者在 Node 同步退出阶段不建 Promise、直接 SIGKILL/kill runner，保住退出码；spawn（182 行）是分流中枢，selectContainmentMode（213 行）返回 linux-scope/windows-job/fallback 三选一，linuxDeepProbePassed 缓存昂贵的深探测，warnFallback 用一个 latch 只警告一次并说明变弱原因。二、普通进程：spawn.ts 的 bindManagedProcess（267 行）是共享生命周期核心——装配 collect 流与 OutputCollector、实现 terminate 阶梯（SIGTERM，等 graceMs，再 SIGKILL，graceTimer 故意在直接命令结算后不清除以便波及幸存者）、done 里管道排水有 graceMs 上限；fallbackOwner 轮询进程组存活（Linux 上 direct 结算后还会用 /proc 复核组内成员）；taskkillProcessTree（115 行）跑 taskkill /T /F 且结果故意不检查以保证幂等。output.ts 的 OutputCollector（129 行）实现 tail-keep：内存只留最后 maxBytes（错误与结果聚在尾部），配了 spill 则整流追加到 0700 目录下 0600 O_EXCL 随机名文件，任何文件系统失败只丢 spill 不中断收集（收集跑在 data 监听器里，抛错会杀死宿主进程）。三、Linux 原生：linux-scope.ts 的探测三件套（probeLinuxBootstrap 验 runner 入口与 libc execve 绑定、probeLinuxScope 实测 systemd-run --scope、probeLinuxManager 轻查询）与 launchLinuxScope（562 行）/prepareLinuxTerminalScope（527 行）——通过 launch files 把 cwd/env 交给私有 runner，runner 清掉 fd 0-2 与 fd 7 的 close-on-exec 后进 libc execve，保留原始 argv；SystemdScopeOwner 轮询 scope 成员数证明清空。windows-job.ts 的 launchWindowsJob（125 行）spawn 私有 runner，runner 独占 Job 句柄并用 IPC 报直接结果与终止。runner-launch/runner-protocol/spawn-runner/bin 四文件是这套引导协议的实现。四、终端：terminal.ts 的 LocalTerminalHandle（59 行）封装 node-pty——输出 PassThrough 有背压（写不进就 pause PTY，drain 后 resume）、inspectForeground 查前台进程组与 inputWaiting、signalForeground（196 行）在 Windows 把 SIGINT 翻译成写 '\\x03'（conhost 变成控制台宽 CTRL_C）、SIGKILL 前台 shell 会被拒绝；descendants（267 行）用 rootIdentity（含进程启动时间）防止 PID 重用把无关进程的子树收编进本会话；terminateForHostExit 按「后代-shell-后代-owner」顺序同步强杀。五、视察器：process-inspector.ts 解析 /proc（parseProcStat、linuxProcessGroupHasLiveMembers），windows-inspector.ts 用 koffi 走 Toolhelp32；shell-activity.ts 为 bash 4.4+/zsh -i 装私有生命周期记录支撑 inspectActivity。",
+    "boundary": "归它管：在这台机器上「怎么跑」——容器选择、引导协议、输出收集机械、整树终止与清空证明、host exit 兜底。明确不管：一，跑什么、跑多久——包零配置，一切 disposition 与上限来自 spec，部署差异决策留在调用者的配置里；二，PTY 之上的语义——readiness 探测、scrollback、prompt 策略上移给 dsh-terminal-bash（其 pollReadiness 依赖这里的 inspectForeground 原始事实）；三，沙箱——Windows ACL 受限 token、POSIX 隔离归 dsh-sandbox 家族，这里只提供它们的原语底座之一；四，与 dsh-win32-process 的分工——这边做策略决策（选哪种容器、何时升级 SIGKILL），那边是无状态无决策的 ABI 原语；五，与接缝的分工——LocalSubprocessHandle.terminateForHostExit 是本地私有扩展，故意不进公共接缝。划线依据：接缝说「杀整棵树」这个契约，这边回答「用什么 OS 机制兑现」。",
+    "tour": [
+      {
+        "file": "packages/subprocess/subprocess-local/src/index.ts",
+        "line": 213,
+        "sym": "LocalSubprocessRuntime.selectContainmentMode",
+        "note": "三种容器策略的分流中枢：Linux 深探测（带正向缓存）过则 systemd scope，Windows Job 探测过且是普通进程则 Job，否则 fallback 并一次性警告保证变弱。"
+      },
+      {
+        "file": "packages/subprocess/subprocess-local/src/spawn.ts",
+        "line": 267,
+        "sym": "bindManagedProcess",
+        "note": "所有路径共用的生命周期织机：terminate 阶梯 SIGTERM→graceMs→SIGKILL、graceTimer 故意不随直接结算清除、done 与 waitForExit 双通道。fallback 与 native 在此汇合。"
+      },
+      {
+        "file": "packages/subprocess/subprocess-local/src/linux-scope.ts",
+        "line": 562,
+        "sym": "launchLinuxScope",
+        "note": "Linux 原生路径入口：systemd-run 拉起私有 runner，经 launch files 传递 cwd/env，bootstrap 进 execve 保留原始 argv——scope 因此罩住一切后代。"
+      },
+      {
+        "file": "packages/subprocess/subprocess-local/src/output.ts",
+        "line": 129,
+        "sym": "OutputCollector",
+        "note": "tail-keep 收集器：内存留尾部 maxBytes，spill 文件 0600 O_EXCL 随机名抗符号链接种植，失败只丢 spill 不打断 data 监听器里的收集。"
+      },
+      {
+        "file": "packages/subprocess/subprocess-local/src/terminal.ts",
+        "line": 267,
+        "sym": "LocalTerminalHandle.descendants",
+        "note": "fallback 终端清理的成员收编逻辑：只有 root pid 仍携带原始启动时间才采纳新的树/会话成员——PID 重用的陌生子树不能被误杀，注释把动机写得很清楚。"
+      }
+    ],
+    "gotchas": "Linux 直接 SIGKILL 后没有独立 deadline：不可中断的内核 I/O 可让 disposal 无限挂起，graceMs 与轮询预算都不约束这一段。macOS 永远走 PGID fallback——没有受支持的持久 owner。Windows 终端信号是控制台宽的：SIGINT 是写 '\\x03'，SIGTSTP/SIGHUP 直接拒绝；taskkill 不带 /F 杀不死控制台进程，所以 TERM 层实为宽限期等待。凭证 scrub 与接缝同源，同为名字启发式。已完成 spill 文件永不删除，会在 tmpdir 积累；私有 spill 目录被外部清理器删掉后不再重建，之后所有 spill 静默降级为内存尾加一条 error 日志。in-process 清理只在 JS 可观察的 exit 上发生：默认 SIGTERM/SIGINT/SIGHUP 处置绕过该事件，SIGKILL/OOM/原生崩溃需要外部监督者。每 spawn 有探测成本（Linux 深探测重复 bootstrap 与绑定直到首次成功），Windows 每 spawn 前重查 runner 与 Job 支持。",
+    "analogy": "像一支按地形选清场方案的拆迁队：Linux 小区有物业（systemd），每个工地都圈进带门禁的临时围挡（scope），走几个转包商也出不去；Windows 街区给每个工地配一位专职监工（私有 runner），手里攥着能一键清场的总闸（kill-on-close Job）；老城区（macOS 或没物业的 Linux）只能沿街贴条逐户敲门（进程组信号加 taskkill），并提前打招呼——有翻墙跑掉的管不了。交工前他们会挨个数人头，证明围挡里真没人了才签字。"
+  },
+  {
+    "group": "subprocess",
+    "dir": "win32-process",
+    "short": "win32-process",
+    "oneLiner": "全仓唯一的 Win32 原生进程/stdio/Job Object Koffi 绑定库，供 ACL 沙箱与普通 Job runner 两条 Windows 路径共用。",
+    "why": "Windows 没有 POSIX 进程组：kill(-pgid) 这套整树信号在 NT 内核上根本不存在，要「取消时整棵杀掉」只能换 OS 机制——Job Object 的 kill-on-close 是唯一能保证句柄一关全员同死的原语。而创建受控子进程、摆弄句柄继承、读 Job 计数，全要走未托管的原生 ABI：CreateProcessW/CreateProcessAsUserW 的 STARTUPINFOW/PROCESS_INFORMATION 双结构、STARTF_USESTDHANDLES 的句柄继承位、QueryInformationJobObject 里 ActiveProcesses 的字节偏移。这些如果让 ACL 沙箱和 subprocess-local 的 Job runner 各写一份，Koffi 结构体布局、out 参数释放、错误格式化、句柄清理会复制两份并各自漂移——Job 静默判定读错一个偏移，waitForExit 就永远不返回或假返回。这个包把绑定表收敛为一份（ffi.ts 的 loadWin32ProcessBindings 惰性加载 kernel32/advapi32 并在模块加载时断言两个结构体的 64 位大小），再用 verify/abi-probe.cpp 对 MinGW 头交叉验证常量与偏移，让 Windows 的整树能力有且只有一处事实来源。",
+    "position": "上游是两条 Windows 原生路径：subprocess-local 的 windows-job.ts 与 spawn-runner.ts（普通命令的 Job runner，经 CurrentTokenProcessBindings 用当前 token 的 CreateProcessW 路径）和 Windows ACL 沙箱实现（受限 token 路径，经 Win32ProcessBindings 的 CreateProcessAsUserW；sandbox 还通过 extendWin32ProcessBindings 把自己的 SID/DACL API 绑到同一批已加载的库上）。下游是 kernel32.dll 与 advapi32.dll，经 koffi（dsh-lazy-require 惰性引入）。它不是 Cordis 服务、不注册 ctx key，数据流是纯同步函数调用：调用者拿绑定表加选项进来，拿原生句柄出去——进程句柄、Job 句柄、管道读端全部 caller-owned，等待、排水、关闭由调用者用包里配套的 pollProcessExit/isJobEmpty/terminateJob/drainPipe/waitForProcessExit/closeHandleChecked 组装。模型永远看不到它：所有输出与诊断由上面的消费者渲染。",
+    "inside": "五个源文件约 1075 行，全部围绕「一份可信的 ABI」组织。abi.ts（53 行）是常量与布局值表：STARTF_USESTDHANDLES/STARTF_USESHOWWINDOW/SW_HIDE、CREATE_SUSPENDED、CREATE_UNICODE_ENVIRONMENT、JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE，以及两个手工断言的布局值——JOBOBJECT_BASIC_ACCOUNTING_ACTIVE_PROCESSES_OFFSET（isJobEmpty 靠它判断 Job 是否清空）与 STARTUPINFOW_SIZE/PROCESS_INFORMATION_SIZE。ffi.ts（384 行）是绑定表工厂：requireKoffi 惰性加载，loadWin32ProcessBindings（331 行）返回通用操作表，extendWin32ProcessBindings（321 行）允许消费者在共享库上追加自己的 API 绑定（沙箱的 SID/DACL 调用走这条路）；startupInfoType/processInformationType 在加载时断言结构体大小；errorText（342 行）走 FormatMessageW，throwLastError/throwWin32 统一抛错。process.ts（642 行）是六类原语：spawnPipedProcess（209 行）为沙箱诊断建匿名管道——stdin 立即关闭制造 EOF，返回两个读端，部分失败回收全部已持句柄；spawnInheritedJobProcess（532 行）是沙箱版创建——受限主 token 走 CreateProcessAsUserW，目标先 CREATE_SUSPENDED 创建、再 AssignProcessToJobObject、最后才 resume，目标代码不可能在入 Job 前运行；spawnCurrentTokenJobProcess（554 行）是 runner 版——经 Node 导出的 uv_get_osfhandle 把 runner 的 CRT 描述符映射成 OS 句柄、临时恢复继承位、以 STARTF_USESTDHANDLES 传递、环境块是排序的 UTF-16LE 含 =X: 盘符项且不污染自身环境；结算四件套 pollProcessExit（590 行，waitForSingleObject 零超时轮询）、isJobEmpty（609 行，读 BasicAccounting 的 ActiveProcesses 到零）、terminateJob（629 行）、closeHandleChecked（639 行）。control-stdio.ts 的 inheritedControlStdio 用 STARTUPINFO.cbReserved2/lpReserved2 携带一张 8 槽 CRT 描述符表——标准句柄、3-6 号槽关闭、控制管道在 7 号槽——在 Node 初始化前就把 fd 7 备好，避免覆盖 Node 已分配的描述符。errors.ts 是 Win32Error；verify/abi-probe.cpp 用 MinGW 头编译运行，是所有偏移与常量的证据。",
+    "boundary": "归它管：Win32 ABI 的事实——常量、结构体布局、DLL 加载、调用约定级的正确性、句柄创建与关闭的检查纪律、SW_HIDE 窗口隐藏（保控制台继承，不加 CREATE_NO_WINDOW——受限 token 下可能弄坏 DLL 初始化）。明确不管：一，沙箱策略——SID、DACL、授权、工作区策略全在 dsh-sandbox 一侧，这里只给 CreateProcessAsUserW 原语；二，进程的常态行为——Node 流包装、输出上限、取消、异步调度、持久状态一律没有，README 明说不是公共服务也不打算包成 Cordis；三，与 subprocess-local 的分工——这边连「何时杀 Job」都不知道，isJobEmpty/terminateJob 只是可组合的动词，编排（轮询节奏、TERM 宽限、host exit 兜底）全在调用者；四，跨平台——类型导入可移植，但解析绑定表在非 Windows 主机直接失败，测试靠注入假绑定表。划线依据：它是仓库里唯一允许直接说 Win32 方言的楼层，往上全部说接缝的世界语。",
+    "tour": [
+      {
+        "file": "packages/subprocess/win32-process/src/process.ts",
+        "line": 554,
+        "sym": "spawnCurrentTokenJobProcess",
+        "note": "普通 Job runner 的创建原语：CRT 描述符经 uv_get_osfhandle 映射、suspended 创建、入 Job、才 resume。这个顺序就是「目标代码不可能在圈住之前运行」的保证本身。"
+      },
+      {
+        "file": "packages/subprocess/win32-process/src/process.ts",
+        "line": 609,
+        "sym": "isJobEmpty",
+        "note": "静默判定的终点：QueryInformationJobObject 读 BasicAccounting，按 abi.ts 手工断言的偏移取 ActiveProcesses 比零。一个偏移错，上层 waitForExit 就失真。"
+      },
+      {
+        "file": "packages/subprocess/win32-process/src/ffi.ts",
+        "line": 331,
+        "sym": "loadWin32ProcessBindings",
+        "note": "仓库唯一的 Koffi 绑定表入口：惰性加载 kernel32/advapi32 并在加载时断言 STARTUPINFOW/PROCESS_INFORMATION 的 64 位大小，布局漂移在模块加载即爆。"
+      },
+      {
+        "file": "packages/subprocess/win32-process/src/process.ts",
+        "line": 209,
+        "sym": "spawnPipedProcess",
+        "note": "受限 token 的管道诊断原语：stdin 立即 EOF、返回两个读端、部分失败回收全部句柄——沙箱如何安全地拿一条命令的输出，答案在这里。"
+      },
+      {
+        "file": "packages/subprocess/win32-process/src/abi.ts",
+        "line": 36,
+        "sym": "JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE",
+        "note": "整树终止的机制根基：kill-on-close 旗标配合「runner 独占 Job 句柄」的约定，句柄一关全员同死——Windows 版的进程组信号。"
+      }
+    ],
+    "gotchas": "仅 Windows 可用：导入类型可移植，解析绑定表会加载 DLL 并在其它主机失败，跨平台测试必须注入绑定表。CreateProcessAsUserW 的沙箱原语传空环境块——经 Koffi 传显式块会得 ERROR_INVALID_PARAMETER，所以沙箱要先 SetEnvironmentVariableW 再创建；普通 CreateProcessW 路径则要求完整目标环境。存在 create-to-assignment 中断窗口：目标 suspended 期间 runner 被外部杀死会留下一个挂起的目标进程，包不声称原子入 Job。ABI 证据只覆盖当前 64 位 Windows 目标，新的指针宽度或不兼容 ABI 要求先更新 verify/abi-probe.cpp。句柄纪律严格：每个 Koffi out 参数与结构体内存在其 Win32 生命周期后必须 free，句柄要么 transfer 给调用者要么 checked close——维护新原语时漏一步就是泄漏。",
+    "analogy": "像一位只认图纸不讲情面的精密仪器供应商：仓库里所有需要拧 Windows 原厂螺丝的设备（ACL 沙箱、Job runner）都来它这里领工具和量具。它保证每把扳手都对着官方图纸校准过（abi-probe 对 MinGW 头验证），每个精密件用完必须归还登记（句柄 checked close）。但它只卖工具不施工——拧哪颗螺丝、什么顺序、拧完算不算完工，一概是施工队（subprocess-local 和 sandbox）的事。"
+  },
+  {
+    "group": "terminal",
+    "dir": "terminal",
+    "short": "terminal",
+    "oneLiner": "持久 PTY 会话注册表 ctx.terminals：铸造不透明会话 id、做 owner 围栏与静默清理，自己不碰任何终端机制。",
+    "why": "没有它，持久会话的三个安全支柱无处安放。其一，身份围栏：模型是能读到对话历史的，如果 session id 由各 backend 或工具自造，一个 agent 在历史里看到另一个 agent 的 id 就能操作它的终端；这个服务铸造 pty-N 形式的不透明 id，并在每个操作入口用 expectOwned 比对精确的 Agent 对象引用（不是 id 字符串），不匹配抛 FOREIGN_SESSION——模型即使学会 id 也过不了门。其二，发布原子性：backend 启动失败时不能留下半个会话，spawn 用 reservation 机制跟踪未发布的 spawn，回滚 close 失败会以 TerminalBackendCleanupError 挂账，直到 owner 或服务 disposal 时被消费报告。其三，静默清理：owner 这个 Agent 被 dispose 时（ensureOwnerCleanup 挂在 owner.ctx.effect 上），它名下所有会话连同未完成的 spawn 一起 abort 并等待进程树静默；kill 与 disposal 都等到 backend 的 captured process tree 清空才 resolve。hasOwnerActivity 跨 spawn-to-close 无间隙，使 sandbox-mode 这类生命周期策略能精确围栏 owner。一句话：它让「谁开的、谁能动、谁负责收尸」三问有了唯一答案。",
+    "position": "上游两侧：一侧是模型工具包 dsh-tool-terminal，六个 terminal_* 工具全部以执行时的精确 Agent 为 owner 调用 ctx.terminals 的 spawn/startSend/read/signal/kill/list；另一侧是生命周期策略的观察者（terminal-bash 的 sandbox-mode fence 读 hasOwnerActivity）。下游是 backend：TerminalBackend 接口只有 type 加 spawn 两个成员，shipped 实现是 dsh-terminal-bash（注册 shell 类型），任何别的 terminal substrate 只要实现这个接口就能进注册表。数据流：tool 层的 TerminalSpawnRequest（type/name/cwd）进来，服务先 reserveName/reserveSpawn 再 await backend.spawn——只有成功才把 SessionRecord 放进 sessions Map 并返回含 motd 的快照；此后每次 send/read/signal 都是服务查表、验 owner、转发 backend session（TerminalBackendSession 的 startSend/read/signal/status/close）。清理方向相反：owner disposal 触发 disposeOwned，服务主动调 session.close 并 await 静默，失败聚合成 AggregateError 上抛而不是假装成功。",
+    "inside": "src/index.ts（477 行）一个类撑全部。TerminalSessionService（105 行）extends Service，构造器里 ctx.effect 注册 'pty teardown'；私有状态六个容器：backends Map（type→backend）、sessions Map（id→SessionRecord）、reservedNames（owner 内重名防护，创建期间也占位）、pendingSpawns（owner→未发布 spawn 集合）、ownerCleanups、disposedOwners WeakSet。错误面是 TerminalError 加八个稳定 code（55 行起）：DUPLICATE_BACKEND/DUPLICATE_NAME/FOREIGN_SESSION/NO_BACKEND/NO_SESSION/OWNER_NOT_LIVE/SEND_ACTIVE/SERVICE_DISPOSING，全部机器可路由。spawn（154 行）是最重的方法：assertActive→ensureOwnerCleanup→查 backend→占名→reserveSpawn（AbortSignal.any 合并调用者取消与服务 abort）→backend.spawn→发布前再查 disposing 与 isLiveOwner（后者要求 owner 仍注册在 ctx.agents 里）→落 SessionRecord；失败路径做 session.close 回滚，回滚也失败则 AggregateError('PTY spawn and rollback both failed')。startSend（243 行）同步预留：record.active 已有值抛 SEND_ACTIVE，operation.done 结算即清空——保证输出与取消永不跨操作归属。kill（285 行）用 record.closing promise 做幂等（并发 close 返回 false）。expectOwned（387 行）是每次转发前的围栏。清理侧：abortPendingSpawns 先 abort 所有 reservation 并等结算，closeRecords 用 Promise.allSettled 关全部，disposeAll（435 行）最后清注册表并跑 owner detachers；任何 close 失败照实上抛。src/types.ts（178 行）定义对偶接口：TerminalBackend（166 行，type+spawn 两个成员）与 TerminalBackendSession（148 行，motd/pid/startSend/read/signal/status/close），以及 TerminalWaitReason 四值（stdin_read/inferred_idle/timeout/session_exit）、TerminalSignal 五信号、TerminalSpawnRequest 等。",
+    "boundary": "归它管：会话身份与发布（铸造 id、占名、原子发布）、授权（精确 Agent 围栏）、清理时序（reservation abort、quiescence 等待、失败如实上抛）、backend 注册表生命周期。明确不管：一，终端机制——一个会话怎么 spawn、怎么判 readiness、怎么留 scrollback、怎么关进程树，全在 backend；本包对 PTY 字节零理解，这正是 TerminalBackend 接口只有两个成员的原因：注册表可以配任意 substrate（未来远程 SSH backend 不用改服务一行）；二，模型界面——六个工具的 schema 与结果文本在 dsh-tool-terminal，这里连一个 prompt 都不注册；三，shell 语义——bash/pwsh 方言、prompt 标记、沙箱 argv 组装在 dsh-terminal-bash；四，不做跨 agent 共享（刻意无路径，要共享得先另立授权契约）、不做声明式自启。与 shell 家族（dsh-bash-local）的界线另有一条：那边是一次性有界命令——每条命令一个进程、强校验与审批契约；这边是有状态会话——状态活在终端里跨 tool call 存活。划线依据：机制与策略分离——策略（身份、清理）集中才能保证一致，机制（readiness、渲染）必须可替换。",
+    "tour": [
+      {
+        "file": "packages/terminal/terminal/src/index.ts",
+        "line": 154,
+        "sym": "TerminalSessionService.spawn",
+        "note": "发布原子性的完整实现：reservation 包住 backend 启动，发布前复检 disposing 与 owner 存活，回滚 close 再失败也逃不出 AggregateError——从不发布半个会话。"
+      },
+      {
+        "file": "packages/terminal/terminal/src/index.ts",
+        "line": 387,
+        "sym": "expectOwned",
+        "note": "安全围栏的最小实现：先 NO_SESSION 再 FOREIGN_SESSION，比对的是精确 Agent 对象引用。模型学会别人的 id 也只换来一个稳定错误码。"
+      },
+      {
+        "file": "packages/terminal/terminal/src/index.ts",
+        "line": 231,
+        "sym": "hasOwnerActivity",
+        "note": "跨 pendingSpawns 与已发布 sessions 两处查 owner 活动，spawn-to-close 全程无发布间隙——sandbox-mode 降级围栏就靠它判断「还有会话开着」。"
+      },
+      {
+        "file": "packages/terminal/terminal/src/index.ts",
+        "line": 243,
+        "sym": "startSend",
+        "note": "同步预留单活动 send：第二个 send 在返回前就撞 SEND_ACTIVE，输出与取消因此永不跨操作归属——这是后台 job 化的前提保证。"
+      },
+      {
+        "file": "packages/terminal/terminal/src/types.ts",
+        "line": 166,
+        "sym": "TerminalBackend",
+        "note": "backend 接口只有 type 加 spawn 两个成员，机制零假设——这个刻意的瘦接口就是「注册表可配任意终端底座」的划界证据。"
+      }
+    ],
+    "gotchas": "会话是 process-local 的：id、scrollback、终端状态全部活在本进程内存里，harness 重启即全灭——持久工作必须落文件。无跨 agent 共享路径，刻意单 owner，转移也要新授权契约。无声明式自启：会话只在 agent 工具调用里创建。close 的失败如实拒绝而不是宣称成功——消费者要准备处理 close 抛错。backend 启动失败但部分资源清不掉时抛 TerminalBackendCleanupError，该失败作为 tracked owner activity 挂账，直到 owner 或服务 disposal 时被消费报告——期间 hasOwnerActivity 保持 true，sandbox mode 也降不了级。spawn 后端成功但发布时 owner 已死/服务在 disposing，会话照样被回滚关闭。用户可见的 name 只在 owner 内唯一，跨 owner 可以重名。",
+    "analogy": "像一栋写字楼的门禁与前台系统：每个进驻团队（agent）办自己团队的门禁卡（会话 id），刷卡记录绑到具体的人而不是工牌号，拿别人的卡号也刷不开别人的门。前台不管每个办公室里摆什么设备（backend 全权负责终端本身），只管三件事：登记造册、谁进的门谁签字、退租时确保屋里的人全撤干净灯全关（静默清理）才销户——清不干净就如实上报，绝不悄悄销户了事。"
+  },
+  {
+    "group": "terminal",
+    "dir": "terminal-bash",
+    "short": "terminal-bash",
+    "oneLiner": "ctx.terminals 的 shipped shell backend：沙箱策略下的持久 bash/pwsh 会话，三层就绪检测、行净化输出与真实 SIGINT 中断。",
+    "why": "没有它，ctx.terminals 注册表空转：terminal_open('shell') 直接 NO_BACKEND，持久会话能力在仓内没有任何可用底座。但它的必要性不止于「第一个 backend」：让一个模型驱动的 shell 会话可靠工作，需要解决三个单靠 PTY 原语解不了的问题。一，就绪判定——模型发完命令必须知道「shell 又在等输入了」，它通过 PS1/PROMPT_COMMAND 注入私有 OSC 133;D 标记加固定 'dsh> ' 提示符，把 bash 变成可验证的信号源，pwsh 则用启动期写入的 prompt 函数等效实现；二，沙箱一致性——会话整个生命周期跑在部署的沙箱边界内，confined 模式没有同世界的 ctx.sandbox 就拒绝启动，而且 owner 还有 open session 时禁止降级沙箱模式，防止宽权限终端在降级后幸存；三，输出可喂养——原始 PTY 字节充满 ANSI 控制序列，流式 sanitizer 剥掉 CSI/OSC 并归一成行，@xterm/headless 只保留协议状态用于回复终端查询，scrollback 用独立自有字符串的 BoundedTextBuffer 有界保存。单活动 send、真实 SIGINT 中断（绝不写 \\x03 模拟）、session_exit 结算都定义在这一层。",
+    "position": "上游是 ctx.terminals：apply（index.ts:234）在启动时把 BashTerminalBackend 注册进 backend registry，type 默认 'shell'，之后服务在每次 terminal_open 时回调它的 spawn。下游四个服务协同：ctx.sandboxPolicy.resolve 按 owner 的 session 解析当前生效策略；confined 模式下 ctx.sandbox.confine 把 shell argv 改写为沙箱内等价 argv；ctx.subprocess.spawnTerminal 真正分配 PTY 并持有进程树（清理保证在那层）；ctx.sessionProjections 用于 sandbox-mode 围栏读取投影状态。inject 数组（27 行）明示这四个依赖。数据流：TerminalBackendSpawnSpec（sessionId/owner/signal）进，经策略解析与 argv 组装变成 SubprocessTerminalSpawnSpec 递给 subprocess 层；回流的 PTY 字节走 LocalPtySession：output 事件→TerminalSanitizer→scrollback/read 结果，同时经 headless xterm 提取终端协议回复写回 PTY；send 方向则 text→terminal.write→pollReadiness 轮询→waitReason 结算。pwsh 方言经 dsh-pwsh-local 解析可执行文件并复用其 ENCODING_PREAMBLE。",
+    "inside": "四个源文件。index.ts（239 行）：inject 声明四个依赖；ensureSandboxModeFence（37 行）在每个 owner 上挂一次 internal/dispatch 监听，拦 session/event 的 sandbox/mode 事件——用 sessionProjections.stateOf 折叠出当前模式，只要 hasOwnerActivity 为 true 就抛错阻止降级，fence 挂 WeakMap 随 owner 生存、provider 重载后仍在；childEnvironment（64 行）组装方言环境：公共部分 TERM=dumb、PAGER=cat、DSH_SHELL/DSH_SESSION_ID/DSH_PTY_SESSION_ID，bash 侧 PS1=CONTROLLED_PROMPT 且 PROMPT_COMMAND 先 printf OSC 133;D;$? 再重新断言 PS1——注释解释这防的是命令覆盖 PS1 变量；pwsh 侧只有 NO_COLOR，prompt 由启动期注入。PWSH_PROMPT_SETUP（97 行）用 [char]27/[char]7 运行时拼控制字节（PSReadLine 下原始 ESC 不可靠）。startupSession（114 行）分方言：bash 走 session.initialize 等首个 prompt；pwsh 循环 startSend 写 ENCODING_PREAMBLE 加 prompt 函数，只接受 stdin_read 证据发布（回显的 setup 源码不算就绪），整体有绝对 deadline。BashTerminalBackend.spawn（201 行）五步：fence→policy resolve→spawnArgv（confined 无 sandbox provider 直接抛）→subprocess.spawnTerminal（TERM=dumb，尺寸与 grace 来自配置）→createSession 加 startupSession，失败路径经 rejectAfterStartupCleanup 保证资源静默后才拒绝。session.ts（794 行）是机器房：LocalPtySession（237 行）构造时建零 scrollback 的 headless xterm（onData 回写即终端协议回复）、TerminalSanitizer、BoundedTextBuffer，terminal.output 的 data 流经净化入 scrollback，terminal.done 挂 onExit。startSend（328 行）强制单活动，超时 timer 到点按有无悬挂写/中断/协议工作决定结算形态。pollReadiness（549 行）是三层就绪模型：先等终端协议排水，inspectForeground 拿前台事实，promptSeen 加 promptTextSeen 加前台组等于 shell 自己时结算 stdin_read（Linux 精确路径），elapsed 过 exactProbeAfterMs 且 provider 证明 inputWaiting 也结算 stdin_read，否则 idleSilenceMs 加 handoffGrace 加 promptTailGrace 后 inferred_idle；注释解释为什么静音是子进程握住前台时的兜底而非例外。interrupt（748 行）经 signalForeground 发真实 SIGINT；closeOnce 停轮询、terminate provider 进程树、等静默、把活动 send 结算为 session_exit。sanitize.ts（189 行）：PROMPT_MARKER_PREFIX='133;D;'（6 行）、CONTROLLED_PROMPT='dsh> '（9 行）、TerminalSanitizer 流式剥离 CSI/OSC 并携带 promptTail 证据。config.ts 收口方言默认值与全部 timing 字段校验。",
+    "boundary": "归它管：一个 shell 会话的「活法」——方言选择与 argv 组装、沙箱包裹与模式降级围栏、prompt 标记安装、readiness 判定、行净化与 scrollback 保存、中断语义、启动失败回滚。明确不管：一，会话注册与授权——那是 ctx.terminals 的 spawn/expectOwned；二，PTY 分配与进程树清理——terminate 的 quiescence 是 SubprocessTerminalHandle 合同，provider（subprocess-local）兑现，backend 只调用；三，模型可见界面——工具 schema 与结果文本在 dsh-tool-terminal，这里一个工具都不注册；四，与 shell 家族（dsh-bash-local 一次性命令）的界线是本家族最重要的划线：那边一条命令一个进程、输出有界、审批与重放契约强；这边状态（cwd、导出变量、函数、交互子进程）跨 tool call 存活，但代价是 readiness 是启发式的、inferred_idle 不证明前台已退出、全屏 TUI 超出契约。划线依据：会话机制以「方言对」（bash/pwsh）为单位复用同一套机器，差异被压到 argv/环境/prompt 安装三处。",
+    "tour": [
+      {
+        "file": "packages/terminal/terminal-bash/src/index.ts",
+        "line": 37,
+        "sym": "ensureSandboxModeFence",
+        "note": "沙箱降级围栏：监听 internal/dispatch 的 sandbox/mode 事件，owner 还有会话或创建中的 spawn 就抛错。宽权限终端不能活过降级——安全边界在这里闭合。"
+      },
+      {
+        "file": "packages/terminal/terminal-bash/src/index.ts",
+        "line": 86,
+        "sym": "childEnvironment（PROMPT_COMMAND）",
+        "note": "就绪信号的注入点：每次渲染 prompt 先打 OSC 133;D;$? 标记再重新断言 PS1。注释解释这防命令覆盖 PS1——readiness 的可信度建立在 shell 不可破坏的钩子上。"
+      },
+      {
+        "file": "packages/terminal/terminal-bash/src/session.ts",
+        "line": 549,
+        "sym": "LocalPtySession.pollReadiness",
+        "note": "三层就绪模型的核心循环：终端协议排水→前台观察→stdin_read 精确证据→prompt 标记加尾巴宽限→inferred_idle 静音兜底，注释写明静音为何是前台被占用时的下界。"
+      },
+      {
+        "file": "packages/terminal/terminal-bash/src/index.ts",
+        "line": 97,
+        "sym": "PWSH_PROMPT_SETUP",
+        "note": "pwsh 方言的 prompt 函数：运行时拼 ESC 与 BEL 控制字节对齐 bash 的 OSC 133;D 标记，使两个方言共享同一就绪契约。"
+      },
+      {
+        "file": "packages/terminal/terminal-bash/src/index.ts",
+        "line": 201,
+        "sym": "BashTerminalBackend.spawn",
+        "note": "backend 合同的实现主体：fence→策略→argv（confined 强制 ctx.sandbox）→spawnTerminal→session 与启动，两条失败路径都先等资源静默再拒绝。"
+      }
+    ],
+    "gotchas": "只支持行导向输出：headless xterm 仅为终端协议回复维护状态，返回文本一律归一为行，全屏 alternate-buffer 应用（vim、htop）不受支持。readiness 无精确层时是启发式：macOS 与 Windows 没有 stdin-wait 证据（subprocess provider 证明不了），退到 prompt 标记加静音/超时；inferred_idle 与 timeout 都不证明前台命令已退出——guidance 与 waitReason 语义都反复强调。pwsh bootstrap 写 [Console]:: 在 Windows ACL 沙箱只读模式可能被拒，届时启动在 timeoutMs 处拒绝而不是发布一个不完整的 shell。清理保证属于 provider：进程树终止是 SubprocessTerminalHandle 的合同。沙箱模式在会话开着时锁死不能改。会话不跨 harness 重启。bash 方言要求 bash 4.4+ 且 prompt 钩子可写。",
+    "analogy": "像给一台 wild 的交互终端机装上「驾校改装包」：原厂 bash 想说什么说什么（花哨 prompt、ANSI 满天飞），改装后它每说一句话前先按规矩打一个暗号（OSC 标记），教练（模型）听到暗号就知道它真的在等下一句指令；学员说胡话（控制序列）会被同声传译过滤成规整的普通话（净化后的行）；学员跑偏时教练按的是真喇叭（真实 SIGINT），不是喊破喉咙。科目考试（readiness）有多重判据：精确的「等你输入了」、对过暗号、以及实在没动静时的「大概说完了」。"
+  },
+  {
+    "group": "terminal",
+    "dir": "tool-terminal",
+    "short": "tool-terminal",
+    "oneLiner": "把 ctx.terminals 暴露成六个模型工具的薄适配层：owner 取自执行 Agent，结果统一有界，后台 send 变成通用 job。",
+    "why": "没有它，持久会话能力只存在于服务层：模型是 agent loop 里唯一的行为主体，ctx.terminals 的 spawn/startSend/read/signal/kill/list 没有任何一条路能被工具调用触达——整个 terminal 家族的终端环节缺失，前端与 sandbox 政策再完整也只是死库存。这个包的贡献是把「触达」做对：每个工具的 owner 不是模型声称的什么 id，而是执行工具的精确 Agent（requireAgent），FOREIGN_SESSION 围栏因此从工具层就开始生效；所有单文本结果经 finalizeContent 统一截断到 maxResultBytes（默认 256KB、下限 64 保证 id 不被截丢），防止一个 scrollback 页面炸穿上下文；run_in_background 不是自己造一套后台机制，而是 declare module 扩展 dsh-jobs 的 JobKindMap 注册 'pty-send'，把进行中的 send 登记成通用 job——等待、增量读取、SIGINT 停止全部复用 job_output/job_kill 的既有模型界面。它还贡献了一段固定 guidance，把模型往「有界工作优先一次性工具」的方向推，并警告 inferred_idle 不证明前台退出。",
+    "position": "上游是模型：六个工具经 dsh-tools 的 defineTool 注册进 ctx.tools，schema 出现在工具目录，执行时 exec.agent 提供精确 owner。下游两个服务：核心操作全部转发 ctx.terminals（inject 声明 terminals/tools/systemPrompt 三个依赖），后台 send 在写入输入前先 ctx.get('jobs') 拿 jobs 服务——缺失则拒绝该参数而不是静默降级。数据流：模型的 JSON 参数进 execute，逐字透传给 ctx.terminals 对应方法（这层几乎零逻辑）；结果原样返回后走两条渲染路径——finalizeContent 把完整单文本结果压到 maxResultBytes 内（render.ts 的 boundTerminalText 保 UTF-8 边界并留截断标记），output.render 再生成给 Host 的展示文本；foreground send 用专用 terminal 卡片（presentCall/presentResult），其余五个工具用 generic execute/read/delete 卡片。background 路径的返回值立即变为 jobId，后续字节流走 dsh-jobs 的 job_output，与本工具再无直接联系。",
+    "inside": "两个源文件。index.ts（405 行）：头部 declare module 扩展 JobKindMap 加 'pty-send'；inject=['terminals','tools','systemPrompt']；apply（147 行）先校验 maxResultBytes，再定义共享的 finalizeContent（rawContentText 取唯一 text 块、boundTerminalText 截断），然后 ctx.systemPrompt.section 注册 'tool:pty' 引导段（160 行，固定文本强调会话追踪与 inferred_idle 语义），最后连续 register 六个 defineTool。terminal_open（163 行）：参数 type/name/cwd，execute 里 ctx.terminals.spawn(requireAgent(exec.agent),...)，output schema 是会话快照加 motd。terminal_send（198 行）最复杂：schema 按 enableRunInBackground 动态含 run_in_background 字段；execute 分岔——后台分支先确认 jobs 服务存在，jobs.start 注册 kind 'pty-send' 的 job（label 是会话 id 加输入摘要，output 挂 sendSource 闭包），run 回调里才真正 ctx.terminals.startSend，cancel 转发 started.cancel 并把最终状态标为 killed，返回 {kind:'background',jobId}；前台分支 startSend 后 await operation.done，exec.signal 中止时显式抛错。terminal_read（301 行）带 offset/count 行分页元数据；terminal_signal（334 行）枚举五个信号，描述里写明 shell 为目标时 SIGKILL 被拒绝要用 terminal_close；terminal_close（359 行）返回 closed/already-closing；terminal_list（390 行）零参数，owner 天然由 exec.agent 决定。每个工具的 presentCall/presentResult 决定 UI 卡片形态：foreground send 是 terminal 卡，后台与其余是 generic。render.ts（178 行）：boundTerminalText（93 行）实现保 UTF-8 边界的截断加 TRUNCATED 标记，renderSpawn/renderSend/renderRead/renderList 生成带 wait 元数据的模型可见文本。全包无状态：PTY 生命周期与后台 job 关系都在它组合的服务里。",
+    "boundary": "归它管：模型可见的一切——六个工具的 schema、参数校验、结果截断与渲染、guidance 文本、后台模式的暴露开关。明确不管：一，会话语义——spawn/send/read/signal/close 的行为、错误码、owner 围栏全部是 ctx.terminals 的，这层只做参数透传与 requireAgent；二，PTY 与进程——分配、readiness、清理在 backend 与 provider；三，后台等待——job 的生命周期、增量读取、取消界面归 dsh-jobs 与 dsh-tool-jobs，这里只注册 job kind 并登记 in-flight operation；四，展示给 Host 的卡片由 presentCall 决定但不产生源位置信息。划线依据：它是刻意薄的 adapter——README 明说任何展示层变化（schema 文案、卡片、截断上限）都不应波及服务层，反过来服务层的行为变化自动成为工具行为变化；bg 模式拒绝而非降级的划法保证「后台」永远走同一条 job 语义，不出现两套后台机制。",
+    "tour": [
+      {
+        "file": "packages/terminal/tool-terminal/src/index.ts",
+        "line": 147,
+        "sym": "apply",
+        "note": "全包入口：校验截断上限、定义共享 finalizeContent、注册 guidance 与六个工具。看清它的薄：除了透传与渲染，几乎没有逻辑。"
+      },
+      {
+        "file": "packages/terminal/tool-terminal/src/index.ts",
+        "line": 257,
+        "sym": "terminal_send 的 jobs.start",
+        "note": "后台 send 的关键一跳：进行中的 operation 登记为 'pty-send' job，等待与收集让位给通用 job_output/job_kill 界面，本工具只留 jobId。"
+      },
+      {
+        "file": "packages/terminal/tool-terminal/src/index.ts",
+        "line": 160,
+        "sym": "systemPrompt.section",
+        "note": "固定 guidance：优先一次性工具、追踪会话 id、inferred_idle 不证明前台退出——模型对持久会话的正确心智模型就靠这一段建立。"
+      },
+      {
+        "file": "packages/terminal/tool-terminal/src/render.ts",
+        "line": 93,
+        "sym": "boundTerminalText",
+        "note": "结果封顶的落点：保 UTF-8 边界截断、为截断标记预留字节。64 字节下限的存在理由是让所有 id 在创建确认里完整可见。"
+      },
+      {
+        "file": "packages/terminal/tool-terminal/src/index.ts",
+        "line": 19,
+        "sym": "JobKindMap 扩展",
+        "note": "declare module 给 dsh-jobs 的 JobKindMap 加 'pty-send'——类型层的接入声明，展示两个子系统如何无耦合地拼合。"
+      }
+    ],
+    "gotchas": "无 TUI 表面：命名按键序列、全屏交互、BEL、resize、auto-start 都不在任何 schema 里——模型表达不了这些操作。run_in_background 需要 dsh-jobs 与模型侧 dsh-tool-jobs 同时在场，缺一个该参数直接报错，而不是静默转前台。inferred_idle/timeout 不证明前台命令退出（这是 waitReason 合同，不是 bug），guidance 专门警告。maxResultBytes 下限 64：再小会截丢会话/job id。enableRunInBackground=false 时 schema 字段被移除且参数被拒——两种形态的 KV cache 前缀不同。结果留在会话历史直到 compaction，长会话的终端输出是 token 预算的真实开销。六个工具都不返回源位置信息。",
+    "analogy": "像机场的自助值机柜台：机器（本包）不管飞机怎么飞、行李怎么运（那是航司 ctx.terminals 和地勤 backend 的事），只负责把乘客（模型）的请求翻译成标准按键、把登机牌打印得不超长（结果封顶）、并把「这趟太久了改寄送到家」（后台 send）直接转给快递系统（dsh-jobs）而不占用柜台。它还在屏幕角落贴了一句提醒：广播说登机了不代表你真的能起飞。"
+  }
+]

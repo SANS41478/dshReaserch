@@ -1,0 +1,154 @@
+[
+  {
+    "group": "session-query",
+    "dir": "session-query",
+    "short": "session-query",
+    "oneLiner": "会话历史统一查询服务：在事件流上建 live 优先逻辑语料，精确读/过滤/血缘一次实现，搜索留给后端",
+    "why": "会话日志是只追加的事件流，live 会话在内存、历史在磁盘，两套接口完全不同。没有这个包，每个想读历史的调用方（Web 界面、/resume、导出、模型工具）都得自己处理：live 与持久副本谁优先、两份头信息冲突怎么办、写者崩溃中断的末轮事件怎么补齐、标题怎么从事件流折出。任何调用方漏掉一条规则，就会出现「读到一半会话变 live 了导致前后不一致」或「把持久层读坏」。本包把这些规则固化成一次实现：SessionCorpus 保证 live 优先且已知的 live 目标根本不碰 persistence（持久层坏了也不影响当前内存历史的可读性），冷读在内存里补 interruptedTurnClosers 且永不改写持久层，所有返回值都是 detached 克隆。删掉它，读路径的每个调用点都得重写这套语义，且必然各自漂移。",
+    "position": "上游是三类消费者：模型侧的 tool-session-query（session_search 等五工具）、宿主侧的 session-log-export（ZIP 导出）、以及 Web 端列表/标题/内容搜索等应用代码，统一通过 ctx.sessionQuery 调用。下游：static inject ['sessions'] 硬依赖 dsh-session 的会话存储；sessionPersistence、sessionProjections、sessionProjectionCache 是可选 peer，经 ctx.inject(['sessionPersistence'], …) fiber 动态绑定，挂载才参与；还复用 dsh-session 的 Session.create、foldSurface、interruptedTurnClosers 和 dsh-session-title 的 foldSessionTitle。数据流：本包不参与写路径（agent loop → sessions → persistence 追加），只站在读侧——读请求进来先问 ctx.sessions（live 命中即快照克隆返回），未命中才落到 sessionPersistence 的 list/stat/read 句柄；抽象的 searchSessions/searchEvents 则反向由后端把语料拉进它自建的索引。",
+    "inside": "核心是抽象类 SessionQueryEngine extends Service（src/index.ts:98）：listSessions、readSession、filterSessions、filterEvents、readEvent、readSurface、traceSession、traceEvent、readTitleSnapshots 全部在此一次实现；只有 searchSessions/searchEvents 是 abstract——这是「精确读具体、搜索抽象」的分界。底下三个部件。① SessionCorpus（corpus.ts）负责语料解析：listSessions 把持久头与 live 会话合并成 newest-first 记录表并逐个 assertSessionHeadersCompatible；load 走「live→列目录→读句柄→再查 live→克隆」顺序；projectMany 用有界 worker 池并发读冷日志做批量标题折叠，单会话失败隔离、取消则整批拒绝。② SessionObservationReader（observation.ts）做点观察：live 观察把切点固定为当前 log 长度、events 惰性物化；冷观察先 stat 拿 revision，命中按 persistence 实例+revision 键控的 LRU 缓存（preparedSessionCacheSize，默认 5，活跃 lease 钉住不驱逐）就复用还原的未发布 Session（sessions.prepare），否则经 readColdSessionLog 重读。③ tracing.ts 用一次 analyzeEventLog（内部 foldSurface）把事件分为 current/shadowed/log-only；traceSession 沿 header.parentSession 走祖先链（环抛 SESSION_QUERY_INVALID_LINEAGE）并递归构后代树；traceEvent 追位置替换链，引用关系保持非传递。语义过滤由 extraction.ts 按事件类型抽取文本、documents.ts 投影成语义文档、filters.ts 编译成 AND 子句（子句内 OR、空列表匹配零、坏区间抛 SESSION_QUERY_INVALID_FILTER）；text 子句是 compileSessionTextFilter 生成的字面量正则而非全文检索。config.ts 定义 readWindowMax 等三个继承配置和 17 个 code 的 SessionQueryError 封闭分类。",
+    "boundary": "管：逻辑语料解析、精确读、过滤、血缘、有界窗口、类型化失败。不管：① 全文搜索——两个 abstract 方法明确推给后端包（出厂是 session-query-sqlite），本包没有 provider 注册表或回退实现；② 模型可见面——工具模式、cwd 授权、游标隐藏都推给 tool-session-query，README 明说本包是可信的全局基础设施、无调用方鉴权；③ 持久化本身——写与存储格式归 session-persistence 接缝，本包只经只读句柄观察、绝不写回。划线依据：前三类是「任何读法都一样的语义」，收进接缝包一次实现才能保证 UI、工具、搜索看到同一份语料；搜索与鉴权随部署变化，留在可替换的边缘。",
+    "tour": [
+      { "file": "packages/session-query/session-query/src/index.ts", "line": 98, "sym": "SessionQueryEngine (abstract)", "note": "抽象基类：只有 searchSessions/searchEvents 是 abstract，其余读/过滤/trace 在接缝包一次性实现——SQLite 等后端可替换的结构根源。" },
+      { "file": "packages/session-query/session-query/src/corpus.ts", "line": 91, "sym": "SessionCorpus.load", "note": "live 优先解析：live 命中直接快照、不碰 persistence；冷路径列目录→读句柄→再查 live→克隆，持久层故障拖不垮内存历史。" },
+      { "file": "packages/session-query/session-query/src/observation.ts", "line": 301, "sym": "SessionObservation.events getter", "note": "live 观察把切点固定为当下 log 长度，events 惰性物化——只读 header/cursor 的消费者永不复制整份日志。" },
+      { "file": "packages/session-query/session-query/src/tracing.ts", "line": 187, "sym": "analyzeEventLog / foldSurface", "note": "listEvents/readSurface/traceEvent 共用一次规范 surface 折叠，违规抛 SESSION_QUERY_INVALID_SURFACE，搜索与模型历史推导保持一致。" },
+      { "file": "packages/session-query/session-query/src/cold-read.ts", "line": 55, "sym": "readColdSessionLog (interruptedTurnClosers)", "note": "写者崩溃中断的末轮回合在内存补齐 closer，只读路径永不改写持久层——冷读的核心动作就这一行。" }
+    ],
+    "gotchas": "① readSession/readSurface/filterEvents/traceEvent 每次调用都全量加载并重放整个逻辑日志，超长历史按次付全 inspect 成本，listSessions 保持轻量；② text 过滤是正则字面量扫描、不排名，排名检索必须挂后端；③ 无任何调用方授权，模型工具要自己限制可见会话；④ readEvent 的 before/after 有界（readWindowMax 默认 50），超窗抛 SESSION_QUERY_INVALID_WINDOW；⑤ 结果全是 detached 克隆，但 SessionObservation 是 lease 型资源，用完须 Symbol.dispose 释放；⑥ 搜索必须挂具体后端，本包从不单独 mount。",
+    "analogy": "像图书馆的检索台：书库（session-persistence）只管按顺序往书脊上贴页，阅览室（live 会话）里有正被翻阅的原件。检索台立了规矩——先看阅览室，没有才去书库调阅；两处对同一本书的封面信息对不上就报错，而不是硬拼。你要某页前后几页，它只给有界的窗口；你要查一本书的「改版世系」，它把替换与引用关系画给你；至于全文检索，那是检索台后面另一台机器（SQLite 后端）的活，检索台只留了两个插座。"
+  },
+  {
+    "group": "session-query",
+    "dir": "session-query-sqlite",
+    "short": "session-query-sqlite",
+    "oneLiner": "ctx.sessionQuery 的出厂后端：SQLite FTS5 派生索引实现排名全文搜索，精确读/过滤/血缘全部继承",
+    "why": "session-query 把 searchSessions/searchEvents 留成 abstract，不挂具体后端就没有可用的 ctx.sessionQuery——出厂组合正是靠本包补上这两个方法。删掉它：排名全文搜索消失（Web 内容搜索、/resume 的既往工作检索直接塌），整个 sessionQuery 服务都挂不起来；若用 filterEvents 的正则扫描替代，得到的是无排名、无索引、每次全量重放日志的慢路径。它还把「搜索反映最新状态」做成了机制：每次搜索前用一次序列化观察把 live/持久变化对账进派生索引，游标绑 generation——语料变了宁可报 SESSION_QUERY_STALE_CURSOR，也不返回错位的页。",
+    "position": "组合装配者在插件表里 mount 本包（path 指向专属派生索引库），它注册的 SqliteSessionQueryEngine extends SessionQueryEngine，直接顶上 ctx.sessionQuery 这个名字；tool-session-query 的 session_search/session_event_search 两个工具最终打到这里，其余读路径落在继承自基类的方法上。下游：硬依赖 dsh-session 与 dsh-session-query（基类与文档构建器），可选 peer sessionPersistence（没有它则只有 live 会话可搜），运行时才 await import('node:sqlite')（openAt: first-search 时推迟到首次搜索）。数据流是单向抽取：持久层与 live 会话 → _observeStable 稳定观察 → buildSessionEventSearchDocuments 语义文档 → persisted_docs/temp.live_docs 两张 FTS5 表 → MATCH 查询 → 命中页。它从不打开 session-persistence 的数据库，唯一的写方向是写自己的派生索引。",
+    "inside": "SqliteSessionQueryEngine（src/index.ts:203）四层机制。① 生命周期：Service.init 在 openAt:'startup' 时 _ensureReady 打开库；'first-search' 把 node:sqlite 的导入推迟到第一次搜索；'never' 在 _assertSearchEnabled（index.ts:338）直接抛 SESSION_QUERY_SEARCH_DISABLED，继承的精确读仍可用。② 串行化：_serialized（index.ts:383）用一条 _tail promise 链把每次搜索排成队列，close 也要等队尾排空——对账与查询永不交错。③ 对账：每次搜索先进 _reconcile（index.ts:407）——读出持久表里的 (id,revision,generation) 与 TEMP 表里的 (id,fingerprint)，_observeStable（index.ts:495）做 list→按需冷读→再 list 的稳定观察（快照变了整体重试，最多一次），然后在 BEGIN IMMEDIATE 单事务里删/替 persisted 行、删/替 TEMP live 行、推进 search_state 的 global_generation；live 会话用连接本地 TEMP 表遮蔽同名持久行（查询里 NOT EXISTS live_sessions），live owner 消失即重新露出持久副本。④ 查询与游标：query.ts 把请求规范化、把过滤器编译成参数化 SQL（外层谓词预算 14、可移植绑定上限 32766，超了在语句准备前抛 INVALID_FILTER），quoteFtsData 把用户文本引成单个 FTS5 短语使 OR/NEAR/* 等语法失效；排名确定性（高亮命中数、文档长度、time、seq 断平），searchSessions 用 ROW_NUMBER PARTITION BY session_id 取每会话最强命中；游标是 base64 的 CursorPayload（instance/scope/fingerprint/generation/offset），generation 不匹配抛 STALE_CURSOR。schema.ts 的 openSearchDatabase 用 application_id 0x44534851 与 schema version 8 守护文件所有权：别人的库拒开、含未知表的拒开、只有自家不兼容版本才原地 reset 重建。",
+    "boundary": "只拥有三件事：FTS5 派生索引的生命周期（打开、对账、关闭）、两个 search 方法的执行、generation 游标。明确不管：精确读、过滤、trace、标题——全部从 SessionQueryEngine 继承、一行不重写，这正是「逻辑在接缝包、后端可替换」的落点；session-persistence 数据库的任何读写——本包对它是纯观察者，自己的派生库可随时删除重建（不兼容 schema 原地 reset），删了只损失搜索、不损失历史。划线依据：随介质变化的部分（倒排索引、分词、对账协议、文件所有权）收在后端；跨后端不变的读语义收在基类，避免每写一个后端就复制一遍血缘与验证逻辑。",
+    "tour": [
+      { "file": "packages/session-query/session-query-sqlite/src/index.ts", "line": 203, "sym": "SqliteSessionQueryEngine", "note": "具体后端就是「extends SessionQueryEngine + 补两个 abstract 方法」：整个包的定位在一行继承里写清。" },
+      { "file": "packages/session-query/session-query-sqlite/src/index.ts", "line": 383, "sym": "_serialized", "note": "promise 尾链串行化：每次搜索排队执行，取消能从队列等待中退出，close 等队尾排空——同步 SQLite 驱动下的秩序来源。" },
+      { "file": "packages/session-query/session-query-sqlite/src/index.ts", "line": 407, "sym": "_reconcile", "note": "每次搜索前的对账：revision/fingerprint 差异算出来后单事务写索引、推进 generation——「搜索反映最新状态」的实现核心。" },
+      { "file": "packages/session-query/session-query-sqlite/src/schema.ts", "line": 46, "sym": "openSearchDatabase", "note": "application_id + user_version + 未知表检查守护派生库所有权：绝不误碰 session-persistence 的数据库。" },
+      { "file": "packages/session-query/session-query-sqlite/src/query.ts", "line": 223, "sym": "quoteFtsData", "note": "用户查询被引成单个 FTS5 短语——引号/OR/NEAR/* 一律当数据，「查询语法保持惰性」的机制就在这对引号里。" }
+    ],
+    "gotchas": "① node:sqlite 的 DatabaseSync 是同步驱动，MATCH 执行期间阻塞 JS 线程，已开跑的语句无法被中断（取消只在语句间生效）；② unicode61 分词只匹配 token 和短语，AI 匹配不到 BRAID 这种子串——要子串得走 filterEvents 的 text 子句；③ 单进程单拥有者：一个索引路径只允许一个服务实例，外部写者与多进程共享都不支持；④ 查询文本里的 FTS5 语法一律按数据处理，别指望 OR/NEAR 生效；⑤ 翻页中途语料变化得到 SESSION_QUERY_STALE_CURSOR，只能整次重试搜索；⑥ 谓词超 14 个或绑定超 32766 在语句准备前就拒绝。",
+    "analogy": "像给一个不断追加的档案室配了台自动扫描归档机：每次你来查目录，机器先核对「哪些柜子换了新标签」，只重扫变过的柜子，然后才在本地检索卡片柜里查（档案原件永远不动）。每张卡片都盖了「第 N 代」的章——你拿旧章来翻下一页，机器发现档案室已推进到 N+1 代，就拒绝你、让你重查一次，而不是递给你一页错位的纸。"
+  },
+  {
+    "group": "session-query",
+    "dir": "tool-session-query",
+    "short": "tool-session-query",
+    "oneLiner": "把 sessionQuery 包成五个只读模型工具：cwd 精确相等授权、无游标结果、模型安全的错误边界",
+    "why": "ctx.sessionQuery 是可信的全局基础设施：它不做调用方授权，且错误消息里可能带主机路径、内部诊断等不该进模型上下文的东西。没有本包，模型要么完全够不到历史，要么有人把 sessionQuery 裸接到工具上——等于把「读任意会话」和「内部诊断原文」同时暴露给模型。本包补的是三件事：授权（目标会话 cwd 必须与调用方会话精确相等，无 cwd 只能看自己）；整形（五工具的 schema 里根本没有 cursor/offset/page-size/limit，搜索到部署上限 maxSearchResults 就请模型收窄查询）；消毒（所有跨边界错误先落内部日志，再换成固定短语的模型安全错误，取消原样保留）。没有它，检索既往工作这个能力要么缺失、要么以不安全的方式存在。",
+    "position": "上游是模型与 agent loop：工具调用从 ctx.tools 注册表进来，每个 executor 的 ToolRunContext.exec.agent 给出调用方身份（session id、header、turnBoundary 投影）。下游：inject ['tools','systemPrompt','sessionQuery','sessionProjections']——五个工具注册在 ctx.tools，一段固定的 prior-history 指引注册进 ctx.systemPrompt，实际查询全部转发给 ctx.sessionQuery（背后通常是 session-query-sqlite）。数据流：模型参数 → input.ts 规范化成服务过滤器 → workspace-access 授权 → serviceBoundary.call 调 sessionQuery → presentation 渲成纯文本块返回；错误方向相反，先写 ctx.logger 再降级成固定 code。它是纯读侧适配器，不产生任何会话事件。",
+    "inside": "六个文件一条流水线。src/index.ts:57 的 apply 是全部装配：一段 PROMPT_TEXT 注册进 systemPrompt 的 'tool:session-query' 节，defineTool 注册 session_search、session_event_search、session_trace、session_event_trace、session_event_read 五个只读工具——前两个带 searchTimeoutMs 协作超时，后三个 isConcurrencySafe 可与兄弟工具并行（因为两个搜索工具内部消费 generation 绑定的 provider 游标，必须独占执行，这是一个隐式的并发契约）。input.ts 定义扁平 snake_case 模型 schema，把 ISO 时间戳换算成闭区间 epoch 毫秒过滤器。workspace-access.ts:96 的 headerAuthorized 是授权核心：跨会话要求 header.cwd === caller.header.cwd 的字符串精确相等（自己看自己也要求 cwd 一致）；authorizeDescendants 把血缘树里未授权的祖先/后代节点替换成不含隐藏 id 的 null 标记。operations.ts:91 的 collectPages 在内部循环消费 provider 游标、累计到 maxSearchResults（默认 100）为止，结果对模型完全无游标；session_search 强制排除调用方会话，并对模型请求的 parent_session_ids 先去重、逐个鉴权后并入 parent 过滤器——「猜错 id」与「越权 id」行为完全一致。service-boundary.ts:116 的 sanitizeError 是模型边界：SAFE_SESSION_QUERY_FAILURES 白名单逐 code 换安全短语，非白名单失败统一降级 SESSION_QUERY_TOOL_FAILED，完整错误链写进日志。presentation.ts 渲文本与工具卡片；本包不做任何字节截断，超长输出交给通用 spill-policy。",
+    "boundary": "管：模型工具面、调用方授权、结果整形、错误消毒。不管：查询语义本身（语料、过滤、trace 全在 session-query，这里只做参数翻译与转发）；输出体积控制（不引入 spill 后端，由 dsh-spill-policy 接管超长文本）；写路径（五工具全只读，不注册任何会话事件）。划线依据：授权必须贴着调用方身份（exec.agent）做，所以只能在这层；cursor/offset 是 provider 概念，模型不应看见，所以内部消化；读语义是后端无关的，工具层只转发，避免出现第二套过滤实现。",
+    "tour": [
+      { "file": "packages/session-query/tool-session-query/src/index.ts", "line": 57, "sym": "apply", "note": "全部装配在一处：一段 prompt 节 + 五个 defineTool 注册，前两个搜索带超时、后三个标记 isConcurrencySafe——并发特权的分配一眼可见。" },
+      { "file": "packages/session-query/tool-session-query/src/index.ts", "line": 19, "sym": "inject", "note": "['tools','systemPrompt','sessionQuery','sessionProjections'] 四个依赖画出它的位置：模型面在 tools/systemPrompt，实际能力全部来自 sessionQuery。" },
+      { "file": "packages/session-query/tool-session-query/src/workspace-access.ts", "line": 96, "sym": "headerAuthorized", "note": "授权就是 header.cwd 与调用方 cwd 的字符串精确相等——「工作区即权限」的最保守实现，symlink 等价路径也不通融。" },
+      { "file": "packages/session-query/tool-session-query/src/service-boundary.ts", "line": 116, "sym": "sanitizeError", "note": "模型安全错误翻译：白名单 code 换固定短语、其余降级 SESSION_QUERY_TOOL_FAILED，完整诊断只进内部日志。" },
+      { "file": "packages/session-query/tool-session-query/src/operations.ts", "line": 91, "sym": "collectPages", "note": "在工具内部翻 provider 游标页直到 maxSearchResults——游标被彻底消化在这层，模型看到的搜索天然无分页。" }
+    ],
+    "gotchas": "① 工作区身份是字符串精确相等的 cwd：符号链接等价路径不共享授权，这是有意保守；② 搜索没有续传——命中超过 maxSearchResults 就提示模型收窄查询，没有 continuation token；③ 未挂 spill-policy 的组合会内联完整 trace 与事件 payload；④ 无 cwd 的调用方会话连 session_search 都直接 UNAUTHORIZED，只能对自身做事件级操作；⑤ session_search 永远排除调用方会话；当前会话内的事件搜索在调用步骤前截断，避免模型读到自己的本次调用。",
+    "analogy": "像公司档案室的对外服务窗口：馆内数据库（sessionQuery）其实很强，但窗口有规矩——你只能查你们部门（cwd 相同）的卷宗；一次最多递出一百条摘要，而且递出来的永远是没有「下一页暗号」的干净纸；万一后台出了乱子，窗口只会说「查询失败」，详情写进内部值班日志，绝不把系统报错原文念给访客听。"
+  },
+  {
+    "group": "session-query",
+    "dir": "session-log-export",
+    "short": "session-log-export",
+    "oneLiner": "Web 端 /export 命令与认证 ZIP 下载路由：会话树加附件流式导出给浏览器",
+    "why": "历史数据的最后一块拼图是「带走它」。没有本包，用户想拿到一份会话完整记录，只能手工翻 persistence 目录（JSONL 后端尚可，SQLite 后端根本没法读）或让维护者写脚本。本包把导出做成一条后端无关的路径：所有日志都经持久化读句柄读出、在本包内序列化成当前代的规范 JSONL（session.jsonl / session.vN.jsonl），因此无论底下挂的是 JSONL 还是 SQLite 后端，导出的 ZIP 结构完全一致；附件按内容寻址去重、大文件分块流过压缩器，宿主从不整档缓冲。它还把导出放在人的操作面上：Header 更多菜单的 Download session log 与 /export 斜杠命令，纯人机通道，不产生任何模型回合。",
+    "position": "上游是浏览器里的人：两条入口（Header 动作与 /export 命令）最终都让浏览器对 document-relative 的 api/session.export?sessionId=…&includeDescendants=true 发起 HEAD 预检 + GET 下载。下游：inject ['commands','connection']——命令注册在 ctx.commands，流式路由作为 feature-owned 的精确 Fetch 贡献注册进 ctx.connection（Host/Origin 与浏览器会话校验由 connection 施加）；运行时经 ctx.get 取 sessionQuery、sessionPersistence、attachments、sessions 四个服务，缺关键服务则 500。数据流：live 根会话先经 sessions.flush 过持久化屏障 → 读句柄取日志 → sessionQuery.traceSession 展开子会话树 → 逐个读日志与附件 → fflate 流式压缩 → Response 流向浏览器。",
+    "inside": "两半结构。Host 半：src/index.ts:78 的 apply 注册 /export 命令（带路径参数即报错）并把 GET/HEAD /api/session.export 挂到 connection.fetch；sessionLogExportResponse 负责查询校验（sessionId 必填、includeDescendants 只收 true/false）、服务齐备检查、根日志准备——先 flushLiveSessionLog 把内存日志推过 sessions.flush 屏障，再 readSessionLogText 经读句柄取已提交日志（不存在返回 404；准备失败回 500 且不回显错误原文，防止把主机绝对路径漏进浏览器错误条）——然后把 streamSessionLogZip 的 ReadableStream 直接交给 Response。archive.ts（617 行，机制所在）负责流：sessionLogZipEntries 先用 sessionQuery.traceSession 铺开 descendants，每个逻辑日志用当前代规范文件名（sessionLogZipFilename / sessionFormatLogFilename），图片走 media/<attachmentId>.<ext>、通用文件走 files/<前缀>/<digest>/<名> 的内容寻址路径（共享图片天然去重）；附件收集扫描内建会话事件的声明内容字段与完成的 assistant 流块（含扁平 V4 tool-role 消息），通用文件按有界 chunk 读入；fflate 的 Zip/ZipDeflate 增量产出，消费慢时背压到 64 KiB 队列加一次同步 push。Browser 半：client/controller.ts 的 SessionLogDownloadController 每会话单例下载操作（并发手势合并、关对话框不取消在途下载），监听 command/executed 保证只有提交浏览器触发下载；Dialog/HeaderAction 是共享 UI。",
+    "boundary": "管：导出的传输面（命令、路由、ZIP 组装、附件收集、HTTP 状态语义）。不管：日志的存储与读取协议（读句柄归 session-persistence）；血缘展开的语义（直接调 sessionQuery.traceSession）；下载目的地（刻意 browser-scoped，不提供宿主路径写出——那是另一个端点契约）；模型面（/export 完全在人机命令平面，不进模型历史，token 零开销）。划线依据：ZIP 里的每个字节都来自既有服务，本包只做「取出来、排好、送出去」，所以任何持久化后端都能被导出而无需各自适配。",
+    "tour": [
+      { "file": "packages/session-query/session-log-export/src/index.ts", "line": 78, "sym": "apply", "note": "包的整个宿主面：注册 /export 人机命令 + 向 connection 挂 GET/HEAD 精确 Fetch 路由，两半结构在此汇合。" },
+      { "file": "packages/session-query/session-log-export/src/index.ts", "line": 87, "sym": "connectionOf(ctx).fetch.register", "note": "路由以 feature-owned 方式贡献给 connection——认证检查归连接层，本包只管导出语义。" },
+      { "file": "packages/session-query/session-log-export/src/archive.ts", "line": 80, "sym": "flushLiveSessionLog", "note": "导出 live 会话前先过 sessions.flush 持久化屏障——这就是「斜杠触发的 ZIP 能包含引发下载的命令事件对」的原因。" },
+      { "file": "packages/session-query/session-log-export/src/archive.ts", "line": 148, "sym": "readSessionLogText", "note": "经持久化读句柄读已提交日志并序列化：不存在返回 undefined（→404），其余失败 fail-loud——后端无关读取的落点。" },
+      { "file": "packages/session-query/session-log-export/src/archive.ts", "line": 110, "sym": "serializeSessionLog", "note": "把头与事件序列化成当前代规范 JSONL（jscpd 注释承认刻意镜像 JSONL 后端的头行格式）——「任何后端导出物一致」的机制。" }
+    ],
+    "gotchas": "① 对话框只报流开始前的预检失败；浏览器接受 GET 之后的子孙或附件读取失败由浏览器下载管理器呈现，对话框不重开；② 一个会话同一时刻只有一个在途下载，重复手势共享同一操作；③ 斜杠触发的 ZIP 会包含引发下载的 command/run 与 command/done 事件对（live 会话先 flush）；④ 未声明内容字段的未知事件载荷原样进档但不触发附件读取；⑤ /export 不接受路径参数，压缩级别 0-9 默认 6。",
+    "analogy": "像图书馆的「打包外借」服务：不管书是纸质还是缩微胶片（JSONL 还是 SQLite 后端），管理员都按统一的目录格式复印装订（规范 JSONL），把书里夹的图片和附件一并编号入袋（内容寻址，同一张图只装一次），然后当着你的面把袋子递给快递（浏览器下载）。管理员自己不留副本，袋子再大也不占仓库地方——边装边递。"
+  },
+  {
+    "group": "storage",
+    "dir": "storage",
+    "short": "storage",
+    "oneLiner": "ctx.storage 枢纽：命名后端注册表 + 数据形态挂载点，自身零 IO，接缝不碰介质",
+    "why": "一个组合里总有些数据既不是会话事件日志、又必须活过重启：workspace 记录、会话 sidecar 等宿主侧 KV。没有本包，每个这样的消费者就得各自挑介质（直接开 SQLite？写 JSON 文件？），格式、版本戳、错误码、生命周期各搞一套，而且没有统一的地方回答「这个组合到底持久化了什么、放在哪」。本包把这件事收成两张表：后端包（json/sqlite）把介质注册进 ctx.storage.backend，数据形态包（先是 domain）把设施 mount 成 ctx.storage.<form>；哪个消费者用哪个后端是消费者自己的配置（域路由表），不是全局开关。配套的 storageBackendServiceKey 生命周期键保证形态层激活时被路由的后端一定已注册。删掉它，域数据的介质选型就散落回各个包，schema 版本与错误处理各自漂移。",
+    "position": "上游两类：后端插件（storage-json、storage-sqlite）调用 ctx.storage.backend.register('json'|'sqlite', …)，数据形态插件（storage-domain）调用 ctx.storage.mount('domain', facility) 并另 expose ctx.storageDomain；宿主侧消费者（首个是 workspace）经 ctx.storage.domain 或 ctx.storageDomain 读 写记录。下游：它自己 inject 无——是被依赖的枢纽（'storage' 出现在两个后端与 domain 包的 inject 列表里），对 peer 只要求 cordis。数据流：本包自身零 IO 零数据，只有 name→backend 与 form→facility 两张内存表；实际数据从消费者 → 形态设施（校验/写链）→ 后端 → 介质，变更事件（domain/changed）在 ctx 上反向广播给订阅者。",
+    "inside": "四个源文件、三百余行，全是接缝。backend.ts 是给后端实现者的规范契约（tests/contract.ts 的共享一致性套件逐条校验）：UNIT_NAME_RE（^[a-z][a-z0-9_]*$）保证 unit/table 名既是安全文件名又是免转义的 SQL 标识段；StorageBackend 只有可选的 kv facet 与 close()——缺 facet 时解析失败叫响而非静默；KvUnitDescriptor 带 name/version/tables/hasGlobal/layout（'single' | 'per-record'）/compatibleVersions；KvUnit（backend.ts:85）注释写死两条硬规则：unit 不串行化并发写（排序归调用方，即 domain 层的写链），但每个单调用在介质上原子、resolve 后崩溃重开可复见；方法面是 loadAll/putRecord/deleteRecord/setGlobal/close 加可选 backupRecord。index.ts:47 的 Storage extends Service 持有 backend: BackendRegistry 与 forms Map：mount/form 是唯一表操作，重复 mount 抛 duplicate-mount、未挂载取用抛 form-not-mounted，mount 返回的 disposer 带过期守卫（只删自己的注册）；domain getter 是经 StorageForms 声明合并出来的类型化捷径。registry.ts:25 的 register 同样 duplicate-backend 即抛、disposer 只摘自己。error.ts 给出 7 个稳定 code（backend-not-found/form-not-mounted/duplicate-backend/duplicate-mount/version-mismatch/malformed-medium/closed），枢纽与所有后端共用。index.ts:26 的 storageBackendServiceKey 生成 'storage.backend.<name>' 生命周期键——形态层 inject 这些键，激活顺序就抢不到注册前面。",
+    "boundary": "管：后端与形态的登记、激活顺序护栏、共同错误词表。不管：任何介质操作（IO 在 json/sqlite 后端里）；任何数据语义（schema 校验、变更事件、写排序在 storage-domain）；会话事件日志的持久化——那是 session-persistence 接缝的领地，本包的 kv 形态至今只覆盖非会话域数据（log facet 被明确推迟到 session-backend 迁移）。划线依据：枢纽刻意做成「纯注册表」，让「哪种介质服务哪个域」成为组合配置而非全局决定；把 IO 拦在外面，后端才能各自拥有独立的 schema 版本与所有权校验而互不牵连。",
+    "tour": [
+      { "file": "packages/storage/storage/src/index.ts", "line": 47, "sym": "Storage", "note": "枢纽本体：一张 backend 注册表加一张 forms 表，全文无一处文件或数据库调用——「纯注册表」的自我声明。" },
+      { "file": "packages/storage/storage/src/index.ts", "line": 26, "sym": "storageBackendServiceKey", "note": "派生 'storage.backend.<name>' 生命周期键：domain 层 inject 它们，激活就绝不会抢在后端注册之前——接缝包少有的机制性代码。" },
+      { "file": "packages/storage/storage/src/index.ts", "line": 64, "sym": "Storage.mount", "note": "形态挂载是 effect：重复挂载 duplicate-mount 即抛，disposer 带过期守卫只删自己的注册——与后端注册同一纪律。" },
+      { "file": "packages/storage/storage/src/backend.ts", "line": 85, "sym": "KvUnit", "note": "后端契约的核心条款写在接口注释里：单调用原子且 durable、但不串行化并发写（排序归调用方）——理解两个后端行为差异的钥匙。" },
+      { "file": "packages/storage/storage/src/registry.ts", "line": 25, "sym": "BackendRegistry.register", "note": "命名注册即抛重复：多个后端并行共存、谁服务谁由消费方配置，这里从不做全局裁决。" }
+    ],
+    "gotchas": "① 本包从不单独有用：没有任何后端注册时 ctx.storage 是一张空表，域打开必抛 backend-not-found；② domain 插件未挂就读 ctx.storage.domain 抛 form-not-mounted，装配顺序要人保证；③ 'storage.backend.<name>' 键是激活护栏，后端插件必须 ctx.provide 它，否则形态层会等一个永远不来的服务；④ duplicate-backend/duplicate-mount 是组合 bug，fail-loud 不静默覆盖；⑤ 绕过 domain 层直用 KvUnit 的调用方必须自己排队——契约不替你串行化。",
+    "analogy": "像一栋楼的机房管理台：自己不发电也不存数据，只有两块牌子——一块写「电力接口 A：市电，接口 B：UPS」（后端注册表），一块写「强电间在此」（形态挂载点）。装修队（domain 层）进场前先看牌子确认电已通，至于哪层楼用哪路电，是装修图纸（组合配置）说了算，管理台从不替人做主。"
+  },
+  {
+    "group": "storage",
+    "dir": "storage-json",
+    "short": "storage-json",
+    "oneLiner": "JSON 文件 KV 后端（'json'）：single 整文件或 per-record 单记录文档，原子重写发布",
+    "why": "域数据最常见的形态就是「人能打开看的一小撮 JSON」。没有这个后端，storage 枢纽就没有任何可注册的介质，域层开了域也无处落盘。它提供的是可检视性优先的介质：single 布局整个 unit 是一个 pretty-print 的 <unit>.json，人肉可读可改；per-record 布局每条记录一个版本戳文档，点写只重写一个文件，大而稀疏的记录不必整档重写。两种布局共享同一套原子发布协议（临时文件→fsync→rename→POSIX 目录 fsync），所以 KV 契约里「resolve 之后崩溃重开能见到这次写」在两种布局下都成立。对运维和调试者来说，能直接 cat 存储文件常常比任何查询接口都快——这是它存在的理由，而不是性能。",
+    "position": "上游是 storage 枢纽：插件 inject ['storage']，apply 里把 JsonStorageBackend 注册为 backend 'json' 并 provide storageBackendServiceKey('json') 生命周期键；storage-domain 按路由配置把某些域指到 'json'，KvFacet.open 以 KvUnitDescriptor 进来（descriptorOf 从域 spec 投影）。下游只有 node:fs 与 dsh-storage 的契约类型，无其它服务依赖。数据流：open 时读介质构造状态（single 进内存、per-record 留在目录树本身）；写请求经域层写链进来 → 内存变更（single）或单文档原子替换（per-record）→ resolve；读方向 single 从内存同步出，per-record 每次 loadAll 重读目录树。",
+    "inside": "JsonStorageBackend（src/index.ts:39）管一张打开 unit 的表：kv.open（index.ts:51）先验描述符（UNIT_NAME_RE，坏名抛 malformed-medium）、同步占位防同名并发双开，布局分流（index.ts:69）到 openSingleUnit 或 openPerRecordUnit；后端 close 等所有在途 open 落定再逐个关 unit。single 路径（single-unit.ts）：openSingleUnit 读 <root>/<name>.json，缺文件即空 unit、物化推迟到首写；parse 校验 unit 头与版本（不符抛 malformed-medium/version-mismatch）；SingleJsonUnit 内存即权威——putRecord（single-unit.ts:74）先改内存再 publish，发布失败回滚内存值，坏写不会「 ride along」下一次发布；close 排干 inFlight 再释放名额。发布原语在 atomic.ts:24 的 writeAtomic：同目录 .uuid.tmp 写入并 fsync，rename 原子替换（Windows 上 libuv 映射为 MoveFileExW REPLACE_EXISTING——覆盖语义刻意区别于 session-log 后端的 no-clobber 协议，注释写明一个 unit 每进程恰一个写者、last-write-wins 正确），POSIX 再 fsync 父目录，失败清理临时文件。per-record 路径（per-record-unit.ts）：目录即状态、本包不持内存，loadPerRecordState（per-record-unit.ts:69）重读 <unit>/<table>/<key>.json 与 global.json；坏文档或版本戳不在 acceptedStamps（当前版本+compatibleVersions）集合内的记录按缺席处理——一个坏文件不拖垮整个 unit；树为空时尝试 legacy bootstrap：把旧整档 <unit>.json 的记录拷成新文档并盖当前版本戳，旧文件永不动，任何新文档路径（哪怕坏）都抑制 bootstrap；键必须过 SAFE_KEY_RE（[a-zA-Z0-9_-]+），因为键会成为路径段。format.ts 负责 pretty-print 序列化与解析。",
+    "boundary": "管：一种介质（配置 root 下的文件树）、两种布局、原子发布与版本戳语义。不管：数据含义（opaque JSON，无 schema 无事件——那是 domain 层的）；写排序（契约明确归调用方，single 的内存回滚只保证失败写不留痕，不保证并发次序）；跨进程锁（两进程写同一 unit 是 last-completion-wins）。划线依据：json 与 sqlite 是同一 KvUnit 契约的两个实现，本包的所有差异都压在「介质形状」上——文件长什么样、一次写动多少字节——语义层的东西一概上交。",
+    "tour": [
+      { "file": "packages/storage/storage-json/src/index.ts", "line": 51, "sym": "JsonStorageBackend.kv.open", "note": "同步占位防并发双开 + 关闭期拒开：一个 unit 恰一个活句柄的纪律在这里执行。" },
+      { "file": "packages/storage/storage-json/src/index.ts", "line": 69, "sym": "openUnit 布局分流", "note": "single 与 per-record 只在介质形状上分流，其余契约完全一致——后端可替换的最小差异面。" },
+      { "file": "packages/storage/storage-json/src/single-unit.ts", "line": 74, "sym": "SingleJsonUnit.putRecord", "note": "内存权威模式：先改内存再整档原子发布，发布失败回滚内存——失败写不污染下一次发布的保证。" },
+      { "file": "packages/storage/storage-json/src/atomic.ts", "line": 24, "sym": "writeAtomic", "note": "临时文件→fsync→rename→POSIX 目录 fsync 的发布协议，崩溃后重开必能见到已 resolve 的写。" },
+      { "file": "packages/storage/storage-json/src/per-record-unit.ts", "line": 69, "sym": "loadPerRecordState", "note": "目录即状态：坏文档按缺席、空树试 legacy bootstrap 且旧文件不动——可抛弃缓存与真数据在同一介质上共存的设计。" }
+    ],
+    "gotchas": "① root 无默认值：不配直接报错，防止把文件撒进 process.cwd()；② single 每次写整档重写——高频或大记录的域应路由到 sqlite 或换 per-record；③ 无跨进程写锁，last-completion-wins；④ per-record 的键是路径段，安全字符集外的键直接拒绝；⑤ Windows 上依赖 libuv 的 rename，父目录 fsync 仅 POSIX；⑥ compatibleVersions 只对 per-record 读生效，single 读永远精确版本，版本不符整档 version-mismatch。",
+    "analogy": "像两种记事方式：single 是一本每种数据一页的活页夹，每次改一条就把整页重新誊一遍（好在页不大，而且谁都能翻开看）；per-record 是一柜子便签，改谁抽谁，别的便签纹丝不动。两者的规矩一样：先在草稿上写好，一口气换上去——换的过程断了手，也不会留下半张糊的纸。"
+  },
+  {
+    "group": "storage",
+    "dir": "storage-sqlite",
+    "short": "storage-sqlite",
+    "oneLiner": "SQLite KV 后端（'sqlite'）：一库承载所有路由 unit，文档每行，单语句原子写适配高频点写",
+    "why": "高频、点状的域写（计数器、状态位、会话 sidecar 元数据）走 JSON 后端意味着每写一次重写整档——single 布局下成本不可接受。本包给出的介质是「一个库文件、一条记录一行」：u_<unit>_<table> 的 STRICT 表，key TEXT 主键、value TEXT 存 JSON 文本，每次 putRecord/deleteRecord 就是一条预编译语句——SQLite 的单语句原子性直接满足 KV 契约，无需显式事务，也没有写队列。这是枢纽契约里「为点写而生的介质」的落地；它与 json 后端并行注册、由域路由配置取舍，不构成二选一的全局决定。",
+    "position": "上游是 storage 枢纽与域层：插件 inject ['storage']，apply 把 SqliteStorageBackend 注册为 backend 'sqlite' 并 provide storageBackendServiceKey('sqlite')；storage-domain 的路由把高频域指到 'sqlite'，KvFacet.open 收到 descriptorOf(spec) 投影的 KvUnitDescriptor。下游只有两个物理依赖：node:sqlite 的 DatabaseSync 同步连接与 node:fs（owner-only 创建）；契约类型来自 dsh-storage。数据流：构造时即启动 openDatabase（0o700 目录、0o600 独占建库、foreign_keys/journal_mode pragma、user_version 校验，新库最后盖章）；open unit 时读 units 元数据表的版本戳（不符抛 version-mismatch）、按描述符建 u_<unit>_<table> STRICT 表并预编译语句；此后所有数据流都收敛为「调用方 → prepared statement → 一行」，全局槽单独走共享的 unit_globals 表；close 反向排干所有 unit 再关连接。模型与 agent loop 完全看不见它。",
+    "inside": "SqliteStorageBackend（src/index.ts:55）：kv.open 的 openUnit（index.ts:75）先查 closing、验 UNIT_NAME_RE（unit 名与表名都验，物理标识符因此免转义）、同步占位 units Map 防并发双开；materializeUnit（index.ts:98）await ready 后读 units 表版本戳——没有就 INSERT 盖章，不同则抛 version-mismatch——再按描述符 CREATE TABLE IF NOT EXISTS，最后交出 SqliteKvUnit。schema.ts:60 的 openDatabase 是开库序列：mkdir 0o700、createDatabaseFile 以 'wx' 0o600 独占建文件；configureDatabase 先 PRAGMA foreign_keys = ON 与 journal_mode（验证过的封闭联合才允许拼进不可绑定的 PRAGMA）；user_version 非 0 且非当前版本直接抛——这个未发布格式没有迁移；units 与 unit_globals 元数据表建好之后，新库才补盖 user_version（schema.ts:101-106），保证中途失败留下未盖章介质、清障重开可从头物化。unit.ts:27 的 SqliteKvUnit 为每张表 prepare upsert/remove/selectAll 三条语句，putRecord（unit.ts:99）就是一次 upsert.run(key, JSON.stringify(value))——单语句原子性即契约的原子性；loadAll 用 Object.create(null) 收集键，防 '__proto__' 键污染原型；坏 JSON 映射为 malformed-medium；settle 包装保证契约是 Promise 拒绝而非同步 throw；close 只标记并归还名额，连接归后端所有。",
+    "boundary": "管：一种介质（单 SQLite 文件）、物理 schema（u_ 表与 units/unit_globals 元数据表）、单语句原子性。不管：记录 schema、写排序、变更事件（全在 domain 层）；journal 之外的崩溃恢复调优；跨进程竞争（另一连接持写锁就立即拒绝，无 busy-wait 重试——进程内排序靠域层写链，跨进程协调明确出界）。划线依据：与 session-query-sqlite 的开库序列刻意重复而不共享 helper（源码 jscpd 注释写明）——两包各有独立的数据库身份与 schema，共享 helper 会把两个无关的所有权绑在一起。",
+    "tour": [
+      { "file": "packages/storage/storage-sqlite/src/schema.ts", "line": 60, "sym": "openDatabase", "note": "开库序列：owner-only 创建、pragma、user_version 校验，新库最后盖章——中途失败留下可重试的未盖章介质。" },
+      { "file": "packages/storage/storage-sqlite/src/index.ts", "line": 98, "sym": "materializeUnit", "note": "units 表版本戳检查 + 按描述符 DDL 建表：unit 级版本与物理布局版本在这里分开把关。" },
+      { "file": "packages/storage/storage-sqlite/src/unit.ts", "line": 99, "sym": "SqliteKvUnit.putRecord", "note": "一次写就是一条预编译 upsert——「单语句原子性替代显式事务」的契约在这个方法体里兑现。" },
+      { "file": "packages/storage/storage-sqlite/src/schema.ts", "line": 117, "sym": "recordTableName", "note": "u_<unit>_<table> 物理表名：两段都先过 UNIT_NAME_RE 才进 DDL——外部输入永不拼进 SQL 标识符。" },
+      { "file": "packages/storage/storage-sqlite/src/index.ts", "line": 75, "sym": "openUnit", "note": "同步占位 units Map 防并发双开，closing 状态下直接拒——与 json 后端同一套 open 纪律的另一实现。" }
+    ],
+    "gotchas": "① DatabaseSync 同步：每次写阻塞 JS 线程一条语句的时间，域数据规模可接受、高吞吐要掂量；② 只开当前 user_version 的库，其它版本拒绝不迁移（pre-release 立场）；③ units 表的版本戳按 unit 检查，描述符版本对不上抛 version-mismatch；④ 建库落 0o700/0o600，但「另一主体能替换父目录里的库文件」不在防护范围（注释明说）；⑤ :memory: 是进程内库，进程亡数据亡，只适合测试；⑥ journal_mode 不提供 memory/off——静默放弃持久性会违背 KV 契约。",
+    "analogy": "像一台自动售货机的货道账本：所有商品（unit）记在同一本账（一个 .db 文件）里，每个格子（key）一行；补货（putRecord）就是改一格，别的行纹丝不动，账本自带「一次一笔、要么成要么没成」的规矩。门上贴着版本封条（user_version），封条不对拒收——不帮忙改版，因为这本账还没到需要迁移的年头。"
+  },
+  {
+    "group": "storage",
+    "dir": "storage-domain",
+    "short": "storage-domain",
+    "oneLiner": "域数据形态（ctx.storageDomain）：zod 校验的 KV 域，同步读、每域写链、domain/changed 事件",
+    "why": "后端契约是刻意无语义的：opaque JSON、无 schema、无事件、不排序。直接拿它写业务，每个消费者都得自己补三件事：打开时校验存量记录、写失败别污染内存、别处怎么知道数据变了——每家补一遍必然漂移。本包是 domain 形态的唯一实现：defineDomain 让属主包用 zod 一次声明域（名字、版本、每表 schema），打开时全量校验存量（坏记录抛 invalid-record，或按 backup-and-skip 策略移走坏档继续开），写经每域一条写链保证「先介质持久、再内存变更、再发事件」，读永远从内存同步出——读到的永远是已提交状态。产品包拿 domain 句柄就够了，永远不碰后端。没有它，域语义就得按后端各写一份，或由每个消费者临时发明。",
+    "position": "上游：产品包（首个消费者是 workspace，以及各宿主功能）在模块加载期用 defineDomain 声明 spec，运行期 await ctx.storageDomain.open(spec) 拿句柄，用完 domain.close() 释放；域名→后端的映射由本插件自己的 config 决定（backend 默认路由 + routes 按域覆盖），不是枢纽的全局选择。下游：inject ['storage']；apply 里 ctx.inject(storageBackendServiceKey(...) 的集合)——等所有被路由的后端就绪才 mount 'domain' 形态并提供 'storageDomain' 服务，这就是「激活不能抢跑注册」的机制。数据流：open 时后端 loadAll → zod 全量校验 → 内存表；写时 enqueue 上链 → backend 持久 → 内存变更 → ctx.emit('domain/changed') 顺序通知；关闭时拒绝新写、排干链、关 unit、释放名字。",
+    "inside": "四件套。spec.ts:107 的 defineDomain 是属主侧入口：模块加载期就验名（UNIT_NAME_RE）、版本（非负整数）、compatibleVersions、layout、invalidRecords 策略，并特别拒绝会接受 null 的 global schema——null 是介质的「从未写过」哨兵，可空的 global 会让存储的 null 在重开时静默回退成 initial；descriptorOf 把 spec 投影成 KvUnitDescriptor 交给后端。index.ts:69 的 DomainFacility.open（103 行）是严格开序：名字已开或关闭中抛 already-open → 路由解析（index.ts:109，routes[spec.name] ?? backend，未注册抛 backend-not-found）→ 无 kv facet 抛 facet-unsupported → 后端 open（version-mismatch/malformed-medium 原样穿透）→ loadAll 后逐表逐键 zod 校验，失败默认抛 invalid-record（detail 带表名与键），spec 声明 invalidRecords:'backup-and-skip' 且后端支持 backupRecord 时改为移走坏档、记日志、当缺席继续。domain.ts:140 的 DomainImpl 是运行时：内存表权威；put/delete/update/global.set 全部 enqueue（domain.ts:263）上同一条链——链上每个槽先等后端 resolve 再改内存再 emitChanged，后端拒绝则内存不动，读永不与介质分叉；update 的 transform 在链槽内执行，并发更新不交错；emitChanged（domain.ts:251）是提交后通知，监听器同步抛错被吞并记 warn——事件是通知不是事务参与者，不能追溯否决已落盘的写。close（231 行）拒绝新写、排干链、关 unit、走 onClosed 释放名字。invariant.ts 提供配套不变量：每个 domain/changed 必须与发出域的内存状态一致——有写路径绕开链就会在这里现形。",
+    "boundary": "管：域语义的全部——schema 校验、打开协议、写排序、变更事件、错误分类（DomainError 的 already-open/facet-unsupported/invalid-record/missing-key/closed）。不管：介质与物理格式（推给 json/sqlite 后端）；路由的决策权在本插件 config 但登记执行在枢纽注册表；跨进程变更可见（domain/changed 只是进程内事件，第二进程或重连 GUI 要等跨进程 revision 方案）；数据迁移（版本不符 open 即拒，改 schema 得手工迁数据）。划线依据：域逻辑只实现一份而非每后端一份，后端契约才敢保持「无语义」的最小面；产品包因此只依赖这一个包，不感知介质。",
+    "tour": [
+      { "file": "packages/storage/storage-domain/src/index.ts", "line": 103, "sym": "DomainFacility.open", "note": "严格开序五步各步即抛：already-open→backend-not-found→facet-unsupported→后端穿透错误→invalid-record——读 never-diverge 语义的入口。" },
+      { "file": "packages/storage/storage-domain/src/index.ts", "line": 109, "sym": "open 路由解析", "note": "routes[spec.name] ?? backend：哪个后端服务哪个域是本插件 config 的事，枢纽永远不做全局裁决。" },
+      { "file": "packages/storage/storage-domain/src/domain.ts", "line": 263, "sym": "DomainImpl.enqueue", "note": "每域一条写链：所有写原语排队上链，槽内先持久再改内存——「内存是权威、介质是持久投影」的机制核心。" },
+      { "file": "packages/storage/storage-domain/src/domain.ts", "line": 251, "sym": "emitChanged", "note": "domain/changed 是提交后的通知：监听器同步抛错被吞并记 warn，不追溯否决已落盘的写。" },
+      { "file": "packages/storage/storage-domain/src/spec.ts", "line": 107, "sym": "defineDomain", "note": "模块加载期 fail-loud 的声明入口；拒绝可空 global schema——null 哨兵会在重开时静默回退成 initial 的坑在源头封死。" }
+    ],
+    "gotchas": "① 返回的记录就是存储对象本身，不可原地修改——改了不产生事件也不落盘；② update 对不存在的键抛 missing-key；③ 无跨表事务、无二级索引、无多段键，一次写只动一条记录；④ domain/changed 是进程内的，多进程部署看不见彼此的写；⑤ 版本不符拒绝打开，无自动迁移；⑥ 域句柄生命周期归调用方，插件卸载时 facility.closeAll 兜底关闭仍开着的域，名字要等 teardown 完成才释放。",
+    "analogy": "像公司里统一的「档案登记处」：各部门（产品包）先交一份表格规范（defineDomain：每格必须长什么样），要建档案就来开户（open），登记处按图纸（config 路由）决定你的档案柜是纸柜还是数据库柜。取档案即时（内存同步读），存档案必须排队过一道关：先落柜、再改台账、最后广播「有更新」——谁也插不了队，台账和柜子永远不会对不上。"
+  }
+]

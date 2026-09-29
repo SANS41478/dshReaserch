@@ -1,5 +1,7 @@
 // Functional test: click-through traceability + search, starting from a dep-rich page.
-import { chromium } from 'playwright'
+import { createRequire } from 'node:module'
+const require = createRequire(import.meta.url)
+const { chromium } = require('C:/Users/admin/.workbuddy/binaries/node/workspace/node_modules/playwright/index.js')
 import { pathToFileURL } from 'node:url'
 
 const url = pathToFileURL('D:/临时/dsh研究/index.html').href

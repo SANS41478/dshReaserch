@@ -722,3 +722,31 @@ a.srclink:hover{background:rgba(77,214,193,.14);border-color:var(--ac-2);color:v
   .mech-k{border-right:0;border-bottom:1px solid var(--line)}
   #pane{width:100vw;max-width:100vw}
 }
+
+/* ============ 逐包精读解读 ============ */
+/* 官方摘要折叠块 */
+details.official-summary{
+  border:1px solid var(--line);border-radius:10px;
+  padding:10px 16px;margin:0 0 30px;background:rgba(255,255,255,.015);
+}
+details.official-summary summary{
+  cursor:pointer;font-size:12.5px;color:var(--tx-3);user-select:none;letter-spacing:.3px;
+}
+details.official-summary[open] summary{margin-bottom:4px}
+details.official-summary .lead{margin-bottom:6px}
+
+/* 源码带读表 */
+table.tour td{vertical-align:top}
+table.tour td:first-child{white-space:nowrap}
+table.tour code{font-size:12px}
+table.tour a.srclink{text-decoration:none}
+
+/* 通俗复述 */
+.analogy{
+  border-left:3px solid var(--ok);
+  background:rgba(77,214,193,.06);
+  border-radius:0 10px 10px 0;
+  padding:14px 18px;margin:8px 0 30px;
+  font-size:14px;line-height:1.9;color:var(--tx-2);
+}
+.analogy .t{font-weight:700;color:var(--tx);margin-bottom:6px;font-size:12.5px;letter-spacing:.3px}

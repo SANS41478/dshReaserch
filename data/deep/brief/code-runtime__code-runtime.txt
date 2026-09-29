@@ -1,0 +1,11 @@
+# @deepseek-ai/dsh-code-runtime
+path: packages/code-runtime/code-runtime
+desc: Abstract code-execution seam (ctx.codeRuntime) for the DeepSeek Harness
+deps: -
+peers: @deepseek-ai/cordis
+srcFiles: 2  srcLoc: 270
+
+## README.md (1 行)
+
+
+## 源文件与导出符号

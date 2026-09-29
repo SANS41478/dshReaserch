@@ -1,0 +1,231 @@
+[
+  {
+    "group": "sandbox",
+    "dir": "sandbox",
+    "short": "sandbox",
+    "oneLiner": "进程围栏接缝：ctx.sandbox 契约、file-effect 模式与升级词汇",
+    "why": "删掉它，模型跑的每条 bash/pwsh 命令就只能「要么裸跑、要么各工具自己发明围栏」。它把「用哪种模式约束这次执行」压缩成一个可传递的数据结构（SandboxPolicy），把「围栏后的命令怎么启动」压缩成一次 confine() 调用，于是 bash-sandbox、pwsh-sandbox、fs-sandbox 这些消费者不必各自对接 bwrap/Landlock/Seatbelt/ACL。它还垄断了三样不允许漂移的东西：SANDBOX_UNAVAILABLE 的 fail-closed 语义（SandboxUnavailableError，没有可用后端时宁可报错也不裸跑）、拒绝标记 [sandbox: file access denied under <mode> mode]、以及 read-only→workspace-write→danger-full-access 的严格变宽阶梯（WIDER_MODES）。不加载它，两个工具家族（shell 与 fs）会用不同的措辞向模型报告拒绝、用不同的顺序走审批，模型就无法建立一致的「沙箱拒绝→请求升级」直觉，越界重试的审批编排也会各家各判。",
+    "position": "它是 sandbox 子系统的契约层。上游：bash-sandbox、pwsh-sandbox 等 confined executor 和 fs-sandbox 围栏实现 SandboxProvider.confine 的调用方角色——它们在每次执行前把 ['bash','-c',cmd] 这样的精确 argv 和解析好的 SandboxPolicy 递进来，拿回 ConfinedArgv（包装后的 argv、enforcement 等级、denialSignatures、runnerFailureRules）后自己去 spawn。下游：本包不依赖任何后端，只依赖 cordis（Service 基类）、dsh-llm（HarnessError）和 dsh-session（SessionId 类型）；真正的后端 sandbox-local 在运行时以 LocalSandboxProvider 身份注册为 ctx.sandbox。数据流是双向两段：请求方向是「executor → confine(argv, policy) → ConfinedArgv → executor spawn」；反馈方向是后端产生的 denial/runner 失败签名经由本包定义的词汇（escalation.ts 的 marker、diagnostics.ts 的 classifyRunnerFailure）被 executor 分类后呈给模型。sandbox-policy 则在更上游为每次调用解析出 policy 本身。",
+    "inside": "四个文件各占一层。index.ts 是契约本体：SandboxMode 是封闭三元组 read-only/workspace-write/danger-full-access（30 行）；SandboxExecutionPolicy（40 行）携带 mode、workspaceRoot 和可选 sessionId——后端用 sessionId 区分 per-session 状态（Windows ACL 的私有 temp 即按它键控）；SandboxPolicy（70 行）继承前者但把 mode 收窄为 ConfinedSandboxMode，因为 danger-full-access 意味着不围栏、不会进入 confine。核心抽象是 SandboxProvider（159 行），extends cordis Service，唯一方法 abstract confine(argv, policy, signal)（177 行），注释明文规定「静默不围栏直通是被禁止的」。fail-closed 的错误通道是 SANDBOX_UNAVAILABLE 常量（125 行）和 SandboxUnavailableError（132 行，extends HarnessError，错误文本直接告诉用户该装哪个平台的 runner）。ConfinedArgv（96 行）是 wrap 的返回物，除 argv 外还带 enforcement（full/partial）与 denialSignatures——后端各自说不同的方言（bwrap 报 EROFS 文本、Landlock 报 EACCES、Seatbelt 报 EPERM），消费者只匹配本次选中的方言而非跨后端并集。escalation.ts 是升级编排：WIDER_MODES（28 行）是封闭的变宽表，checked at execution 而非烧进 tool schema；approveEscalation（171 行）按「重复当前模式免审批→非严格变宽拒绝→无审批服务/无 agent 报错→走 EscalationApprover.request 拿 allowed-once/rejected/cancelled/unavailable」的顺序裁决，审批通道是结构化的最小函数形状，本包因此不依赖 approval/agent 包。roots.ts 的 writableRoots（52 行）把 workspace-write 翻译成「workspace 根 + /tmp + os.tmpdir()」的规范化 allow-list，Seatbelt profile 和进程内 fs 围栏共用它以防漂移。diagnostics.ts 提供分类器：classifyRunnerFailure（65 行）按「非零退出码→排除 informationalLines→匹配 fatalSignatures」区分「runner 自己坏了」和「命令被围栏正确拒绝」。",
+    "boundary": "它管的是：模式的词汇表、每次调用的 policy 形状、wrap 的返回契约、fail-closed 错误码、拒绝/升级标记文本、变宽阶梯的裁决、可写根的推导。它不管：任何实际围栏机制（bwrap 挂载、SBPL profile、受限 token 全部推给 sandbox-local 及其 windows-acl rung）、policy 的解析与会话模式存储（推给 sandbox-policy——为什么划走：defaulting 是消费者的显式步骤，provider 拿到的 policy 必须是全指定的）、把 ConfinedArgv 渲染成模型可见错误（推给 bash-sandbox 等消费者）、人工审批通道本身（只定义 EscalationApprover 结构形状，实现在 approval 服务）。还有一个明确的「不管」：容器、microVM、远程执行不在这里加后端——那些是替换整个 ctx.shell/ctx.fs 能力面，本包只做 same-world confinement（同一内核、同一文件系统）。",
+    "tour": [
+      {
+        "file": "packages/sandbox/sandbox/src/index.ts",
+        "line": 159,
+        "note": "SandboxProvider 抽象服务定义处，构造函数把服务名钉死为 'sandbox'；注释写明 fail-closed 与「禁止静默直通」，是整个接缝的第一原则。"
+      },
+      {
+        "file": "packages/sandbox/sandbox/src/index.ts",
+        "line": 70,
+        "note": "SandboxPolicy 接口：mode 收窄为 ConfinedSandboxMode，注释解释 policy 逐调用携带（两个消费者可同时用不同 policy），体现 per-call 设计。"
+      },
+      {
+        "file": "packages/sandbox/sandbox/src/escalation.ts",
+        "line": 171,
+        "note": "approveEscalation 的有序裁决：先免审批重放、再拒绝非严格变宽、最后走结构化审批通道；此处体现「升级是执行期检查而非 schema 约束」。"
+      },
+      {
+        "file": "packages/sandbox/sandbox/src/roots.ts",
+        "line": 52,
+        "note": "writableRoots 把 workspace-write 展开为 workspace+/tmp/tmpdir() 的规范化去重 allow-list，是 Seatbelt 与 fs 围栏共享的唯一语义源。"
+      },
+      {
+        "file": "packages/sandbox/sandbox/src/diagnostics.ts",
+        "line": 65,
+        "note": "classifyRunnerFailure 的三层匹配（退出码门→排除信息行→致命签名），把「沙箱坏了」与「命令被拒」分开，是 denial 方言可信的前提。"
+      }
+    ],
+    "gotchas": "文件效应是全部策略词汇——网络、进程可见性、syscall、设备都不在 SandboxMode 里表达。拒绝报告是 stderr 方言：接缝返回的是签名而非类型化通道，模型代码刻意模仿 runner 输出可能造成误判（不会绕过围栏，但可能污染诊断）。每次 confine 只对应一个 provider：想同时用两种围栏机制需要 provider 级阶梯或独立 cordis context。Windows ACL 与旧 Landlock ABI 是仅有的 partial enforcement 案例，要求绝对边界的消费者必须自行拒绝 partial。escalation hint 只在 composition 声明了升级字段时出现；升级授权只对那一次调用有效。",
+    "analogy": "它像机场安检的「规章手册」而不是安检机本身：手册规定旅客能带什么（read-only/workspace-write/danger-full-access 三档）、安检机放行前必须给出编号封条（ConfinedArgv）和检查完整度标签（full/partial）、被拦下时旅客会收到统一措辞的单据和一次申诉渠道（升级审批）。各航站楼（Linux/macOS/Windows 后端）机型不同，但旅客看到的规则、单据和申诉流程 nationwide 一致——这正是手册集中印制（而不是各航站楼自印）的理由。"
+  },
+  {
+    "group": "sandbox",
+    "dir": "sandbox-local",
+    "short": "sandbox-local",
+    "oneLiner": "本地后端：bwrap/Landlock/Seatbelt/ACL，fail-closed",
+    "why": "接缝包只定义了「confine() 必须返回围栏 argv 或报错」，但没有任何东西真正去包装 argv——删掉本包，ctx.sandbox 就是一个无人实现的抽象类，composition 一挂上去 confined executor 全部拿 SandboxUnavailableError，所有 bash/pwsh/fs 调用 fail-closed 死掉（除非显式切 danger-full-access）。本包把三种 POSIX 机制和 Windows 受限 token 统一成可选择的 runner 链：Linux 优先 bwrap（其 mount profile 最贴近 mode 词汇）再退 Landlock 启动器，macOS 用 Seatbelt，Windows 用 ACL 受限 token runner。它还负责把每个 runner 的「失败方言」翻译给接缝——DENIAL_SIGNATURES 与 RUNNER_FAILURE_RULES 让消费者能区分「bwrap 报 read-only file system = 围栏生效了但命令被拒」和「bwrap: 前缀 = runner 自己没跑起来」。它还独占了 windows-acl rung 的授权生命周期管理：workspace 常驻 ACE、每会话私有 temp 目录与可撤销 SID 的创建与回收。",
+    "position": "上游：实现 dsh-sandbox 的 SandboxProvider，被 composition（base bundle 的 cordis.patch.yml）以 id 'sandbox' 挂载为 ctx.sandbox；bash-sandbox/pwsh-sandbox/fs-sandbox 这些消费者把 (argv, policy) 递进来。下游：依赖 dsh-sandbox（契约与 roots/canonicalPath）、dsh-sandbox-windows-acl（win32 rung 的 AclWriteGrant/SID 派生/边界断言）、node-addon-system 的 landlock-run（Linux 第二梯队的启动器与探测）、profiles.ts 自带的 bwrap/Seatbelt 参数构造。数据流：confine(argv, policy) 进来 → canonicalPath 规范化 workspaceRoot → selectRunner 用缓存裁决选 runner → runnerArgv 拼出平台 profile → 返回 [runner, profile..., '--', ...argv] 与该 rung 的 enforcement/方言签名。win32 路径上还有一条授权流：materializeAclGrant 按 sessionId+workspaceRoot 键控，为每个活跃会话物化 temp 授权，ctx.effect 在 dispose 时撤销。",
+    "inside": "两个文件。profiles.ts 是三个 POSIX 方言的翻译器：bwrapProfileArgs（16 行）拼出 --ro-bind / /、--dev /dev、--unshare-pid（私有 PID 命名空间，命令管得了子孙却看不到宿主进程，procfs 魔法链接翻不出挂载）、workspace-write 追加 --tmpfs /tmp 和 workspace bind；landlockProfileArgs（30 行）把模式翻成 launcher 的 readOnly=['/'] / readWrite=['/dev/null','/tmp',workspace] 授权；seatbeltProfileArgs（51 行）生成 SBPL 文本 '(allow default)(deny file-write*)' 加上从接缝共享的 writableRoots 推导的 subpath 白名单（darwin 的 /tmp IS /private/tmp，必须规范化）。index.ts 的 LocalSandboxProvider（252 行）是主体：PLATFORM_CHAINS（160 行）定义每平台的梯队——linux ['bwrap','landlock']、darwin ['seatbelt']、win32 ['windows-acl']，唯一候选免探测直接选（它执行期的拒绝本身就是 fail-closed 终点），多个候选才按链序做功能探测（defaultProbeBwrap 真跑一次 'bwrap --ro-bind ... -- true'）；裁决缓存在 selectedRunner，provider 终身不变。STATIC_ENFORCEMENT（178 行）声明各 rung 的完整度：bwrap/seatbelt/full，windows-acl 固定 partial（硬链接别名、读不限、AppContainer ACL 树不可读三条边界）。confine（319 行）先规范化 root，runnerCommand 覆盖时按操作员断言处理（跳过探测、断言 full），否则走 selectRunner。win32 专属部分：windowsAclRunnerArgv（363 行）为带 sessionId 的 workspace-write 调用传 --write-sid/--temp-write-sid 对（seam 管授权的契约标志）；materializeAclGrant（397 行）物化 workspace 常驻 grant（每 workspace 一次，exact-ACE 跳过让后续 provision O(1)）和随机私有 temp grant（每会话/workspace 对一个，mkdtempSync + tempWriteSid）；revokeAclGrants（459 行）在 ctx.effect 钩子里撤销可撤销部分，清理失败只报告不中断 cordis teardown。windowsAclRunnerInvocation（565 行）解析 runner 入口：生产用 lib/runner.js，开发态用 tsx/esm/api 钉死 tsconfig 启动源码。",
+    "boundary": "它管：平台 runner 的选择与探测、每个 runner 的 profile 参数拼写、执行完整度与方言签名的归属、win32 rung 的 SID/ACE 生命周期。它不管：模式与 workspaceRoot 从哪来（sandbox-policy 的 resolve 决定）、wrap 之后的执行与 stderr 分类动作（消费者 spawn 并用接缝的 classifyRunnerFailure 分类）、ACL 的底层 Win32 调用（推给 sandbox-windows-acl——为什么划走：那个包是纯 Win32/FFI 库，不认识 cordis 与 policy，本包才是把「会话、工作区、provider 生命周期」这些宿主概念接上去的一层）、容器/远程执行（替换整个能力面，不是这里的 rung）。",
+    "tour": [
+      {
+        "file": "packages/sandbox/sandbox-local/src/index.ts",
+        "line": 160,
+        "note": "PLATFORM_CHAINS 常量：平台决定候选链、探测只仲裁多候选——win32 与 darwin 是单候选免探测，注释解释了为什么 sole candidate 不需要探测也能 fail-closed。"
+      },
+      {
+        "file": "packages/sandbox/sandbox-local/src/index.ts",
+        "line": 319,
+        "note": "confine 实现：canonicalPath 规范化 → runnerCommand 短路 → selectRunner + runnerArgv；ConfinedArgv 的三个事实字段（enforcement/denialSignatures/runnerFailureRules）在这里组装。"
+      },
+      {
+        "file": "packages/sandbox/sandbox-local/src/index.ts",
+        "line": 397,
+        "note": "materializeAclGrant：workspace 常驻授权的复用缓存与每会话随机 temp 的键控（sessionId+root JSON），失败路径先撤销再抛，是 fail-closed 授权管理的样板。"
+      },
+      {
+        "file": "packages/sandbox/sandbox-local/src/index.ts",
+        "line": 233,
+        "note": "RUNNER_FAILURE_RULES：Landlock 钉在 exit 125、windows-acl 钉在 exit 127 且信息行排除 partial 提示——退出码门保证命令伪造签名不能伪装成 runner 失败。"
+      },
+      {
+        "file": "packages/sandbox/sandbox-local/src/profiles.ts",
+        "line": 16,
+        "note": "bwrapProfileArgs：--unshare-pid 私有 PID 命名空间加 --die-with-parent，注释点出 procfs 魔法链接防逃逸这个真实威胁模型。"
+      }
+    ],
+    "gotchas": "Windows rung 永远报 partial（NTFS 硬链接把同一文件对象别名到工作区外；读完全不受限；被其他 AppContainer 工具用包 SID ACL 过的树对 Low 完整性子进程不可读）。旧内核 Landlock ABI 也可能 partial，launcher 每次受限运行都会在 stderr 自报。Seatbelt 依赖 Apple 标记 deprecated 的 sandbox-exec，若被移除本包无法替换或探测那个私有策略引擎。runner 裁决缓存 provider 终身：装/删/修 runner 必须重载插件。runnerCommand 是操作员断言：跳过功能探测、假定其诚实实现 bwrap 兼容 profile；若它本身是 bash 脚本，解释器启动发生在围栏生效之前。探测超时 probeTimeoutMs 必须是正有限数——Node 把 spawnSync({timeout:0}) 当无超时。",
+    "analogy": "它是保安公司：客户（composition）只说「给我派人把场子看起来」（挂 ctx.sandbox），公司按场地所在城市（平台）派出对应的保安——Linux 城首选 bwrap 队、不行换 Landlock 队、macOS 城只有 Seatbelt 队、Windows 城是 ACL 队；派人前先试岗（功能探测），全都不合格就明说「派不出人」而不是让场子裸奔。每个队有自己的行话（拒绝时的黑话各不相同），公司把行话小抄（denialSignatures）和「这队自己出了内伤」的识别法（runnerFailureRules）一并交给客户，客户才知道门卫拦人是规矩、保安自己趴窝是事故。"
+  },
+  {
+    "group": "sandbox",
+    "dir": "sandbox-windows-acl",
+    "short": "sandbox-windows-acl",
+    "oneLiner": "Windows ACL 后端：能力 SID 写白名单 + Low 完整性标签",
+    "why": "POSIX 世界有 bwrap/Landlock/Seatbelt 现成机制，Windows 没有等价的「文件写围栏」进程原语——没有这个包，Windows 上的 ctx.sandbox 就没有可用 rung，每次 confine 都会 fail-closed 报 SANDBOX_UNAVAILABLE，Windows 用户只剩 danger-full-access 裸跑一条路。本包用 Windows 自己的原语拼出围栏：把调用方 token 复制成 WRITE_RESTRICTED 受限 token（内核对每次访问做两遍检查——普通 SID 一遍、restricting SID 一遍，写类访问只在两遍都通过时放行），再降到 Low 完整性（内核强制完整性检查拒绝向非 Low 标签对象写入）。两层机制互为补洞：写 SID 交集只覆盖对象自身的访问检查，Windows 还能凭父目录的 FILE_DELETE_CHILD 授权删除，所以每个授权根还要对 Everyone SID 加 deny ACE；Low 标签则封掉 Everyone 残留的写权限。它把 github.com/huoyaoyuan/windows-acl-restrict-poc 的机制移植成带完整失败处理的工程实现——原 POC 忽略所有 API 错误、会静默用未受限 token 跑子进程，本包每个 Win32 调用都检查、任何失败抛 Win32Error，子进程永远不会未围栏地启动。",
+    "position": "它是 sandbox 子系统最底层的平台 rung。上游：sandbox-local 以两种方式消费它——seam 模式下 LocalSandboxProvider 先用 AclWriteGrant 物化 workspace/temp 两套 ACE，再 spawn lib/runner.js（runner.ts），把 --write-sid/--temp-write-sid 传给 runner、以 manageDacls:false 让 runner 免于自行授权；直接 API 模式下外部调用者 new AclSandbox(...).init() 后 spawn。下游：依赖 dsh-win32-process（共享的受限进程、stdio 管道、Job、等待原语与 Win32Error）、koffi（FFI 绑定 acl.ts/ffi.ts 声明的几十个 advapi32/kernel32 调用）、dsh-lazy-require。数据流：seam 递来 (workspace, temp, mode, 两个 SID) → runner 创建受限 token（token.ts 的 createRestrictedToken）→ grantWrite（acl.ts）对授权目录做「allow ACE + deny FILE_DELETE_CHILD + Low 标签」三合一编辑 → spawnInheritedJobProcess 在 token 下启动包裹的 argv → 子进程退出码被镜像、temp 授权被撤销。verify/abi-probe.cpp 用 Windows 头文件核验包内 SID/ACL/token 结构声明。",
+    "inside": "十文件分四层。token 层（token.ts）：openCurrentProcessToken（23 行）经真 OpenProcess 句柄开 token（GetCurrentProcess 伪句柄无法过 koffi）；findLogonSid（52 行）扫描 TokenGroups 找 SE_GROUP_LOGON_ID（保留 logon SID + Everyone 是 keep-alive 组——没有它们早期 DLL 初始化死于 0xC0000142、CNG 让 pwsh 崩 0xE0434352）；createRestrictedToken（216 行）按模式装配 restricting 列表：read-only [logon, Everyone]、workspace-write [logon, Everyone, workspace SID, temp SID]，刻意剔除 Authenticated Users（WMI 检查 0x80041003 顺带封掉 C:\\ 根建树逃逸）和 INTERACTIVE/LOCAL（Public 树写逃逸）；restrictTokenIntegrity（156 行）降到 Low；setTokenDefaultDaclGrant（112 行）往 token 默认 DACL 合并一个 restricting-SID 的全权 ACE，否则受限孙进程连匿名管道都建不出（Node 报 EPERM）。ACL 层（acl.ts）：grantWrite（377 行）在 per-path LockFileEx 独占锁下读-合并-写，一次 SetNamedSecurityInfoW 同时应用 allow ACE、CONTAINER_INHERIT 的 FILE_DELETE_CHILD deny（只继承到目录——该位是 FILE_ALL_ACCESS 成员，继承到文件会拒绝一切 FullControl 打开）、Low no-write-up 标签；hasExactGrant/hasExactDeny/hasExactLabel 逐字段比对实现幂等跳过（否则 SetNamedSecurityInfoW 的急切继承会整树重传播，大工作区要几十秒）；revokeWrite（431 行）撤销时用 hasForeignGrant 判断是否还有别的授权依赖共享 Low 标签。身份层（workspace-sid.ts）：workspaceWriteSid（35 行）从规范化路径 sha256 派生确定性 S-1-4-x-y——同一工作区跨会话跨重启同一身份，ACE 常驻即复用缓存；tempWriteSid（49 行）从随机目录路径派生并带固定第三子权限域作域分隔。实例层（index.ts）：AclSandbox（162 行）构造器做全套模式-授权形状校验（workspace-write 必须显式 tempDir 或 null、两个 SID 必须不同、read-only 不收写 SID）；init（224 行）创建 token 并授权、fail-closed 清理路径把每个 SID 分配和可撤销 grant 收回；spawn（357 行）pipe 模式刻意先 drain 管道再 WaitForSingleObject（防管道缓冲死锁）；dispose（408 行）撤 temp、留 workspace（复用缓存）、聚合清理失败。runner 层（runner.ts）：main（116 行）解析 argv、setConsoleCtrlHandler 忽略自身 CTRL+C、seam 模式校验 SID 与路径匹配、无 seam 时自建随机私有 temp 子目录、重写 TMP/TEMP 后以 inherit stdio spawn、finally 里清理失败只写 stderr 不掩盖子进程退出码；所有 runner 侧失败打 windows-acl-run: 前缀并退出 127。",
+    "boundary": "它管：受限 token 的构造与模式化 restricting 列表、目录 DACL/标签的三合一编辑与幂等撤销、workspace/temp 双身份派生、runner 的 argv 契约与退出码镜像、每个 Win32 调用的 fail-closed。它不管：何时围栏、围栏到哪个目录（sandbox-policy 解析、sandbox-local 决定并物化授权——为什么划走：本包是纯 Win32 能力库，不 import cordis 之外的任何 dsh 服务，宿主概念全部由上游注入）、读写之外的策略（WRITE_RESTRICTED 只交集写类访问，读、网络、进程可见性天然越界，需读侧策略另行表达）、runner 的选择与探测（sandbox-local 的链）、POSIX 平台（那是 profiles.ts 的世界）。",
+    "tour": [
+      {
+        "file": "packages/sandbox/sandbox-windows-acl/src/token.ts",
+        "line": 216,
+        "note": "createRestrictedToken：两种模式的 restricting 列表在此定型；长注释记录了 keep-alive 组的 0xC0000142/CNG 崩溃、剔除 Authenticated Users 封 C:\\ 建树逃逸等实证边界。"
+      },
+      {
+        "file": "packages/sandbox/sandbox-windows-acl/src/acl.ts",
+        "line": 377,
+        "note": "grantWrite：per-path 锁 + 精确 ACE 幂等跳过 + 一次调用三编辑（allow/deny/Low 标签）；注释解释 deny 只容器继承的原因与整树重传播的代价。"
+      },
+      {
+        "file": "packages/sandbox/sandbox-windows-acl/src/index.ts",
+        "line": 224,
+        "note": "AclSandbox.init：token 创建、授权、完整性降低的编排，catch 里的 fail-closed 清理（撤 temp、退 SID）是「永不未围栏 spawn」承诺的落点。"
+      },
+      {
+        "file": "packages/sandbox/sandbox-windows-acl/src/workspace-sid.ts",
+        "line": 35,
+        "note": "workspaceWriteSid 从路径哈希派生 S-1-4-x-y：确定性身份是「ACE 常驻即跨会话复用缓存」这条性能故事的地基。"
+      },
+      {
+        "file": "packages/sandbox/sandbox-windows-acl/src/runner.ts",
+        "line": 116,
+        "note": "runner 的 main：--write-sid/--temp-write-sid 的 seam 契约校验（SID 必须与路径互相印证）、TMP/TEMP 重写、finally 清理不掩盖子进程退出码。"
+      }
+    ],
+    "gotchas": "围栏是 partial 的：硬链接是文件对象别名（pnpm 安装常态，无法拒绝）、读不受限、被 AppContainer 工具盖章的树不可读。工作区 Low 标签常驻且跨重启存活——同机其他 Low 完整性进程（别的产品的沙箱、保护模式阅读器）也能写工作区，这是写边界的代价。一个实例一个工作区（写 SID 即身份）；清理 best-effort；revoke 后 NULL DACL 目录变 deny-all；围栏内 piped stdio 的孙进程 spawn 必 EPERM（libuv 命名管道）；CREATE_NO_WINDOW/NEW_CONSOLE 子进程死于 0xC0000142；read-only 下 PowerShell 退入 ConstrainedLanguage（无法写 AppLocker 探针文件）；授权物化是急切整树传播（首次可能几十秒，之后 exact-ACE 跳过变 O(1)）；whoami 类 cmdlet 可能失败（诊断噪音）；icacls 无法手工撤销本包的 ACE（ERROR_NONE_MAPPED 1332）。",
+    "analogy": "POSIX 后端像给房间装门禁（进程外面套壳），这个包则是 Windows 世界里给员工发「内部权限徽章」：徽章上写死只有两张通行卡（工作区卡+私人储物柜卡），公司大门（内核）对每次开门做双重核验——既看你普通工牌也看你徽章，两边都放行才开门；而且全楼贴上「低级区域」封条，徽章持有者对非低级区域一律只读。为了避免「从走廊（父目录）顺手删东西」的旁门，走廊也贴了禁删告示（deny ACE）。代价是徽章不能限「看」（读不受限），而且每间贴过封条的房间永远留着痕迹（常驻 ACE），好在同一房间第二次发证秒办（幂等跳过）。"
+  },
+  {
+    "group": "sandbox",
+    "dir": "sandbox-policy",
+    "short": "sandbox-policy",
+    "oneLiner": "共享 policy 之家：部署默认模式 + 每会话模式覆盖的解析器与模型可见上下文",
+    "why": "围栏消费者横跨三个家族——bash 执行器、fs 围栏、终端——如果各自决定「这次该用哪个模式、哪个目录可写」，同一会话里 bash 能写而 fs 不能写（或反过来）的漂移立刻出现，模型看到的边界与实际执行边界也会分叉。删掉本包，每个 enforcing 家族都要自带一份「部署默认+会话覆盖」逻辑：没有共享的 sandbox/mode 事件词汇，UI 的模式开关就得对每个家族各发各的指令；没有 sandboxMode 投影，重启后覆盖状态丢失或各自重建；没有 sandbox:policy 上下文贡献，模型根本不知道当前处于 read-only 还是 workspace-write，会把「策略拒绝」误判为「工具坏了」而拒绝尝试。本包是 2026-07-14 跨家族 fs-sandbox 决策的落点：模式是封闭词汇（SANDBOX_MODES），部署默认 fail-safe 为 read-only，想给可写代理的部署必须显式 opt-in workspace-write。",
+    "position": "上游：谁调用它——bash-sandbox/pwsh-sandbox/fs-sandbox 等 enforcing 工具在每次执行边界调 ctx.sandboxPolicy.resolve({session, mode}) 拿到完整 SandboxExecutionPolicy，再递给 ctx.sandbox.confine；agent 循环则在请求前把 resolve 结果经 systemPrompt.context 渲染成 sandbox:policy 贡献进运行时快照。下游：它依赖 cordis、schemastery/zod（schema）、并以 peer 类型引用 dsh-sandbox（SandboxMode/SandboxExecutionPolicy）、dsh-session（Session/Header.cwd）、dsh-session-projection（注册 sandboxMode 投影）、dsh-system-prompt（上下文贡献）、dsh-agent、dsh-invariants（companion）。数据流是三进一出：deployment config（mode/workspaceRoot）+ 会话日志里的 sandbox/mode 事件（经投影折出最后状态）+ 会话不可变 cwd → resolve() 合成一个 {mode, workspaceRoot, sessionId} → 同时喂给执行路径（confine）和呈现路径（sandbox:policy 文本）。写方向只有一条：setSandboxMode 向会话日志追加一个 log-only 事件，开关即事件。",
+    "inside": "三个文件。index.ts 的 SandboxPolicyService（110 行）extends Service，static inject = ['sessionProjections']（119 行），static Config 把 mode 的 schema 默认钉在 read-only、workspaceRoot 无 schema 默认（构造器里回退 process.cwd() 且强制 isAbsolute，131 行）。构造器做两件接线：ctx.sessionProjections.register（133 行）注册 key 'sandboxMode' 的投影单元——apply 对 sandbox/mode 事件取 event.data.mode，状态 schema 是三模式的 zod union 加 null（从未覆盖时）；ctx.inject(['systemPrompt'], ...)（141 行）注册 name 'sandbox:policy' 的上下文贡献，text 回调对无会话上下文返回空串、否则 renderPolicyContext(resolve({session}))——三种模式各有一段固定措辞，workspace-write 只带会话工作区路径、刻意不列平台 temp 目录（它们在策略解析之后由后端选定，无法如实枚举），也刻意不枚举挂载了哪些能力。核心方法 resolve（164 行）实现三级优先：request.mode（升级授予的显式批准）?? overrideOf(session)（投影折出的最后 sandbox/mode）?? defaultMode；workspaceRoot 取 session.header.cwd ?? 配置回退，resolveWorkspaceRoot 只查 isAbsolute、刻意保留执行世界拼写（远端 symlink/.. 不在宿主机解析，后端在自己的文件系统上规范化）。overrideOf（178 行）读投影状态但不施加默认。session-mode.ts（56 行）定义覆盖的存储：SessionEventMap 扩展出 log-only 的 'sandbox/mode' 事件（33 行，source:'delegation' 标记委派种子覆盖）；SANDBOX_MODES（42 行）供选项广告与不可信字符串运行时校验；setSandboxMode（53 行）是唯一写路径，session.append 一个事件——切换即事件，没有任何旁路可改模式状态。invariant.ts（44 行）是可选 companion：validateEvent 拒绝携带封闭词汇之外 mode 值的伪造持久事件，加载时扫存量、运行时挂 internal/dispatch 监听增量。",
+    "boundary": "它管：部署默认模式与回退根、每会话覆盖的事件词汇与折叠、resolve 的三级优先、模型可见的策略描述文本、模式的封闭词汇校验（invariant companion）。它不管：围栏机制与 runner（ctx.sandbox 的后端配置，注释明说 runner choice 不在这里）、每个工具的操作级拒绝与升级指导（工具插件自留——为什么划走：本包只描述 policy 这一个事实，操作细节跟着工具走才能保持上下文精简）、plan 指导（dsh-plan-mode 的 system 段）、审批策略（独立贡献到同一快照）、临时区枚举（后端选定后才有真相，这里刻意概括为 some platform temporary areas）。限制也来自这个边界：每会话一个主工作区根（SandboxExecutionPolicy 无额外可写根槽位），网络与进程策略不在词汇内。",
+    "tour": [
+      {
+        "file": "packages/sandbox/sandbox-policy/src/index.ts",
+        "line": 164,
+        "note": "resolve 的三级优先一行写尽：显式批准 ?? 会话投影覆盖 ?? 部署默认；workspaceRoot 用会话不可变 cwd、回退配置根，sessionId 附带传给后端键控。"
+      },
+      {
+        "file": "packages/sandbox/sandbox-policy/src/index.ts",
+        "line": 141,
+        "note": "ctx.inject(['systemPrompt']) 内注册 sandbox:policy 上下文贡献：模型在每次请求前看到当前策略，措辞刻意不枚举能力清单。"
+      },
+      {
+        "file": "packages/sandbox/sandbox-policy/src/index.ts",
+        "line": 133,
+        "note": "sandboxMode 投影注册：状态=最后一条 sandbox/mode 事件的 mode，null 表示「从未覆盖、解析时用部署默认」——覆盖靠重放跨重启存活。"
+      },
+      {
+        "file": "packages/sandbox/sandbox-policy/src/session-mode.ts",
+        "line": 53,
+        "note": "setSandboxMode：唯一写路径，向会话日志追加一个 log-only 事件；「切换即事件、无旁路状态」是这条设计的主张。"
+      },
+      {
+        "file": "packages/sandbox/sandbox-policy/src/index.ts",
+        "line": 42,
+        "note": "renderPolicyContext：三种模式各一段固定措辞；workspace-write 带工作区路径但不列 temp——因为 temp 由后端在解析后选定。"
+      }
+    ],
+    "gotchas": "部署默认是 read-only（fail-safe）：想让代理可写必须显式配置 workspace-write，配错的 mode 在加载时即被 schema 拒绝（typo fail loud）。workspaceRoot 必须绝对路径，相对值加载失败；普通代理调用用的是会话创建时记录的不可变 cwd，配置根只喂给 agentless 调用和无 cwd 会话。临时目录刻意不可枚举（解析后才由后端选择），模型只被告知「某些平台临时区可能可写」。模式切换对会话的下一次受限调用才生效；子会话可通过 source:'delegation' 的种子事件继承父覆盖。每会话只有一个主工作区根；网络/进程策略完全不在管辖内。",
+    "analogy": "它是整栋写字楼的「门禁政策办公室」：装修时定下默认规矩（默认只读，想放开必须红头文件明说），每家公司（会话）可以递交一份换挡申请（sandbox/mode 事件）且申请存档可查（重放恢复），前台（resolve）每天根据「临时特批 > 公司申请 > 楼宇默认」三级得出今天的有效规矩；同时办公室在大堂贴告示（sandbox:policy 上下文）告诉所有访客今天的规矩是什么——告示只说规矩本身，不解释每扇门用的锁（那是各门禁系统自己的事）。"
+  },
+  {
+    "group": "code-runtime",
+    "dir": "code-runtime",
+    "short": "code-runtime",
+    "oneLiner": "代码执行接缝：ctx.codeRuntime 契约——程序对宿主 async 绑定跑一次",
+    "why": "没有这个接缝，「让模型写程序来编排工具调用」（PTC 模式）就没有落点：要么每个消费者自己 eval（宿主进程直接暴露给模型代码），要么各家自建执行底座、绑定桥接和结果协议各写各的。本包把这件事压缩成一个 Service 契约：CodeRuntime 声明 abstract run(request)——输入是程序源码加一组 CodeBindingNamespace（宿主 async 函数按命名空间暴露为程序可见的全局对象），输出是 CodeRunResult：completion value、按序 logs、以及作为字段而非 rejection 的 error。error-as-field 是关键设计：程序抛异常、超预算、被中止、底座死亡都是正常结果而非异常路径，调用方（dsh-tools 的 run_code）才能把它们稳定地转成模型可自我修正的反馈。它还垄断跨后端可移植性词汇：RESERVED_BINDING_GLOBALS、RESERVED_ERROR_MEMBERS、DUNDER_MEMBER、PORTABLE_RESERVED_WORDS（ECMAScript ∪ Python 保留字并集）在一个家集中裁定，保证「在一后端合法的命名空间列表在所有后端都合法」——不集中裁定，$tools 这样的 JS 专用拼写就会在 TS 后端通过、在 Python 后端炸掉。",
+    "position": "上游：dsh-tools（packages/core/tools）的 PTC 模式是唯一既知消费者——其 run_code 工具经 RunCodeBridgeOptions.requireRuntime() 解析 ctx.codeRuntime，把注册表里的 agent 可见工具包成 CodeBindingNamespace 绑定（典型全局名 tools），将模型写的程序体递给 run()，成功值经 encodeRuntimeResult 回填模型历史。下游：本包零运行时依赖（package.json deps 为空，仅 peer cordis），真正的执行底座是独立包——已发布的 code-runtime-worker-thread（language 'typescript'/isolation 'worker-thread'）和实验性私有 code-runtime-python（CPython 子进程）；两者以 CodeRuntime 子类身份注册为 ctx.codeRuntime。数据流单向两段：调用方向「run_code → run(request) → CodeRunResult」；绑定调用方向是程序在运行中经执行底座的消息端口反向调宿主函数（CodeBindingFunction 的 args 与返回值都必须无损 JSON），底座再把 reply 送回程序。",
+    "inside": "本包几乎是纯契约，运行时代码只有一个文件。lib/index.js（编译产物；src 未随本仓库快照分发）里：RESERVED_BINDING_GLOBALS（27 行）是所有后端都拒绝的绑定全局名——console（worker 的日志捕获槽）、__dsh_main__/__builtins__/__name__（Python 后端引导包装器与模块全局）、__debug__（CPython 编译期为常量 True，注入了也够不着）；注释解释了为什么是「共享集合」而非各后端拒自己的：这是可移植性承诺的落点。RESERVED_ERROR_MEMBERS（44 行）加 DUNDER_MEMBER 正则（56 行）框定 CodeBindingErrorClass.memberNameProperty 的禁用集。PORTABLE_RESERVED_WORDS（67 行）是 ECMAScript ∪ Python 保留字并集，作为 CodeBindingNamespace.global 与错误类名的硬闸。CodeRuntime 类（147 行）extends cordis Service，构造函数把服务名钉为 'codeRuntime'；完整抽象面在 lib/types/index.d.ts：abstract readonly language（信息性字段，dsh-tools 据此选呈现风格，已知值 'typescript' 与 'python'）、abstract readonly isolation（执行底座标识：worker-thread/process/container，供部署与诊断区分后端、明言非安全声明）、abstract run(request)（96 行）。lib/types/types.d.ts 定义请求/结果词汇：CodeRunRequest（70 行）= program + bindings + signal，注释强调 explicit-over-implicit——请求不带隐藏调优旋钮，预算与上限都是实现方经验证的配置；CodeBindingNamespace（47 行）要求 global 匹配语言可移植标识符子集，函数名允许 __proto__/constructor 之类的恶意串（实现必须用 null-prototype 构造）；CodeRunResult（110 行）的 error 字段是 CodeRunFailure（99 行）六分类：exception/timeout/abort/worker-exit/invalid-output/output-limit。lib/invariant.js 是包级 invariant companion 的注册壳。",
+    "boundary": "它管：run 的请求/结果契约与失败分类、绑定命名空间与类型化错误类的形状、跨后端可移植性的名字裁定（保留字/保留全局/dunder）、language 与 isolation 的自描述字段。它不管：任何执行底座（worker 线程、进程、容器都是兄弟包——为什么划走：底座的预算模型与隔离机制差异太大，契约层强行统一只会得到最弱公共分母）、工具语义与子调用调度（run_code 的绑定桥、dispatch log、并行上限都在 dsh-tools）、会话与工具注册表（接缝明确不认识 session；绑定函数闭包由消费者造）、模型可见的错误渲染（registry 的执行管线把 CodeRunFailedError 转成结构化 isError 结果）。",
+    "tour": [
+      {
+        "file": "packages/code-runtime/code-runtime/lib/types/index.d.ts",
+        "line": 68,
+        "note": "abstract CodeRuntime 类：language/isolation 两个信息性抽象字段加 abstract run；「错误是结果字段、rejection 仅限契约误用」的解析契约写在类 JSDoc。"
+      },
+      {
+        "file": "packages/code-runtime/code-runtime/lib/types/types.d.ts",
+        "line": 47,
+        "note": "CodeBindingNamespace：global 的可移植标识符规则与「__proto__ 必须当普通键」的 null-prototype 要求，是绑定桥安全性的契约来源。"
+      },
+      {
+        "file": "packages/code-runtime/code-runtime/lib/types/types.d.ts",
+        "line": 99,
+        "note": "CodeRunFailure 六分类：budget 过期不是异常、abort 不是 timeout、底座死亡两者都不是——正交结果独立上报是给模型自修正反馈的地基。"
+      },
+      {
+        "file": "packages/code-runtime/code-runtime/lib/index.js",
+        "line": 67,
+        "note": "PORTABLE_RESERVED_WORDS（ECMAScript ∪ Python 并集）：注释写明新增语言即扩此集且属 breaking review，可移植性是刻意的集中裁定。"
+      }
+    ],
+    "gotchas": "本仓库快照里该包没有 src 目录（git 未跟踪源码，只有 lib 编译产物与 .d.ts），行号均对 lib/ 产物核对。契约本身的要求：绑定 args 与返回值必须无损 JSON（实现须拒收有损值而非悄悄损坏运行）；程序以 async 函数体运行（顶层 await/return 合法）；error-as-field，run() 只在契约误用（disposed runtime、非法绑定名）时 reject；命名空间列表的可移植性是硬承诺——JS 专用拼写（$tools）按设计被拒。README 只有 1 行，几乎没有使用者文档，学习材料在源码注释与 docs/subsystems。",
+    "analogy": "它是「外包编程考试」的考卷封套：封套上只印规则——考生交一段程序（源码）、一张可呼叫的外部专家名单（bindings）、一个紧急停止按钮（signal）；考完收回三样东西：答卷（value）、草稿纸（logs）、以及一栏如实勾选的死因（error 字段，交白卷/超时/主动弃考/考场塌了/字迹无法扫描/超出页数各自独立）。封套还统一规定名单上不能出现的名字（保留字），这样不管考点设在哪个国家（worker 线程或 Python 后端），同一份名单都合法。至于考场怎么盖、有没有监考，封套不管——那是各考点（底座包）的施工图。"
+  },
+  {
+    "group": "code-runtime",
+    "dir": "code-runtime-worker-thread",
+    "short": "code-runtime-worker-thread",
+    "oneLiner": "codeRuntime 出厂后端：每程序一个 worker 线程，预算计量、敌对端口",
+    "why": "code-runtime 接缝只有契约没有底座——删掉本包，ctx.codeRuntime 无人注册，dsh-tools 的 PTC run_code 在装配期就抛「未挂载 runtime」的响亮配置错误，整个「模型写程序编排工具」模式不可用。本包把契约落到 Node worker_threads 上：每个程序跑在一个全新 worker 里，天然获得四样子进程方案给不齐的东西——进程内运行（绑定调用只是消息端口往返，没有跨进程 IPC 的序列化税与启动税）、与宿主共享 V8 的执行模型（node:module 的 stripTypeScriptTypes 直接把模型写的 TypeScript 剥型成可跑 JS，程序里还能真 await 宿主工具）、受 cordis 生命周期管理（ctx.effect 挂 teardown，dispose 到静默：标记废弃、把所有在途 run 判 abort、await 每个 worker 退出）、以及 worker.performance.eventLoopUtilization() 这种进程内才有的公平计量。选 worker 线程而非子进程的根本理由写进模块 doc：这是 containment（容纳）不是 security boundary——模型代码具有 bash 等价信任度，子进程的 OS 级隔离买不来什么，而 worker 的 resourceLimits 堆上限、terminate() 能打断同步死循环、空环境变量，恰好覆盖容纳所需的全部机制。",
+    "position": "上游：实现 dsh-code-runtime 的 CodeRuntime 抽象，被 composition 挂为 ctx.codeRuntime；实际消费者是 dsh-tools 的 PTC run_code 工具（经 requireRuntime 解析本服务），模型程序里的 tools.* 调用变成 worker→宿主消息再变成注册表子调度。下游：依赖 cordis、dsh-code-runtime（契约与保留词表）、dsh-util-values（snapshotJsonValue 用于宿主侧绑定返回值快照）、dsh-timeout（MAX_TIMER_DELAY_MS 校验 maxWallMs 上限）、schemastery（Config schema）；peer dsh-session 仅类型层面。数据流：run(request) → 宿主剥型程序、校验绑定 → new Worker(WORKER_PATH) 传 workerData（剥型后代码、命名空间名单、maxOutputBytes）→ worker 里 AsyncFunction 执行 → 程序 console/写流进 LogBuffer，LogBuffer 文本即刻 postMessage 回流；程序调绑定 → call 消息 → 宿主执行 CodeBindingFunction → reply 消息 → 程序 await 结算 → done 消息带值或错误 → 宿主 OutputLedger 结账产出 CodeRunResult。",
+    "inside": "编译后两个可执行件（src 未随快照分发）。宿主侧 lib/index.js：WorkerThreadCodeRuntime（648 行）的 static Config 钉四个默认——computeMs 60 秒忙时预算、maxWallMs 10 分钟墙钟、maxOutputBytes 64 MiB、maxOldGenerationSizeMb 512 MiB 堆帽。run（690 行）先 validateBindings（714 行，拒非法/保留/重复 global 与错误类名），再用 STRIP_WRAP（484 行）把程序包进 'async function __dsh_program__() {…}' 后剥型——剥型保位（删掉的语法变空白），程序行号原样保留，语法错误在 spawn 前就失败。execute（736 行）new Worker：env:{} 空环境、execArgv 空、resourceLimits 设堆帽。运行期三条监督线终结一次：eluTimer（910 行）每 25ms 采样 eventLoopUtilization().active 超预算判 timeout（计量忙时而非墙时——await 慢工具不累积、热循环无论如何累积，既公平又不可博弈）；wallTimer（916 行）兜底没人 resolve 的 await；signal 的 onAbort。finish 走 setImmediate 让事件轮转后 terminate 并等 stdout/stderr drain。宿主把 worker 当敌对对端：parseWorkerMessage（532 行）逐字段重建每条入站消息（ forged 字段不随行、非数字 call id 不回显），junk 静默丢弃——message 监听器里抛异常会崩宿主。worker-json 段的 encodeWorkerJson/decodeWorkerJson（286/373 行）把 JSON 值压平成 token 流过端口（迭代遍历，无栈深限制），decode 侧只收精确形状。OutputLedger（573 行）对「logs+完成值+失败信息」的序列化字节总账，超限产 output-limit 失败并保留可容纳的前缀。worker 侧 lib/worker.cjs：runWorkerMain（854 行）装配 LogBuffer（586 行，JSON 字节记账的文本捕获，超限发 fitting prefix 加一次性 onLimit）、makeConsoleShim（647 行，只有 log/info/warn/error/debug 五个方法、util.inspect 渲染、depth 4/maxArrayLength 100 封顶）、captureStreamWrites（667 行，process.stdout/stderr 的 write 重定向进日志）、makeNamespaces（806 行，null-prototype 命名空间对象，每函数先 snapshotCodeJsonValue 验参再 postMessage）；第 887 行 new AsyncFunction(...globals, ...errorClassParams, 'console', code) 把程序体编译成真 async 函数，namespace 对象、错误类实例与 console shim 作实参注入——错误类由 makeBindingErrorClass（748 行）物化，name 与 memberNameProperty 用 defineProperty 钉死防篡改。worker.cjs 末尾是唯一 glue：校验 parentPort 存在即跑。",
+    "boundary": "它管：worker 生命周期（每次 run 新建、terminate、drain、dispose 到静默）、四种预算的计量与兑现、端口协议的敌对校验、输出总账与截断、绑定调用的宿主侧分发与一次性应答。它不管：worker 的安全边界承诺（明言 containment 而非隔离——模型代码与 bash 同信任级；要 OS 级隔离该换 isolation 'container' 的后端）、run_code 的工具语义与子调度（dsh-tools 的 ptc.ts）、绑定的内容（哪些工具暴露、参数 schema 全由消费者闭包决定）、会话与审批（不 import）、文件系统围栏（不触 ctx.sandbox——worker 里没有文件效应出口，若程序要跑 bash 那是经绑定的工具子调用走 shell 家族，围栏在那条链上生效）。与 sandbox 家族的真实关系因此是：零代码依赖、零运行时交互，两条独立的容纳路线在「不信任模型输出」这一点上会合——sandbox 围子进程的文件效应，本包围进程内程序的 CPU/堆/输出。",
+    "tour": [
+      {
+        "file": "packages/code-runtime/code-runtime-worker-thread/lib/index.js",
+        "line": 648,
+        "note": "WorkerThreadCodeRuntime 类体：static Config 四个执行上限、language='typescript'、isolation='worker-thread'；模块 doc 直言 containment 而非 security boundary。"
+      },
+      {
+        "file": "packages/code-runtime/code-runtime-worker-thread/lib/index.js",
+        "line": 737,
+        "note": "new Worker(WORKER_PATH, {...})：env:{} 空环境、resourceLimits 堆帽、workerData 只带代码与命名空间名单——函数本体留在宿主侧，是绑定桥的第一原则。"
+      },
+      {
+        "file": "packages/code-runtime/code-runtime-worker-thread/lib/index.js",
+        "line": 910,
+        "note": "eluTimer：每 25ms 采样 eventLoopUtilization().active 对 computeMs 判 timeout；「计量忙时而非墙时」让 await 慢工具不挨罚、热循环无处可逃。"
+      },
+      {
+        "file": "packages/code-runtime/code-runtime-worker-thread/lib/index.js",
+        "line": 532,
+        "note": "parseWorkerMessage：对每条入站消息逐字段重建——对端跑的是模型代码，类型标注不算数；junk 丢弃而非抛出，防宿主 message 监听器崩进程。"
+      },
+      {
+        "file": "packages/code-runtime/code-runtime-worker-thread/lib/worker.cjs",
+        "line": 887,
+        "note": "new AsyncFunction(...globals, 'console', code) 执行程序体：绑定对象与 console shim 作参数注入，顶层 await/return 就此合法——接缝语义的最终落点。"
+      }
+    ],
+    "gotchas": "容纳不是安全边界：模型代码有 bash 等价信任度，别把敏感能力绑进去。日志与完成值共用 maxOutputBytes 总账——日志吃太多会让 return 值进不来（报 output-limit 而非悄悄截值）；控制台渲染有 depth 4/maxArrayLength 100/maxStringLength 10000 上限。worker 里 stdout/stderr 被重定向进日志（原生管道写宿主可见但 worker 不自知）；绑定调用的 in-flight 结算是调用方责任，runtime 只保证不再询问。abort/timeout/底座死亡时已捕获日志仍然回流（LogBuffer 逐条急切 postMessage）。maxWallMs 不得超过 Node setTimeout 上限（约 24.9 天，实际远小于此）；computeMs 计量有 25ms 粒度，run 可超时一个间隔。本仓库快照无 src，全部行号对 lib/ 编译产物核对，依据等级低于有源码的包。",
+    "analogy": "它像一间带秒表和监控的隔音考试间：每次考试新刷一间房（fresh worker），屋里没有电话本（空 env），墙上有 CPU 用量电表（eventLoopUtilization）和总电闸（heap cap），考到忙时额度或墙钟额度就断电（terminate，连死循环也能掐）；考生只能通过传票口（message port）呼叫外部专家（绑定函数），传票口对收到的每张纸条都当伪造处理（逐字段重建校验）；草稿纸（console 输出）逐张递出来存档，就算考试中途断电，已递出的草稿不丢。考务处（宿主）还能随考生弃考（teardown 判 abort 并等每间房清空）——这是隔院子（子进程）方案做不到的近距离管理。"
+  }
+]

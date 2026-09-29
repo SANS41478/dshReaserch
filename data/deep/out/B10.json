@@ -1,0 +1,448 @@
+[
+  {
+    "group": "shell",
+    "dir": "shell",
+    "short": "shell",
+    "oneLiner": "定义 ctx.shell 执行器接缝：请求/规格解析、一次执行的多个投影、共享退出标记契约",
+    "why": "没有这个包，系统里就没有 ctx.shell 这个服务名：tool-bash 与 tool-pwsh 的 inject 列表里写着 shell，服务不存在它们就永远停在 pending，模型一条命令都发不出去。即便有人绕过它，四个执行器实现会各自发明一套结果形状——退出码字段名、超时怎么表示、stdout 截断后去哪找全文，全都对不上；tool-bash 和 tool-pwsh 会各自实现一遍 [exit code: N] 标记，格式很快漂移，Web 端的终端卡片再也没法用一个 parseExitStatus 把退出状态拆成 pill。更隐蔽的后果是 request/spec 分离消失：默认值和上限会散落到每个执行器内部，上层无法预测自己传的 timeoutMs 到底会不会被 cap，也无法在真正 spawn 之前拿到一份可审计的、字段齐全的规格。",
+    "position": "上游是 Consumer 角色：tool-bash、tool-pwsh 在 inject 里声明 shell，通过 ctx.shell.resolve()/execute() 调它；进程内插件（比如 hooks bridges）也走同一条路，只是会额外传 stdin 和 env。下游它不注入任何服务——它只依赖类型：@deepseek-ai/dsh-subprocess 的 CollectedOutput / DshEnvironment / SubprocessOutputReader，以及 @deepseek-ai/dsh-sandbox 的 SandboxMode / SandboxEnforcement。数据流是单向的三段：调用方给 ShellExecRequest → 执行器 resolve() 补默认值并 clamp 成 ShellExecSpec → execute(spec) 返回 ShellExecution 句柄；前台调用方 await 句柄的 result() 拿 ShellRunResult，后台调用方则反复 readOutput() 或读 observed 的偏移 reader，并用 kill() 与 done 收尾。服务的注册方向正好相反：每个 provider（bash-local、pwsh-sandbox 等）在自己的构造函数里 super(ctx, 'shell') 抢占这个 key，所以「一个 composition 只能挂一个执行器」不是这条接缝自己写的规则，而是 Cordis 重复服务注册会直接抛异常的副产品。",
+    "inside": "三个源文件、334 行，核心只有一个类。src/index.ts 里 abstract class ShellExecutor extends Service，构造函数 super(ctx, 'shell')，对外只暴露三样东西：sandboxMode getter（基类返回 undefined，sandbox 实现覆写它，tool 层靠它是否为 undefined 决定要不要在 schema 里挂 sandbox_permissions 字段）、abstract resolve(request: ShellExecRequest): ShellExecSpec、abstract execute(spec: ShellExecSpec): Promise<ShellExecution>。类注释用很长一段规定了实现必须遵守的语义：result() 只对基础设施失败 reject，非零退出/超时 kill/abort kill 都是正常结果；句柄在 preparation 之后才发布，done 永不 reject；readOutput 是消费式的，丢失的字节要靠 spill 文件路径交代。src/types.ts 承载全部词汇：ShellExecRequest 的字段全是可选的（command 除外），ShellExecSpec 把 workdir / timeoutMs / onExpiry / stdoutMaxBytes / sandboxPolicy 变成必填——这就是「包边界显式解析」的模板；ShellExpiryPolicy 只有 'kill' 和 'none' 两个成员；ShellRunResult 带 exitCode、signal、互斥的 timedOut/aborted（first-cause 分类，注释指向 timeout 库的 Agent Note）、timeoutMs、两条 CollectedOutput 和可选的 sandbox 事实；ShellProcess 是后台句柄（status / exitCode / signal / done / readOutput / kill / observed），ShellExecution 继承它并多加一个 result() 投影——「一次执行、多种投影」，前台后台不是两条 spawn 路径。src/render.ts 只有一个 parseExitStatus(text)：先用 /\\n\\[killed by signal: …\\]$/ 再试 /\\n\\[exit code: (\\d+)\\]$/，把渲染好的结果拆回 body 加结构化退出状态，被拆掉的标记不再留在 body 里，因为终端卡片把它做成独立的退出 pill。index.ts 顶部还把 DSH_ENV_PREFIX 和子进程 seam 的 CollectedOutput / DshEnvironment 再导出，让 shell 消费方只有一个 import root。",
+    "boundary": "明确归它管：请求/规格/结果/句柄的类型词汇；「一次执行、多个投影」的语义；result() 只在基础设施失败时 reject 的约定；退出标记的文本格式与 parseExitStatus。明确不归它管：任何真实 spawn 和进程托管（归各 provider 与 ctx.subprocess，注释写明进程属于 subprocess 服务，所以执行器单独热重载时后台进程还活着）；job id、归属、轮询、完成通知（明确推给 ctx.jobs，所以 ShellProcess 上既没有 id 也没有 owner）；沙箱 runner 的选择与策略（归 ctx.sandbox 与 ctx.sandboxPolicy，这里只留 SandboxMode 类型和 ShellSandboxInfo 事实壳子）；模型可见的渲染文案（归 tool-bash / tool-pwsh）；DSH_* 的取值（归 shell-env，这里只规定 dshEnv 在合并顺序里排最后）。划线依据是「会不会引入具体平台或后端」：一旦答案涉及 bash、pwsh、bwrap 或某个 runner，就不属于这条接缝。",
+    "tour": [
+      {
+        "file": "packages/shell/shell/src/index.ts",
+        "line": 64,
+        "sym": "abstract class ShellExecutor extends Service",
+        "note": "整条 shell 家族的根节点：构造函数 super(ctx,'shell') 抢占 ctx key，这就是「一个 composition 一个执行器」的机制来源。"
+      },
+      {
+        "file": "packages/shell/shell/src/index.ts",
+        "line": 84,
+        "sym": "ShellExecutor.resolve",
+        "note": "抽象解析方法：默认值与 cap 只允许在这一步施加，execute 绝不二次默认化，所以上层拿到的规格永远是可审计的。"
+      },
+      {
+        "file": "packages/shell/shell/src/types.ts",
+        "line": 226,
+        "sym": "interface ShellExecution extends ShellProcess",
+        "note": "一次执行 + result() 前台投影：前台后台是同一个进程的两种看法，不是两条 spawn 路径。"
+      },
+      {
+        "file": "packages/shell/shell/src/render.ts",
+        "line": 37,
+        "sym": "parseExitStatus",
+        "note": "bash 与 pwsh 工具共享的退出标记契约，终端卡片的退出 pill 靠它从结果正文里反解出来。"
+      },
+      {
+        "file": "packages/shell/shell/src/types.ts",
+        "line": 53,
+        "sym": "type ShellExpiryPolicy",
+        "note": "只有 kill 与 none 两个成员：这条接缝刻意不提供「交接协议」，超时后要不要继续跑由上层和 ctx.jobs 决定。"
+      }
+    ],
+    "gotchas": "没有交互式输入的词汇：stdin 只在 spawn 时写一次然后关闭，也没有 PTY 会话概念。前台超时永远由执行器持有，调用方自有 deadline 模式被 timeout-policy 的 Agent Note 明确 defer。README 提到的 SHELL_SETTINGS_NAMESPACE 在当前 src 里已经不存在了（只有构建产物 lib/types/index.d.ts 里还有痕迹），设置命名空间实际由各 provider 自己的 static Config 声明。挂两个 provider 会在加载期因重复服务注册直接失败，而不是后者覆盖前者。types.ts 顶部说明托管环境与采集输出的词汇本来属于 subprocess seam，这里只是再导出，改字段要去那边改。",
+    "analogy": "它就像墙上的电源插座标准：只规定插孔形状、电压和安全要求，不生产任何电器。空调、台灯、电饭煲（bash-local、pwsh-local、bash-sandbox）各自按这个标准做插头，墙上一次只会装一种插座面板；而站在最前面的用户（tool-bash、tool-pwsh）只管把插头插上去用电，换成另一个厂家的电器时他连说明书都不用重看。"
+  },
+  {
+    "group": "shell",
+    "dir": "shell-env",
+    "short": "shell-env",
+    "oneLiner": "DSH_* 托管环境注册表：每次 shell 调用现算一份受信任的变量快照，键归属冲突当场报错",
+    "why": "不放它，tool-bash 与 tool-pwsh 的 inject 里那个 shellEnv 就永不满足，两个模型工具直接不激活。就算有人把这一项从 inject 里删掉，命令也只能继承 harness 进程自己的 DSH_* 值：嵌套启动的 harness、并发的父子 agent 会互相串身份，一个 agent 拿到的 DSH_SESSION_ID 可能是另一个的。同时模型失去 DSH_HOME，没有任何可靠方式定位 harness 家目录。更重要的是，别的插件想给命令注入自己的事实（比如部署区域）时，只剩两条脏路：改 process.env（全局污染、热重载后残留）或者在每次调用里硬塞（谁覆盖谁完全不可控）。",
+    "position": "上游是 tool-bash 与 tool-pwsh，它们在 execute 里调 ctx.shellEnv.collect(exec)，把冻结快照塞进 ShellExecRequest.dshEnv；其他插件通过 ctx.shellEnv.register() 贡献自己的事实。下游：@deepseek-ai/dsh-home-paths 提供 DSH_HOME_ENV 常量和 resolveDshHome()；@deepseek-ai/dsh-app-boot 只为类型声明（import type {} 把 Context.profileContext 带进来）；@deepseek-ai/dsh-tools 提供 ToolExecution 类型；@deepseek-ai/dsh-shell 提供 DSH_ENV_PREFIX 与 DshEnvironment / DshEnvironmentKey 类型。数据方向是单向的：注册表 → collect() 冻结快照 → 请求里的 dshEnv → 执行器的 spawnSpec 把它合并到最后一层（env: { ...ENV_OVERRIDES, ...spec.env, ...spec.dshEnv }）→ 子进程环境。它自己既不吃子进程，也不产生任何模型可见的文本。",
+    "inside": "单文件、212 行、一个类。class ShellEnvRegistry extends Service，构造函数 super(ctx, 'shellEnv') 并立刻 resolveDshHome(config.dshHome) 定下 DSH_HOME。内部两个 Map：contributors（贡献者名 → BashEnvContributor）和 keyOwners（DSH_* 键 → 拥有者名），后者是冲突检测的唯一依据。register() 把整个注册包进 ctx.effect（命名 'bashEnv.register()'），做四道校验后返回值是一个 disposer：名字 trim 后非空；每个键必须同时满足以 DSH_ENV_PREFIX 开头且后缀匹配 /^[A-Z][A-Z0-9_]*$/；不能落在 RESERVED_BASH_ENV_KEYS 里（DSH_HOME、DSH_SHELL、DSH_SESSION_ID、DSH_PROFILE、DSH_PROFILE_DIR 五个内建被注册表独占）；不能已经被别的贡献者占有。任何一条不满足都直接 throw，所以冲突在第一条命令之前就暴露，而且注册随调用方 fiber 一起 dispose——热重载一个插件，它的事实就消失了。collect(execution) 先铺内建：DSH_HOME 与 DSH_SHELL='1'；execution.agent 存在时补 DSH_SESSION_ID = agent.session.header.id；ctx.get('profileContext') 有值时再补 DSH_PROFILE 与 DSH_PROFILE_DIR；然后按贡献者名排序依次执行 resolve(execution)，返回值里出现未声明的键或非 string 就 throw；最后 Object.freeze 加键排序产出不可变快照。list() 只 flatMap 出贡献者的声明（contributor / description / key）并按键排序，完全不跑 resolver，所以无法反映依赖当次执行的值——源码里留着 TODO(bash-env-list-builtins) 承认内建五个键不在其中。apply() 就一行 new ShellEnvRegistry(ctx, config)。",
+    "boundary": "归它管：DSH_* 命名空间的归属登记与冲突检测、每次调用的值计算、冻结快照的产出、贡献者注册的生命周期（随插件 fiber）。不归它管：环境变量真正合并进子进程与 credential 清洗（归 ctx.subprocess）；非 DSH_ 前缀的普通环境变量（由工具或插件直接放到 spec.env 里）；模型可见的文案与 schema（归 tool-bash / tool-pwsh，README 明说这个注册表不改动模型看到的其他东西）；DSH_HOME 的路径解析算法本身（归 home-paths，它只调用 resolveDshHome）；shell 进程的存活与销毁。划线依据是「只声明谁有权给哪个 DSH_ 键赋值，绝不碰进程环境本身」——一旦要真正写进环境，就交出去。",
+    "tour": [
+      {
+        "file": "packages/shell/shell-env/src/index.ts",
+        "line": 93,
+        "sym": "class ShellEnvRegistry extends Service",
+        "note": "服务名 shellEnv 就注册在构造函数里；两个 Map（contributors / keyOwners）是所有冲突检测的唯一依据。"
+      },
+      {
+        "file": "packages/shell/shell-env/src/index.ts",
+        "line": 114,
+        "sym": "ShellEnvRegistry.register",
+        "note": "校验 + ctx.effect 派发：四道检查全部 throw，注册随调用方 fiber 一起 dispose，热重载自动收回事实。"
+      },
+      {
+        "file": "packages/shell/shell-env/src/index.ts",
+        "line": 156,
+        "sym": "ShellEnvRegistry.collect",
+        "note": "内建 → session id → profile → 贡献者（按名排序），最后 Object.freeze；每次调用现算，所以陈旧身份无法泄漏。"
+      },
+      {
+        "file": "packages/shell/shell-env/src/index.ts",
+        "line": 76,
+        "sym": "RESERVED_BASH_ENV_KEYS",
+        "note": "五个内建键被注册表独占，插件抢注会在加载期大声失败，而不是静默覆盖别人的值。"
+      },
+      {
+        "file": "packages/shell/shell-env/src/index.ts",
+        "line": 164,
+        "sym": "ctx.get('profileContext')",
+        "note": "profile 事实来自 launcher 提供的 profileContext，用 ctx.get 而不是 inject，所以没有 profile 启动的组合只是少两个键。"
+      }
+    ],
+    "gotchas": "list() 只枚举插件贡献的变量，五个内建（DSH_HOME、DSH_SHELL、DSH_SESSION_ID、DSH_PROFILE、DSH_PROFILE_DIR）不在其中，诊断、提示词或 UI 代码不能把它当成完整的环境目录——源码里挂着 TODO(bash-env-list-builtins)。collect() 每次调用都会跑一遍所有 resolver，所以 resolver 必须便宜且无副作用。键必须全大写加下划线，缺 description 会注册失败；返回未声明的键或非字符串值会让整次 shell 调用失败而不是跳过。没有 launcher profile 的组合里 DSH_PROFILE 与 DSH_PROFILE_DIR 直接缺失，命令要自己容错。",
+    "analogy": "它像公司前台的访客证打印机：不负责放行，只负责每次有人进门时现场打印一张证，上面写着今天的有效区域、接待人编号和所属部门。证件只在当次访问有效，出门即作废，所以上周的证件不会被今天的人捡到。各部门（插件）可以提前登记「我要在证上加一行区域代码」，但必须事先声明加哪一行——两个部门抢同一行，打印机当场卡纸报错，而不是后印的盖掉先印的。"
+  },
+  {
+    "group": "shell",
+    "dir": "bash-local",
+    "short": "bash-local",
+    "oneLiner": "POSIX 默认执行器：每条命令一个全新 bash -c 进程，施加预算、熔合 deadline 并做首因分类",
+    "why": "POSIX 组合里不加载它，ctx.shell 就没有 provider：tool-bash 的 inject 永不满足，agent 一条命令都跑不了；而如果只挂 bash-sandbox，在没有可用 runner 的平台上会 fail-closed 直接报错，所以它是唯一「一定跑得起来」的兜底实现。它还独占了几件没人替它做的事：bash argv 的形状（['bash','-c',command]）、模型友好的终端环境覆盖（NO_COLOR / TERM=dumb / PAGER=cat / GIT_PAGER=cat）、timeoutMs 的 clamp 与 cap、以及 stdin / 普通 env / DSH_* 三层合并的固定顺序。没有它，bash-sandbox 连可继承的进程力学都没有——它是直接 extends LocalBashExecutor 的。",
+    "position": "上游是任何 inject 'shell' 的消费方：tool-bash、进程内插件（hooks bridges 会传 stdin 和 env）；还有一个特殊上游 bash-sandbox，它把本包当成基类来继承。下游只有两个：ctx.subprocess（static inject = ['subprocess']，唯一的运行时依赖）与 @deepseek-ai/dsh-timeout 的 clampTimeout / deadline / timeoutOf / MAX_TIMER_DELAY_MS。数据方向：请求进来 → resolve() 填预算并 clamp → executeArgv() 用 deadline() 熔出一个 AbortSignal → ctx.subprocess.spawn(spawnSpec) 拿到 SubprocessHandle → 从 handle.collected 取出 stdout/stderr 两个 SubprocessOutputReader → 组装 ShellExecution 句柄返回给上层；上层什么时候 await result()、什么时候反复 readOutput()，本包一律不关心。进程本身不属于它而属于 subprocess 服务，所以执行器单独重载时后台进程照活，组合拆掉时才被 kill 并 join。",
+    "inside": "单文件、405 行、一个导出类 LocalBashExecutor extends ShellExecutor。Config 是六个 Volatile 字段：cwd、timeoutMs（默认 120000）、maxTimeoutMs（600000）、maxOutputBytes（64000）、maxSpillBytes（64 MiB）、graceMs（3000）——全是 volatile，所以运行时改配置不需要重载插件。assertServiceableBashConfig() 在每次 resolve 前兜底：schema 表达不了「正数有限」和「graceMs 必须能被一个 Node timer 表示（≤ MAX_TIMER_DELAY_MS）」，所以这些约束落在代码里，坏值在下一条命令上炸。resolve() 用 clampTimeout 把 per-call timeoutMs 夹进配置的上下界，workdir 回落到 config.cwd 或 process.cwd()，onExpiry 默认 'kill'，stdin / env / dshEnv 原样透传，sandboxPolicy 也透传（本执行器不解释它，注释说明 sandboxing 子类会覆写这一步来盖章）。execute() 只是 executeArgv(spec, ['bash','-c',spec.command]) 的一层薄封装。真正的核心是 protected executeArgv：按 onExpiry 分两支——'kill' 支用 deadline(spec.signal, spec.timeoutMs, 'BASH_TIMEOUT') 把超时与上游取消熔成同一个信号，并给出 classify()（timeoutOf 命中才计 timedOut，否则 signal.aborted 计 aborted，两者互斥的首因分类）；'none' 支完全不装 deadline。随后同步 spawn，同步 throw 也被收进同一个 settled-killed 形状，保证 execute() 自身不因 spawn 问题抛出；spawn 被拒时 providerFailure 的 note（'subprocess failed before reporting an outcome: …'）既作为 observed.stderr 的整条流，又只被消费型 readOutput 折叠进一次 delta。最后组装 proc 对象：done（永不 reject，provider  rejection 一律结算成 killed）、readOutput（消费式偏移游标，stderr 收在 [stderr] 段后面）、kill()（已结束返回 false）、result()（memoized，providerFailure 存在时以原错误 reject）。onProcessDone 是故意留空的 protected 钩子，供子类在结算前挂载事实。ENV_OVERRIDES 常量就是那四个让 pager 和颜色不再污染输出的变量。",
+    "boundary": "归它管：bash 形状的一切——argv 是 ['bash','-c',command]、非登录 shell 不读 rc 文件所以状态绝不残留、终端环境覆盖、预算默认值与 cap、deadline 熔合与首因分类、后台读的 [stderr] 合并、以及 [stderr] 段与 stdout 之间的单换行拼接。不归它管：进程的真实托管（spill 文件、credential scrub、SIGTERM→SIGKILL 升级、静默期、dispose 时 kill 并 join，全在 ctx.subprocess）；执行策略与审批（文件头注释指明属于 tools/pre-execute 或 sandboxing executor）；job id / 归属 / 轮询 / 完成通知（ctx.jobs）；持久会话与 PTY（源码里留着 XXX(stateful-shell) 注释，明确 defer，对应包是 tool-bash-persistent）；沙箱（bash-sandbox 通过覆写 resolve 与 executeArgv 的 prepare 回调介入）。划线依据是「一次 spawn 的力学归 subprocess，一次 bash 调用的语义归它」。",
+    "tour": [
+      {
+        "file": "packages/shell/bash-local/src/index.ts",
+        "line": 97,
+        "sym": "class LocalBashExecutor extends ShellExecutor",
+        "note": "全家族的进程力学基类：bash-sandbox 直接继承它，只替换 argv 的准备环节，其余生命周期一律复用。"
+      },
+      {
+        "file": "packages/shell/bash-local/src/index.ts",
+        "line": 120,
+        "sym": "LocalBashExecutor.resolve",
+        "note": "clampTimeout 夹住 per-call 超时、workdir 回落到配置或 process.cwd()、onExpiry 默认 kill——显式解析全在这一步。"
+      },
+      {
+        "file": "packages/shell/bash-local/src/index.ts",
+        "line": 216,
+        "sym": "deadline(spec.signal, spec.timeoutMs, 'BASH_TIMEOUT')",
+        "note": "超时与上游取消被熔成一个信号：这就是 timedOut 与 aborted 互斥（首因分类）能成立的原因。"
+      },
+      {
+        "file": "packages/shell/bash-local/src/index.ts",
+        "line": 172,
+        "sym": "env: { ...ENV_OVERRIDES, ...spec.env, ...spec.dshEnv }",
+        "note": "三层合并顺序固定：终端覆盖在最下，普通 env 居中，受信任的 DSH_* 快照最后，因此调用方无法顶掉托管事实。"
+      },
+      {
+        "file": "packages/shell/bash-local/src/index.ts",
+        "line": 401,
+        "sym": "LocalBashExecutor.onProcessDone",
+        "note": "故意留空的 protected 结算钩子，是 bash-sandbox 挂载 mode/denied/enforcement 事实的唯一接入点。"
+      }
+    ],
+    "gotchas": "本身完全不隔离，命令以 harness 进程的权限运行，需要隔离请挂 bash-sandbox。每条命令都是全新的非登录 bash -c，cwd、变量、函数一律不保留（源码里 XXX(stateful-shell) 说明持久会话仍在 defer）。POSIX-only，bash 二进制硬编码，Windows 不支持。后台 provider 失败的 note 就是整个 stderr 流，而且只会被消费型 readOutput 折叠进一次 delta——丢掉这次 delta 就只能靠 observed.stderr 找回来。Config 是 volatile，改成非法值不会在写入时被拦，而是在下一条命令的 assertServiceableBashConfig 上炸。prepare 回调（子类做沙箱包裹的地方）受同一个 deadline 约束，prepare 超时会得到一个空输出、timedOut 为真的已结算句柄。",
+    "analogy": "它像一家只送单次快递的配送站：每来一单就临时雇一个快递员，从零开始、不带任何上次的记忆，送完立即解散。配送站负责给每个快递员配统一的装备（关掉颜色和分页器）、规定最长配送时间并掐表（超时就召回），但包裹怎么装卸、卡车怎么保养、司机怎么交接（进程托管）是另一家公司的事。站点还留了一个对讲机接口（onProcessDone），将来要加装安检设备的分店（bash-sandbox）可以直接接上去，不用重修房子。"
+  },
+  {
+    "group": "shell",
+    "dir": "pwsh-local",
+    "short": "pwsh-local",
+    "oneLiner": "Windows 默认执行器：每条命令一个全新 pwsh -Command 进程，负责探测 pwsh 并钉死 UTF-8 输出",
+    "why": "Windows 组合里没有它，ctx.shell 就没有 provider，tool-pwsh 永不激活，agent 在 Windows 上一条命令都执行不了；拿 bash-local 顶替则更糟，大多数 Windows 机器上根本没有 bash 二进制。它独占三件别人替不了的事：pwsh 可执行文件的探测顺序（PowerShell 7 安装、PATH 条目、Windows PowerShell 5.1 兜底）、UTF-8 输出钉死的前导语句（Windows PowerShell 5.1 默认按 OEM 代码页输出，而采集器按 UTF-8 解码，不钉就是乱码）、以及「整条命令作为单个 argv 元素交给 -Command，因此中间不存在 shell 引号层」这个契约——正因为没有引号层，模型写原生 C:\\... 路径才可以直接用。",
+    "position": "上游与 bash-local 对称：tool-pwsh、任何 inject 'shell' 的进程内消费方，外加一个特殊上游 pwsh-sandbox（它 extends PwshLocalExecutor）。下游同样是 ctx.subprocess、@deepseek-ai/dsh-timeout，再加一个包内模块 resolve.ts——它被刻意做成零依赖，好让仓库的覆盖率探针 vitest.config.ts 与执行器、测试共用同一份解析定义（文件头注释解释了原因：探针若解析得和被测代码不一样，就可能豁免一个其实跑着测试的文件）。数据方向与 bash-local 完全一致，唯一差别是 argv 由 protected argv(spec) 产生：[pwshPath, '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', ENCODING_PREAMBLE + command]。",
+    "inside": "两个文件。src/index.ts（450 行）里 class PwshLocalExecutor extends ShellExecutor，成员与 bash-local 逐一对应——executeArgv 的 deadline 熔合、同步 spawn throw 的收纳、providerFailure note 的双通道、消费型 readOutput 都是 call-for-call 镜像，源码用 jscpd:ignore-start 明确标注这是刻意的重复而非坏味道。差异只有三处：一是 Config 多一个 pwshPath（显式可执行文件路径）；二是 pwshPath getter 带缓存，只有 declaredPwshPath 变化时才重新跑 resolvePwshPath，所以热改配置下一次读就生效，构造函数里也预解析一次避免首调用抖动；三是 protected argv(spec) 是一个明确的 argv 级接缝，注释点名 pwsh-sandbox 会从这里介入。ENV_OVERRIDES 少了 TERM=dumb（POSIX 概念，对 pwsh 无意义），保留 NO_COLOR / PAGER / GIT_PAGER。ENCODING_PREAMBLE 是两句赋值（[Console]::OutputEncoding 与 $OutputEncoding 都钉成 UTF8Encoding），用 '; ' 拼在第一行的原因写在注释里：PowerShell 的错误行号必须保持准确，而 pwsh 7 本来就是 UTF-8，这段前导只为 5.1 兜底。src/resolve.ts 只有两个导出：candidatePwshPaths(env) 返回 [%ProgramFiles%\\PowerShell\\7\\pwsh.exe、各 PATH 条目下的 pwsh.exe（trim 掉 setx 留下的引号）、%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe]；resolvePwshPath 在 win32 上用 lstatSync 逐个探测（不用 stat，否则 Microsoft Store 的应用执行别名会撞 EACCES；lstat 看的是别名本身，Node 在不同版本把它报成 symlink 或普通文件，CreateProcess 都能解析），非 win32 直接返回裸 'pwsh' 交给 PATH。",
+    "boundary": "归它管：pwsh 的一切——可执行文件探测与缓存、argv 形状（-NoLogo -NoProfile -NonInteractive -Command）、UTF-8 前导、不含 TERM=dumb 的终端覆盖、以及与 bash-local 完全同构的预算与 deadline 语义。不归它管：进程托管（ctx.subprocess）、策略与审批（tools/pre-execute 或 sandbox 执行器）、持久会话与 PTY（tool-pwsh-persistent）、沙箱（pwsh-sandbox 通过调用它暴露的 argv() 接缝介入）。划线依据与 bash-local 完全一致，只是方言换成 PowerShell；两边刻意不做任何「方言翻译」——chain 里靠 profile 层选一个，而不是运行时互译。",
+    "tour": [
+      {
+        "file": "packages/shell/pwsh-local/src/index.ts",
+        "line": 123,
+        "sym": "class PwshLocalExecutor extends ShellExecutor",
+        "note": "bash-local 的 call-for-call 镜像，源码用 jscpd:ignore 标注这是刻意的对称，便于两个方言的行为不会悄悄分叉。"
+      },
+      {
+        "file": "packages/shell/pwsh-local/src/index.ts",
+        "line": 193,
+        "sym": "protected argv(spec)",
+        "note": "明确的 argv 级接缝：pwsh-sandbox 的 confine() 直接复用它，所以 confine 包住的一定是真实要执行的那个 argv。"
+      },
+      {
+        "file": "packages/shell/pwsh-local/src/index.ts",
+        "line": 48,
+        "sym": "ENCODING_PREAMBLE",
+        "note": "为 Windows PowerShell 5.1 钉死 UTF-8 输出；用 ; 拼在第一行是为了不扰乱 PowerShell 的错误行号。"
+      },
+      {
+        "file": "packages/shell/pwsh-local/src/index.ts",
+        "line": 143,
+        "sym": "get pwshPath()",
+        "note": "声明值变了才重新探测可执行文件，热改 pwshPath 配置下一次读就生效，不必重载插件。"
+      },
+      {
+        "file": "packages/shell/pwsh-local/src/resolve.ts",
+        "line": 67,
+        "sym": "resolvePwshPath",
+        "note": "零依赖模块，仓库覆盖率探针与执行器共用同一份解析定义；用 lstatSync 而非 statSync，避免 Store 别名触发 EACCES。"
+      }
+    ],
+    "gotchas": "整条命令作为单个 argv 元素交给 -Command，所以原生 C:\\... 路径可以直接写、不需要转义；反过来也不存在 bash 那样的引号层可借用。UTF-8 前导对 pwsh 7 是冗余的（它本来就 UTF-8），只为 5.1 兜底，并且会占掉命令的第一行。PATH 条目可能带 setx 留下的包裹引号，探测前会 trim。没有显式 pwshPath 且在非 win32 上运行时只返回裸 'pwsh'，装不上就直接 spawn 失败。PowerShell 5.1 是最后兜底项，它缺失某些 pwsh 7 的行为，README 的沙箱限制（ConstrainedLanguage、命名管道）主要就是它的故事。",
+    "analogy": "它是 bash-local 在 Windows 上的孪生兄弟：同一套配送流程、同一套掐表规则，只是换了一种语言和一套制服。区别在于，它每次出车前会先花时间确认司机在哪（PowerShell 7、商店安装版、还是老旧的 5.1），并且在出发前给司机塞一张「全程说普通话、不许说方言」的纸条（UTF-8 前导），免得把收货单写成乱码。它和 bash 兄弟之间刻意不配翻译机——客户说哪种语言，就派哪个兄弟去。"
+  },
+  {
+    "group": "shell",
+    "dir": "bash-sandbox",
+    "short": "bash-sandbox",
+    "oneLiner": "沙箱版 bash 执行器：每条命令先经 ctx.sandbox 包裹，再把拒绝/执行度/运行器失败作为事实时报",
+    "why": "不加载它，需要文件隔离的部署只能退回 bash-local，命令以 harness 进程的全部权限运行，模型一句误判的删除就能毁掉工作区之外的东西。同时 result.sandbox 字段整体消失：tool-bash 不会在 schema 里挂 sandbox_permissions 与 justification，模型遇到拒绝后没有「申请一次更宽权限」的通道，只能自己换个写法重试——而 README 明确要求被拒绝后不要绕路。更深一层，fail-closed 语义也没人实现：没有可用 runner 时，一个受限策略会悄悄退化成不隔离执行，这正是本包用 SandboxUnavailableError 堵死的口子。",
+    "position": "上游是任何 inject 'shell' 的消费方，主要是 tool-bash（它读 ctx.shell.sandboxMode 决定是否展示升级字段，并把 per-call 策略塞进请求）。它自己 extends LocalBashExecutor，所以 bash-local 同时也是它的下层。横向依赖两个服务：ctx.sandbox（confine）与 ctx.sandboxPolicy（defaultMode 与 resolve()），static override inject = ['subprocess', 'sandbox', 'sandboxPolicy']。数据方向：resolve() 先跑父类解析，再用 ctx.sandboxPolicy.resolve() 把本次调用完整的 mode + workspaceRoot 盖到 spec.sandboxPolicy 上；execute 时把 ['bash','-c',command] 交给 ctx.sandbox.confine(argv, policy, signal)，拿回被包裹的 argv 以及 enforcement / denialSignatures / runnerFailureRules，再交给继承来的 subprocess 路径；进程结算前 onProcessDone 把 mode / denied / enforcement / runnerFailed 盖到 proc.sandbox 上，向上流进 result.sandbox，最后由 tool-bash 渲染成 [sandbox: ...] 标记。",
+    "inside": "两个文件。src/index.ts（193 行）：class SandboxBashExecutor extends LocalBashExecutor，没有自己的 Config（直接 type Config = LocalConfig，因为 mode 与 workspaceRoot 已迁到 ctx.sandboxPolicy，配置目录会沿继承链走到父类的 static）。构造函数里记下 ctx.sandboxPolicy.defaultMode 并 override sandboxMode getter——这个 getter 是 tool 层判断「本组合是否具备升级能力」的唯一依据。processFacts 是一个 Map<ShellProcess, {...}>，按句柄留存本次包裹的 mode / enforcement / denialSignatures / runnerFailureRules / runnerProgram / workdir；注释解释了为什么不能用「最近一次包裹」的共享变量：并发调用下 provider 可能给出不同的 enforcement 与诊断方言，共享值会把一个进程按别人的事实分类。execute() 分三条路：danger-full-access 直接走 super.execute，但用 decorateResult 把结果装饰成 sandbox:{mode, denied:false}（明确绕过 provider，因为它是显式的无限制档位）；受限模式走 this.executeArgv(spec, async signal => confine(...), onStarted)——confine 在 preparation 阶段异步完成并受同一 deadline 约束，onStarted 在句柄发布前同步把 facts 写进 Map；最后 decorateResult() 就地替换 ex.result（刻意不包第二层对象，因为 processFacts 与 onProcessDone 都以句柄身份为 key），其中 runnerFailure 严格排在 denial 之前（命令压根没跑成），命中就 throw SandboxUnavailableError(mode, detail)。onProcessDone 覆写在 done settle 前盖 proc.sandbox：providerRejected 时只有当错误独立指名 runner argv[0] 才算运行器失败（isRunnerSpawnFailure），否则保留父类阶段中立的语义。src/helpers.ts 只有 15 行，一个 classifyDenial，其余三个分类函数直接从 @deepseek-ai/dsh-sandbox 再导出。",
+    "boundary": "归它管：bash 侧的沙箱语义——本次用哪个 mode、enforcement 是否完整、命令失败是否属于策略拒绝、运行器失败如何归因、以及没有可用 runner 时 fail-closed。不归它管：runner 本体是谁（bwrap / Landlock / Seatbelt 由 ctx.sandbox 的 provider 决定）；mode 与 workspaceRoot 的默认与 per-session 解析（ctx.sandboxPolicy）；批准与升级的人机流程（tool 层经 ctx.approval，文件头注释写着 deny-only at the seam）；网络限制与统一的进程可见性（明确不在保证内）；进程托管本身（父类 + ctx.subprocess）。划线依据是「隔离的实质在 sandbox 家族，bash 这一侧的事实记账在这里」。",
+    "tour": [
+      {
+        "file": "packages/shell/bash-sandbox/src/index.ts",
+        "line": 45,
+        "sym": "class SandboxBashExecutor extends LocalBashExecutor",
+        "note": "典型的三层结构证据：沙箱实现只是本地实现的子类，进程力学一行没重写，只替换 argv 的准备环节。"
+      },
+      {
+        "file": "packages/shell/bash-sandbox/src/index.ts",
+        "line": 46,
+        "sym": "static override inject",
+        "note": "在父类基础上追加 sandbox 与 sandboxPolicy：少了任何一个，插件加载就会因缺服务而失败，而不是退化成不隔离执行。"
+      },
+      {
+        "file": "packages/shell/bash-sandbox/src/index.ts",
+        "line": 59,
+        "sym": "processFacts: Map<ShellProcess, ...>",
+        "note": " confinement 事实按句柄留存而非共享：并发调用下 provider 的 enforcement 与诊断方言可能不同，共享值会误分类。"
+      },
+      {
+        "file": "packages/shell/bash-sandbox/src/index.ts",
+        "line": 99,
+        "sym": "executeArgv(spec, prepare, onStarted)",
+        "note": "沙箱包裹发生在 preparation 阶段并受同一 deadline 约束；onStarted 在句柄发布前同步写入 facts，避免竞态。"
+      },
+      {
+        "file": "packages/shell/bash-sandbox/src/index.ts",
+        "line": 158,
+        "sym": "onProcessDone",
+        "note": "覆写父类的空钩子，在 done settle 前盖 proc.sandbox：运行器失败优先于拒绝，provider rejection 仅在指名 argv[0] 时归因给运行器。"
+      }
+    ],
+    "gotchas": "只覆盖文件效果，网络完全不受限，进程可见性因后端而异，所以这些 mode 不是通用安全沙箱。拒绝是从失败命令的 stderr 推断的：应用自身恰好匹配签名的错误会被误判为拒绝，而超出保留尾部的拒绝会漏判。异步观察到的后台运行器失败没有即时错误通道，只记录在已结算的 process 上，要等调用方用 job_output 读才看到；同步的 subprocess throw 则被收进同一个 settled-killed 句柄，由 result() 的 rejection 携带。danger-full-access 是刻意绕过 ctx.sandbox 的显式无限制档位，不是更宽的沙箱档位。helpers.ts 只有 15 行，三个真正的分类函数其实住在 dsh-sandbox 里，改行为要去那边改。",
+    "analogy": "它像工地入口的安检闸机：不改施工方法，只在工人（bash 命令）进场前给他套上一层限制装备，并在他的工牌上记下今天允许进哪些区域。工人被拦下时，闸机不会放他进去、也不会替他去求情（批准归工具层），只是在工牌上盖一个「被拒」的章并写明原因；如果连安检设备本身都坏了，它会直接报「无法开工」而不是假装没安检放行——宁可不干活，也不裸奔。"
+  },
+  {
+    "group": "shell",
+    "dir": "pwsh-sandbox",
+    "short": "pwsh-sandbox",
+    "oneLiner": "沙箱版 pwsh 执行器：PowerShell 命令先经 ctx.sandbox 包裹再跑，并自带完整的拒绝/运行器分类",
+    "why": "Windows 上需要文件隔离时不加载它，只能退回 pwsh-local，命令以 harness 进程的全部文件权限运行，模型的误操作没有兜底；同时 result.sandbox 消失，tool-pwsh 不会展示 sandbox_permissions / justification，模型被拒绝后只能换写法重试。它是 pwsh 侧唯一实现 fail-closed 的地方：Windows ACL 受限令牌链不可用时，受限策略会直接以 SandboxUnavailableError 失败，而不是悄悄退化成不隔离执行。它还是 bash-sandbox 在 Windows 上的对等物，缺了它，「同一个 profile 层换平台」这件事就只完成了一半。",
+    "position": "上游是任何 inject 'shell' 的消费方，主要是 tool-pwsh（读 ctx.shell.sandboxMode 决定是否展示升级字段，并把 per-call 策略塞进请求）。它 extends PwshLocalExecutor，所以 pwsh-local 是它的下层，并且直接复用其 protected argv() 作为包裹输入。横向依赖同样是 ctx.sandbox 与 ctx.sandboxPolicy（static override inject = ['subprocess', 'sandbox', 'sandboxPolicy']）。数据方向：resolve() 用 ctx.sandboxPolicy.resolve() 盖 spec.sandboxPolicy；execute 时把 this.argv(spec)（已经含 pwsh 路径、UTF-8 前导和 -Command）整条交给 ctx.sandbox.confine()，拿回被包裹的 argv 与三组分类事实，再走继承来的 subprocess 路径；结算前 onProcessDone 把 mode / denied / enforcement / runnerFailed 盖到 proc.sandbox，向上流进 result.sandbox，由 tool-pwsh 渲染成标准拒绝面。",
+    "inside": "两个文件，且与 bash-sandbox 存在一个实质不对称。src/index.ts（201 行）：class SandboxPwshExecutor extends PwshLocalExecutor，结构与 bash 版逐一对应——同样的 type Config = LocalConfig（不自带沙箱配置）、同样的 constructor 记下 ctx.sandboxPolicy.defaultMode 并 override sandboxMode getter、同样的 processFacts Map 按句柄留存事实、同样的 execute() 三分支（danger-full-access 直通并装饰 denied:false；受限模式用 executeArgv 的 prepare 回调异步 confine；decorateResult 就地替换 result 且 runnerFailure 优先于 denial，命中抛 SandboxUnavailableError）、同样的 onProcessDone 覆写。真正的差别在 confine()：bash 版现拼 ['bash','-c',command]，pwsh 版直接调 this.argv(spec)，保证被包裹的就是真实要执行的那条 argv。另一个差别在 src/helpers.ts：bash 版只有 15 行并把三个分类函数从 dsh-sandbox 再导出，而 pwsh 版自己完整实现了 121 行四个函数——isRunnerSpawnFailure 只认 ENOENT / EACCES 且要求 cwd 本身可用（先 statSync 是目录再 accessSync 查 X_OK），再用 path 是否等于 runnerProgram 加 syscall 是否为 'spawn' 或 'spawn <program>' 来归因；classifyDenial 与 matchesSignature 都是「非零 exit + stderr 小写子串匹配」；classifyRunnerFailure 逐行跑规则——非零 exit、可选的 allowedExitCodes 门、跳过 informationalLines，命中 fatalSignatures 就返回那一行的原文作为 detail。文件头注释说明这也是刻意的 call-for-call 镜像，与 bash 消费者共用同一套诊断方言。",
+    "boundary": "归它管：pwsh 侧的沙箱语义——本次 mode、enforcement 完整性、拒绝分类、运行器失败归因、fail-closed，以及把 pwsh 自己的 argv 正确交给 provider 包裹这件事。不归它管：runner 本体（Windows 上是 ACL 受限令牌链，POSIX 上是 bwrap / Landlock / Seatbelt，全由 ctx.sandbox 的 provider 决定）；mode 与 workspaceRoot（ctx.sandboxPolicy）；批准与升级的人机流程（tool 层经 ctx.approval）；进程托管（父类 + ctx.subprocess）；pwsh 可执行文件探测与 UTF-8 前导（父类 pwsh-local）。划线依据与 bash-sandbox 完全同构：隔离的实质归 sandbox 家族，PowerShell 这一侧的记账归这里。",
+    "tour": [
+      {
+        "file": "packages/shell/pwsh-sandbox/src/index.ts",
+        "line": 52,
+        "sym": "class SandboxPwshExecutor extends PwshLocalExecutor",
+        "note": "与 bash-sandbox 同构的继承关系：换方言不换结构，沙箱版只是在本地版外面加一层包裹。"
+      },
+      {
+        "file": "packages/shell/pwsh-sandbox/src/index.ts",
+        "line": 194,
+        "sym": "confine(spec, policy, signal)",
+        "note": "直接把 this.argv(spec) 交给 ctx.sandbox.confine——被包裹的一定是真实执行的那条 argv，含 pwsh 路径与 UTF-8 前导。"
+      },
+      {
+        "file": "packages/shell/pwsh-sandbox/src/index.ts",
+        "line": 165,
+        "sym": "onProcessDone",
+        "note": "结算前盖 proc.sandbox：provider rejection 只有独立指名 runner argv[0] 才算运行器失败，否则保留阶段中立语义。"
+      },
+      {
+        "file": "packages/shell/pwsh-sandbox/src/helpers.ts",
+        "line": 42,
+        "sym": "isRunnerSpawnFailure",
+        "note": "只认 ENOENT/EACCES 且要求 cwd 本身可用，再用 path + syscall 是否指名 runner 来归因，避免把普通环境问题算成沙箱故障。"
+      },
+      {
+        "file": "packages/shell/pwsh-sandbox/src/helpers.ts",
+        "line": 84,
+        "sym": "classifyRunnerFailure",
+        "note": "按结构化规则逐行判定：非零 exit、允许 exit 门、跳过 informational 行，命中就返回那一行原文作为权威诊断。"
+      }
+    ],
+    "gotchas": "Windows 上读完全不受限，ACL runner 只限制写。workspace-write 的临时权限是私有的：按 live session / workspace 对生成，agentless 调用每次拿到一个新的私有目录，运行器会在 spawn 前把 TMP / TEMP 改写过去，宿主临时根目录从不授予。read-only 下没有显式可写根但边界仍是部分的——NTFS 硬链接让同一个文件对象跨路径别名、读不受限、被别的 AppContainer 工具用 package SID 加过 ACL 的目录对低完整性子进程不可读；NUL 在两种模式下都可写（设备 DACL 给 Everyone 写权限），所以 PowerShell 的 > $null 仍然可用。read-only 下 pwsh 会落在 ConstrainedLanguage（.NET 静态调用、Add-Type、COM、反射都会报 only core types）。两种受限模式都禁止打开命名管道，用 piped stdio 抓子进程输出会拿到 EPERM。",
+    "analogy": "它是 bash-sandbox 在 Windows 工地的对口闸机：流程、工牌、拒绝章、设备坏就停工的规则完全一样，只是工人说的是 PowerShell，装备也是 Windows 的受限令牌。一个容易被忽略的细节是，它先把司机制服和普通话纸条都准备好（复用 pwsh-local 的 argv），再把整个人送进安检门——而不是让安检门自己重新拼一套衣服，拼错了就会漏掉该限制的东西。"
+  },
+  {
+    "group": "shell",
+    "dir": "tool-bash",
+    "short": "tool-bash",
+    "oneLiner": "模型面向的 bash 工具：把 ctx.shell 包成 bash 工具，接上后台作业、沙箱升级与结果渲染",
+    "why": "不加载它，agent 根本没有 bash 这个工具——执行器再完善也只是进程内的 ctx.shell，模型看不见也调不到。反过来，如果让模型直接面对执行器的原始结果，模型就看不到 [exit code: N] 之类的退出标记、看不到截断提示与全文 spill 路径、也看不到沙箱拒绝与「可以升级一次」的提示，只能自己猜命令到底怎么结束的。人这一侧同样会塌：没有本包把每条命令注册进 ctx.jobs，一条跑飞的命令无法从 Web 任务列表里停掉，也无法被流式观察。它还是唯一把「模型参数 → ShellExecRequest」这一步守住的地方：模型永远拿不到 stdin、env、stdoutMaxBytes 这几个参数，所以无法顶掉托管事实。",
+    "position": "上游是 agent loop 与 ToolRuntime：它们带着 ToolExecution（含 exec.agent 与 exec.signal）调用工具。横向注入 inject = ['tools', 'shell', 'systemPrompt', 'shellEnv']，另外三个是条件性的：ctx.get('sandboxPolicy')、ctx.get('approval')、ctx.inject(['jobs'])。下游：ctx.shell（resolve + execute）、ctx.shellEnv.collect、ctx.jobs（registry.start / read / wait / kill / remove）、ctx.systemPrompt.section、ctx.approval（经 approveEscalation）。数据方向：模型参数 → validateBashArgs → 解析 workdir 与策略 → ctx.shellEnv.collect(exec) 取 dshEnv → ctx.shell.resolve(request) → 走 job 或直接 execute → ShellRunResult → canonicalBashResult → output.render 出文本；同时 presentCall / presentResult 把卡片交给 UI。后台路径另有一条旁路：把 process 句柄的 observed（非消费型）reader 作为 pull source 交给 ctx.jobs，注册表按 pumpPollMs 把它们泵进 job 的 output ring，模型的 job_output 再用自己的游标读，两条游标互不抢字节。",
+    "inside": "三个文件。src/index.ts（554 行）：apply() 先算 defaultMode = ctx.shell.sandboxMode 与 escalationModes（非 undefined 时取 ESCALATION_TARGETS），并硬性要求「执行器会隔离但 ctx.sandboxPolicy 不在」时直接 throw——防止分裂的组合在运行时才暴露。ctx.systemPrompt.section({ name: 'tool:bash', order: ctx.systemPrompt.getSectionOrder('TOOL_BASH') }) 挂一句检查 [exit code: N] 的跨调用指引，注释说明这类指引属于 prompt 而不是单调用的 schema 文案。bashTool(jobs) 是「一次注册」的工厂，内部两个关键函数：startJob 用 registry.start({ kind: 'bash', label: command, owner: agent.id, output: processSources(() => proc), run })，进程在 admission 之后才在 starter 里 spawn，cancel(reason) 把外部 kill 的原因存下来供渲染；waitOnJob 用 registry.wait(id, timeoutMs, owner, exec.signal) 等，三种出口——等待到期且进程还没起来视为 preparation timeout 返回空结果、等待到期且进程在跑返回 kind:'promoted' 并带 jobId 与一次消费型读取、正常结束则 registry.remove 后把 process.result() 转成 foreground 结果。execute 里顺序固定：validateBashArgs → （在执行任何东西之前）把 sandbox_permissions + justification 交给 approveBashEscalation（内部走 approveEscalation，含严格放宽校验与通道解析）→ resolveWorkdir（相对路径按 session cwd 拼，且策略的 workspaceRoot 优先，保证与 confinement 用同一个身份）→ ctx.shellEnv.collect(exec) → 组装 request。run_in_background 走 onExpiry:'none' + startJob；前台在有 registry 且 promote 时也走 onExpiry:'none' + startJob + waitOnJob（注册被拒就 warn 后退回带 deadline 的普通前台）。文件末尾是注册切换：先注册 foreground-only 版本，ctx.inject(['jobs']) 时换成 job-backed 版本，jobs 卸载再换回，两个注册都属于本插件 fiber。src/background.ts 四个函数：processOutcome（把 ShellProcess 映射成 JobOutcome，killed → killed，其余 → completed 带 exit code，并把 sandbox note 拼进 detail）、processSources（把 observed 的 stdout / stderr 包成惰性 JobOutputSource，泵的时候不碰模型的消费游标）、ringDelta（stdout 在前、stderr 收进一个 [stderr] 段）、processJob（abort controller + start + await process.done，把 preparation 与结算合成一个 done）。src/render.ts：renderResult（stdout → [stderr] 段 → truncation / denial / escalation hint / timeout / stopped / signal / exit 标记，注释提醒 exit 标记必须放最后，因为 parseExitStatus 锚在结尾）、renderPromoted、renderJobRead。",
+    "boundary": "归它管：bash 工具的 schema 与描述文案、参数校验、升级申请（但不含批准本身）、workdir 解析、结果渲染、UI 卡片呈现（presentCall / presentResult）、以及与 ctx.jobs 的接线和三种等待出口。不归它管：进程怎么跑（ctx.shell + ctx.subprocess）、隔离的实质与 runner 选择（sandbox 家族）、job 的 id / 归属 / 通知 / 存储（ctx.jobs）、批准 UI 与通道（ctx.approval）、部署级的命令白名单或放行策略（文件头 TODO 指明应放在 tools/pre-execute 或沙箱执行器里）。划线依据是「模型看到的那一层归它，机器执行的那一层不归它」。",
+    "tour": [
+      {
+        "file": "packages/shell/tool-bash/src/index.ts",
+        "line": 34,
+        "sym": "inject = ['tools', 'shell', 'systemPrompt', 'shellEnv']",
+        "note": "Consumer 的角色声明：四个服务缺一个插件就不激活，所以没有执行器或没有环境注册表的组合里，bash 工具根本不会出现。"
+      },
+      {
+        "file": "packages/shell/tool-bash/src/index.ts",
+        "line": 208,
+        "sym": "apply",
+        "note": "读 ctx.shell.sandboxMode 决定升级字段，并硬性要求 confining 执行器必须同时有 ctx.sandboxPolicy，分裂组合在加载期就失败。"
+      },
+      {
+        "file": "packages/shell/tool-bash/src/index.ts",
+        "line": 272,
+        "sym": "startJob",
+        "note": "每条命令先 admission 成 job、进程在 starter 里才 spawn；外部 kill 的原因被存下来，后面渲染成 [stopped: ...]。"
+      },
+      {
+        "file": "packages/shell/tool-bash/src/index.ts",
+        "line": 302,
+        "sym": "waitOnJob",
+        "note": "三种出口正是「前台命令即 job」的全部语义：preparation 超时、提升为后台、正常结束并移除记录。"
+      },
+      {
+        "file": "packages/shell/tool-bash/src/index.ts",
+        "line": 489,
+        "sym": "ctx.shellEnv.collect(exec)",
+        "note": "托管环境在这里进入请求；工具从不把 stdin/env/stdoutMaxBytes 暴露成参数，所以模型无法顶掉 DSH_* 事实。"
+      },
+      {
+        "file": "packages/shell/tool-bash/src/background.ts",
+        "line": 67,
+        "sym": "processSources",
+        "note": "把非消费型的 observed reader 交给 job 注册表泵，模型自己的 job_output 游标因此不会被泵抢字节。"
+      }
+    ],
+    "gotchas": "replay 的退出 pill 是从结果文本反解的：命令输出最后一行恰好长得像 [exit code: N] 就会被当成标记吃掉一个 pill 并少一行正文，这是纯展示侧的已知残差。bash 工具刻意不参与 timeout-policy 预算，坚持走执行器侧的 BASH_TIMEOUT。后台进程没有执行器超时，只能靠 job_kill 或组合/服务 dispose。正在跑的前台命令也会出现在任务列表里，但列表还没标出哪几行正被工具调用等着；命令结束后记录随结果一起离开注册表，所以模型从未看到 id。schema 未声明的键也会被接受，因此 enableRunInBackground 关掉时仍要在执行期再拦一次。工作目录会被沙箱策略的 canonical workspaceRoot 覆盖，所以传入的相对路径和最终 workdir 可能不是一个字符串。",
+    "analogy": "它像餐厅里负责点菜和上菜的服务员：菜单（schema）、菜名描述、催单、把菜摆好端上桌（渲染与卡片）都归它；后厨怎么炒（执行器）、食材怎么进冷库（subprocess）、订单编号和叫号系统（jobs）、以及要不要请示经理加辣（approval）都不是它的活。服务员手里那份菜单上有些东西刻意不印（stdin、env、输出上限），客人再怎么要求也点不到，这样厨房的安全配置就不会被客人一句话改掉。"
+  },
+  {
+    "group": "shell",
+    "dir": "tool-pwsh",
+    "short": "tool-pwsh",
+    "oneLiner": "模型面向的 pwsh 工具：PowerShell 方言的 shell 工具，与 bash 工具逐条对称并自带 Windows 沙箱教学",
+    "why": "Windows 组合里不加载它，agent 只有进程内的 ctx.shell，看不到任何可调用的 shell 工具；而拿 tool-bash 顶替则要求模型用 bash 方言写命令——README 明确说两个工具之间没有任何方言翻译，模型在 Windows 上写 ls -la 或 /c/... 路径会一路碰壁。它还独占一类知识：Windows 受限令牌下的 ConstrainedLanguage 与命名管道限制只有它写进工具描述里教给模型，没有这段教学，模型会把 Add-Type 失败或 EPERM 当成普通命令错误反复重试。另一个隐性后果是 ctx.jobs 的 JobKindMap 里没有 pwsh 这个 kind：后台 PowerShell 作业在类型层面就不成立。",
+    "position": "上游与 tool-bash 完全同构：agent loop / ToolRuntime 带着 ToolExecution 调用工具，inject = ['tools', 'shell', 'systemPrompt', 'shellEnv']，条件性依赖同样是 ctx.get('sandboxPolicy')、ctx.get('approval')、ctx.inject(['jobs'])。下游也是同一套：ctx.shell、ctx.shellEnv.collect、ctx.jobs、ctx.systemPrompt.section、ctx.approval（approveEscalation，toolName 传 'pwsh'）。数据方向与 bash 版一致，唯一差别是结果渲染调用 renderPwshResult / renderPwshPromoted / renderPwshJobRead，以及它在文件顶部用 declare module '@deepseek-ai/dsh-jobs' 向 JobKindMap 注册了 pwsh 这个 kind。输出 wire shape 与 bash 版刻意完全对称——注释写着「consumers of one must accept the other」，所以下游消费方换工具不用改代码。",
+    "inside": "三个文件、607 行，结构是对 tool-bash 的 call-for-call 镜像，源码用大量 jscpd:ignore 加 Agent Note 引用标注这是刻意的对称。src/index.ts：validatePwshArgs 复用同一个共享的 validateEscalationArgs（sandbox_permissions 与 justification 的配对规则两个方言完全一致）；pwshDescription(escalationModes.length > 0) 是最大的差异点——基础段讲原生 Windows 路径、$env:NAME 变量、以及「Windows 上被强杀的命令以 [exit code: 1] 结算、没有信号标记，要当中断而不是命令失败」；只有当本组合挂了 confining 执行器时才追加两段 Windows 教学（read-only 下 pwsh 跑在 ConstrainedLanguage、.NET 静态调用与 Add-Type 会报 only core types；两种受限模式都禁止打开命名管道，用 piped stdio 抓子进程输出会拿 EPERM）。resolveWorkdir 与 bash 版几乎一致但少了一件事：它不接受策略的 workspaceRoot 覆盖，只用 session header cwd 作基址——README 承认这是与 bash 工具的 parity gap，被 defer 到共享 shell-tool base 抽取。apply() 里同样是 defaultMode / escalationModes / sandboxPolicy 三件套，同样在 confining 执行器缺少 policy 服务时 throw；prompt section 是 name 'tool:pwsh'、order 取 'TOOL_PWSH'，文案多了 Windows exit 1 的读法。startJob / waitOnJob / 注册切换（foreground-only 与 job-backed 互换）与 bash 版逐行对称。src/render.ts：renderPwshResult 的顺序与 bash 版一致（stdout → [stderr] → denial / escalation hint / timeout / stopped / signal / exit），差别在干净退出（0 且无信号）不产生任何标记；renderPwshPromoted 与 renderPwshJobRead 也是同名对称实现。src/background.ts 的 processOutcome / processSources / ringDelta / processJob 同样一一对应。",
+    "boundary": "归它管：pwsh 工具的 schema 与描述（含 Windows 沙箱教学）、参数校验、升级申请、workdir 解析、结果渲染与卡片呈现、与 ctx.jobs 的接线，以及把 pwsh 这个 job kind 注册进类型表。不归它管：与 tool-bash 完全一致的那一半——进程执行（ctx.shell）、隔离实质（sandbox 家族）、job 的 id 与通知（ctx.jobs）、批准通道（ctx.approval）、部署级放行策略（tools/pre-execute）。额外明确不归它管的是方言翻译：它不把 PowerShell 翻成 bash，也不接受 bash 写法。划线依据与 tool-bash 相同，再叠加一条「平台契约的教学放在工具描述里，因为只有工具层能直接对模型说话」。",
+    "tour": [
+      {
+        "file": "packages/shell/tool-pwsh/src/index.ts",
+        "line": 43,
+        "sym": "declare module '@deepseek-ai/dsh-jobs' { JobKindMap { pwsh } }",
+        "note": "工具自己向 job 类型表登记 pwsh kind：这是后台 PowerShell 作业在类型层面成立的唯一入口。"
+      },
+      {
+        "file": "packages/shell/tool-pwsh/src/index.ts",
+        "line": 122,
+        "sym": "pwshDescription",
+        "note": "Windows 专属契约（ConstrainedLanguage、命名管道 EPERM、强杀结算为 exit 1）写在工具描述里教模型，网关是是否挂了 confining 执行器。"
+      },
+      {
+        "file": "packages/shell/tool-pwsh/src/index.ts",
+        "line": 264,
+        "sym": "ctx.systemPrompt.section('tool:pwsh')",
+        "note": "独立的 prompt 段（order 取 TOOL_PWSH），与 bash 段并列注册；作用域级工具限制能藏 schema 但藏不掉这一段。"
+      },
+      {
+        "file": "packages/shell/tool-pwsh/src/index.ts",
+        "line": 153,
+        "sym": "resolveWorkdir",
+        "note": "与 bash 版几乎相同但不接受策略 workspaceRoot 覆盖——README 承认的 parity gap，被 defer 到共享 base 抽取。"
+      },
+      {
+        "file": "packages/shell/tool-pwsh/src/render.ts",
+        "line": 48,
+        "sym": "renderPwshResult",
+        "note": "与 bash 版同序的标记渲染，差别是干净退出不产生标记；exit 标记同样必须放最后，因为 parseExitStatus 锚在结尾。"
+      }
+    ],
+    "gotchas": "Windows 沙箱下 read-only 的 pwsh 会因为临时目录写被拒而让 AppLocker 探测失败，从而落在 ConstrainedLanguage：Add-Type、非核心 .NET 静态调用、COM 与反射都会报 only core types，且无法从内部解除；workspace-write 有私有临时目录所以探测能完成，通常留在 FullLanguage。两种受限模式都禁止命名管道，用 piped stdio 抓子进程输出会拿 EPERM，模型被要求不要换写法重试，而是一次性升级或改写为不抓输出。会话 cwd 不做 canonical 化，而沙箱策略的 workspaceRoot 是 canonical 的，两者在 raw session cwd 与规范形式不一致时会分叉——已知 parity gap。模型必须写 PowerShell 方言，没有翻译层。",
+    "analogy": "它是 tool-bash 在 Windows 分店的双胞胎服务员：菜单结构、上菜顺序、催单和叫号方式一模一样，客人换店不用重新学规矩。区别只在菜单上多印了几条本地注意事项（本地道路命名、某些工具在这里不能用、停电时会显示成另外一种状态码），以及它说的是本地语言——它不会把客人写的英文菜单翻译成中文，客人要入乡随俗自己写本地话。"
+  },
+  {
+    "group": "shell",
+    "dir": "tool-bash-persistent",
+    "short": "tool-bash-persistent",
+    "oneLiner": "持久 bash 工具：每个 agent 独占一个 PTY shell，cwd、变量、函数跨调用保留，绕开 ctx.shell",
+    "why": "不加载它，凡是需要跨调用状态的工作流都做不成：一次 tool-bash 调用结束进程就没了，cd 与 export 全部丢失，模型只能把每一步都写成「先 cd 再 …」的巨型命令；已激活的虚拟环境、source 过的脚本、后台起的服务都无法延续。反过来，如果只靠 tool-bash 去模拟（每次调用自带一串前导命令），成本会翻倍且极易出错。它还是唯一一条不经过 ctx.shell 的 shell 通路——这恰恰说明它解决的不是「怎么执行一条命令」，而是「怎么让一个会话活着」。",
+    "position": "最关键的一点：它不 inject 'shell'。export const inject = ['tools', 'terminals']，因此它完全站在终端家族的 ctx.terminals 上，绕开了 ctx.shell、ctx.subprocess 与 ctx.jobs 这条链。上游是 agent 的工具调用，且必须有 exec.agent（否则 throw 'bash requires an owning agent session'）。下游是 ctx.terminals（spawn / startSend / read / list / kill）、@deepseek-ai/dsh-timeout 的 deadline 与 timeoutOf、@deepseek-ai/dsh-output-retention 的 truncateWithoutSplittingSurrogatePair。数据方向完全不同于一次性工具：命令 → wrapCommand 压成一行 → ctx.terminals.startSend → 轮询 ctx.terminals.read 翻 scrollback → 用 marker 抽取正文与退出码 → 渲染成一段字符串直接返回模型。全程没有 ShellExecRequest、没有 ShellRunResult、也没有 job id。",
+    "inside": "单文件、485 行。apply() 校验 backendType 非空、timeoutMs 与 maxOutputChars 是正整数、description 非空，然后 registerPersistentBash。persistentShells(ctx, config) 是状态机核心：pending（WeakMap<Agent, Promise<sessionId>>，懒创建去重）、live（Map<Agent, sessionId>）、creating（dispose 时要等的一批 promise）、lifecycle（AbortController，插件 dispose 时 abort 并 kill 所有 live shell）。get() 里先 ctx.terminals.spawn(owner, { type: backendType, cwd: owner.session.header.cwd })，紧接着 startSend 一条 'stty -echo' ——注释强调只关回显、保留后端自己的 prompt，因为后端靠 prompt 判就绪；初始化失败立刻 reset 回滚。registerPersistentBash 里的 serialized() 用 WeakMap<Agent, Promise<void>> 做每 owner 的串行队列，保证同一 agent 的命令不会并发打进同一个 shell。executeCommand 是主循环：deadline(upstream, timeoutMs, 'PERSISTENT_BASH_TIMEOUT') 熔出一个总 deadline；每轮先看 session 是否已 exited，再 startSend（第一次发 wrapped，之后发空串只为观察），然后四种出口——timeoutOf 命中则保留部分输出加 '[Command timed out or OOM]' 并 reset；latest.text 含 marker.end 就走 commandOutput 抽出 start..end 之间的正文并读出 exitCode；result.waitReason === 'stdin_read'（shell 又在等输入，说明遇到 exec、中断或交互式子进程）则返回已捕获的部分输出而不是死等到 deadline；否则 pause() 25ms 继续轮询。wrapCommand 把整条命令压成一行：printf 起始标记、eval -- $'...'、把 $? 存进变量再 printf 结束标记加状态码；注释解释压成一行的原因是交互式 bash 遇到内嵌换行会先打 PS2，prompt 和 marker 源码会漏进模型看到的结果。retainedScrollback 以 1000 行一页往回翻拼出完整 scrollback，renderCaptured 负责按 maxOutputChars 截断、在丢前缀时加 LOST_PREFIX_MESSAGE、并追加 '[Command finished with exit code N]'；shell 提前退出则改走 renderShellExitStatus 追加 '[shell exited: code N]' 等标记加一句 SHELL_RESET_MESSAGE。",
+    "boundary": "归它管：每 owner 一个 shell 的生命周期与串行化、命令包装与 marker 抽取、scrollback 轮询与截断渲染、以及「不确定就 reset」的契约。不归它管：进程级执行与沙箱（它不经过 ctx.shell，因此也没有 sandbox_permissions / justification 升级面）；job 注册与流式输出（完全不碰 ctx.jobs）；PTY 本身与后端方言（ctx.terminals 与 terminal-bash）；交互式输入（README 明确说交互式工作归 terminal 工具）。划线依据是两条链并列而非上下层：ctx.shell 那条是「一次一进程、无状态、可沙箱」，这条是「一个 owner 一个 PTY、有状态、不可沙箱」，两者服务的问题不同，所以持久工具根本不该去适配 shell 接缝。",
+    "tour": [
+      {
+        "file": "packages/shell/tool-bash-persistent/src/index.ts",
+        "line": 441,
+        "sym": "inject = ['tools', 'terminals']",
+        "note": "整个家族最关键的一处不对称：持久工具刻意不依赖 ctx.shell，所以换执行器对它毫无影响，它也拿不到沙箱能力。"
+      },
+      {
+        "file": "packages/shell/tool-bash-persistent/src/index.ts",
+        "line": 223,
+        "sym": "persistentShells",
+        "note": "WeakMap 懒创建 + live 表 + lifecycle controller：插件 dispose 时 abort 并 kill 所有活着的 shell，owner 卸载时清缓存。"
+      },
+      {
+        "file": "packages/shell/tool-bash-persistent/src/index.ts",
+        "line": 271,
+        "sym": "startSend('stty -echo')",
+        "note": "只关回显、保留后端自己的 prompt——后端靠 prompt 判就绪，所以这行不能改成自定义提示符。"
+      },
+      {
+        "file": "packages/shell/tool-bash-persistent/src/index.ts",
+        "line": 81,
+        "sym": "wrapCommand",
+        "note": "整条命令压成一行并带上唯一 nonce 标记：不压一行的话交互式 bash 会先打 PS2，prompt 与标记源码会漏进结果。"
+      },
+      {
+        "file": "packages/shell/tool-bash-persistent/src/index.ts",
+        "line": 401,
+        "sym": "serialized",
+        "note": "每 owner 一条串行队列：同一个 agent 的命令绝不并发打进同一个 shell，不同 agent 之间则完全隔离。"
+      }
+    ],
+    "gotchas": "必须有 owner agent，agentless 调用直接失败。没有 PTY backend 时工具照样注册成功，要等第一次调用才炸在 'no PTY backend registered for shell'。显式 exit、超时、send 失败、abort 一律 reset 整个 shell——「宁可重置也不修复」，连已经能看到的完整状态标记也会一并丢弃，下一条命令从工作区全新开始。交互式子进程只有在 provider 能证明 stdin 等待时才提前返回部分输出，否则一路跑到 timeoutMs 才重置。超时文案里的 or experienced an OOM 是源码 TODO 自己承认的不严谨（该信号并不能证明 OOM）。长输出保留最早的前缀加裁剪提示；若 PTY 已经把那段前缀丢掉，结果会明说而不是把尾巴当完整输出。",
+    "analogy": "它像给每个客人配一位专属司机兼一辆不熄火的专车：客人今天说过「去城西」，下一句「再往前开两百米」司机就懂，因为车一直在跑、司机一直记得上下文。而一次性工具是每次叫一辆新车、新司机，上句话说过什么完全不算数。代价是这辆车没法过安检闸机（沙箱），也没法给它挂取号排队（jobs）；一旦司机状态可疑（客人说 exit、超时、断线），公司的做法不是修车，而是直接换一辆新车并把旧车报废——宁可从头来，也不冒险开一辆不知道状态如何的车。"
+  },
+  {
+    "group": "shell",
+    "dir": "tool-pwsh-persistent",
+    "short": "tool-pwsh-persistent",
+    "oneLiner": "持久 pwsh 工具：每个 agent 独占一个 PowerShell PTY 会话，跨调用保留 $env: 与当前目录",
+    "why": "Windows 上需要跨调用状态时不加载它，PowerShell 工作流会退化成每步重复 import-module / Set-Location / 重建 $env: 的巨型命令，已加载的模块、已定义的函数、后台起的任务都无法延续；而拿 tool-pwsh 顶替（每次全新 pwsh 进程）根本留不住状态。它还是唯一处理 PowerShell 特有回显问题的地方：PSReadLine 会把提交的输入重新渲染回流里，没有本包的标记锚定抽取加 wrapper 剥离，模型看到的每条结果都会夹带自己刚发的命令原文。它同时把 PowerShell 的退出语义（原生程序给真实 exit code、终止性 PowerShell 错误给 1）翻译成模型能读的标记，这是 tool-pwsh 一次性路径之外的另一套必要翻译。",
+    "position": "与 tool-bash-persistent 完全同构，同样不 inject 'shell'：export const inject = ['tools', 'terminals']，因此它绕开 ctx.shell / ctx.subprocess / ctx.jobs，只依赖 ctx.terminals、dsh-timeout 与 dsh-output-retention。上游是带 exec.agent 的工具调用（没有 owner 就 throw 'pwsh requires an owning agent session'）。数据方向与 bash 持久版一致：命令 → wrapCommand 压成一行 → ctx.terminals.startSend → 轮询 read → marker 抽取并剥离回显 → 渲染字符串。差别只在两端：入口是 quoteForPwsh 的反引号转义与 Write-Output 包装，出口是只在非零时追加 [exit code: N]。后端默认用配了 shellDialect: pwsh 的 terminal-bash 实例，也可以换成任何 pwsh 方言的 PTY backend。",
+    "inside": "单文件、499 行，整段用 jscpd:ignore 包住并注明是 tool-bash-persistent 的刻意镜像（引用 pwsh persistent PTY Agent Note）。共享的部分：persistentShells 的 WeakMap 懒创建 + live 表 + lifecycle controller、registerPersistentPwsh 里每 owner 的 serialized 串行队列、executeCommand 的 deadline(upstream, timeoutMs, 'PERSISTENT_PWSH_TIMEOUT') 主循环、retainedScrollback 的 1000 行翻页、respondToSessionExit 与 SHELL_RESET_MESSAGE。三处实质差异：一是 persistentShells 里没有 'stty -echo'——PSReadLine 无法关闭回显，就绪判定改由后端提供的 prompt 函数负责（它打印 BEL 结尾的 OSC 标记加可控可打印 prompt），所以本包既不安装也不匹配自己的提示符，只有模型重定义 prompt 函数才会退化到静默档。二是 wrapCommand 完全重写：Write-Output 起始标记 → $LASTEXITCODE 置空 → try { Invoke-Expression \"...\" ; $__ok = $? } catch { $__ok = $false } → 有 $LASTEXITCODE 就用它，否则按 $__ok 给 0 或 1 → Write-Output 结束标记加状态码；quoteForPwsh 用反引号转义且顺序固定（先转义反引号本身，再双引号、美元符，删掉 CR，换行转成 `n，ESC 转成 `e）。三是 commandOutput 与 partialOutput 多收一个 wrapper 参数，用 captured.replaceAll(wrapper, '') 剥掉 PSReadLine 回显里那份包装源码——注释说明锚定在真实标记上已经排除了回显，这层剥离只覆盖「真实起始标记被滚出 scrollback、抽取退化到回显副本」的罕见情况，且回显的结束 nonce 后跟的是引号而非数字，所以不可能伪造出完成状态。渲染侧：renderCaptured 只在 exitCode 非零时追加 [exit code: N]，超时分支也不追加 '[Command timed out or OOM]'。",
+    "boundary": "归它管：每 owner 一个 PowerShell 会话的生命周期与串行化、PowerShell 特有的转义与包装、PSReadLine 回显的剥离、退出语义翻译、scrollback 轮询与截断渲染、reset 契约。不归它管：与 bash 持久版完全相同的一半——进程级执行与沙箱（不经过 ctx.shell，没有升级面）、job 注册（不碰 ctx.jobs）、PTY 与后端方言（ctx.terminals + terminal-bash 的 shellDialect 配置）、交互式输入（归 terminal 工具）；另外它也不负责 prompt 函数本身（后端拥有），重定义了 prompt 导致就绪退化是模型自己的责任。划线依据与 bash 持久版一致：这是与 shell 接缝并列的另一条链，不是它的上层。",
+    "tour": [
+      {
+        "file": "packages/shell/tool-pwsh-persistent/src/index.ts",
+        "line": 453,
+        "sym": "inject = ['tools', 'terminals']",
+        "note": "与 bash 持久版一致的刻意不对称：站在 ctx.terminals 上而不是 ctx.shell，所以它没有沙箱升级面也不参与执行器替换。"
+      },
+      {
+        "file": "packages/shell/tool-pwsh-persistent/src/index.ts",
+        "line": 91,
+        "sym": "wrapCommand",
+        "note": "Write-Output 标记 + Invoke-Expression + $LASTEXITCODE/$? 二选一定状态码：把 PowerShell 的退出语义翻译成模型能读的整数。"
+      },
+      {
+        "file": "packages/shell/tool-pwsh-persistent/src/index.ts",
+        "line": 105,
+        "sym": "commandOutput",
+        "note": "多出来的 wrapper 参数用于 replaceAll 剥掉 PSReadLine 回显的包装源码，这是 bash 版不需要的一步。"
+      },
+      {
+        "file": "packages/shell/tool-pwsh-persistent/src/index.ts",
+        "line": 81,
+        "sym": "quoteForPwsh",
+        "note": "反引号转义顺序固定（先反引号、再引号和美元、CR 删除、LF 转 `n、ESC 转 `e），保证多行命令与裸控制字节能挤进一行输入。"
+      },
+      {
+        "file": "packages/shell/tool-pwsh-persistent/src/index.ts",
+        "line": 245,
+        "sym": "persistentShells",
+        "note": "与 bash 版结构相同但没有 stty -echo：PSReadLine 关不掉回显，就绪改由后端的 prompt 函数与 OSC 标记判定。"
+      }
+    ],
+    "gotchas": "必须有 owner agent 和真正支持 pwsh 方言的 PTY backend（Windows ConPTY 或 POSIX 上的 pwsh），否则工具注册成功但首次调用才失败。回显无法关闭：完整结果靠标记锚定排除，回退路径靠 wrapper 剥离，但包装行在终端宽度处折行时可能残留部分回显进入部分输出。命令里的裸 ESC 会被 PSReadLine 先吃掉，不受支持。模型重定义 prompt 函数会移除就绪标记，会话只能落到静默档。没有命令执行期间的交互式 stdin：能证明 stdin 等待时子进程提前返回部分输出且会话仍然开着，于是那个子进程会吃掉下一次调用的命令，直到超时重置；否则本次调用一路跑到 timeoutMs。SIGTSTP / SIGHUP 在 Windows 上不可用，SIGINT 是以控制台级 Ctrl-C 输入投递的，在提示符处只会取消当前行而不是给进程发信号。Windows ACL 沙箱 read-only 下 pwsh 以 ConstrainedLanguage 启动，可能拒绝引导期的 [Console]:: 编码钉与 prompt 标记，命令仍可通过可打印 prompt 与静默档结算，但非 ASCII 输出可能退回宿主代码页。",
+    "analogy": "它是持久 bash 工具的 Windows 版专车：同样一个客人一辆不熄火的车、同样串行接单、同样状态可疑就换新车。差别只在这辆车的司机有回声——他会把客人刚说的每句话复述一遍（PSReadLine 回显），而且这辆车没有消音开关（没有 stty -echo），所以公司只能给每句话贴上带随机编号的起止封条，回信时只取两个封条之间的内容，并把复述里那份封条原文一并剪掉。此外这辆车的仪表盘报错方式和 bash 车不同（原生程序报真实码，PowerShell 自身出错一律报 1），仪表翻译规则也就得单独写一套。"
+  }
+]

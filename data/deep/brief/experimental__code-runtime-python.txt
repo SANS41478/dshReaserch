@@ -1,0 +1,11 @@
+# @deepseek-ai/dsh-experimental-code-runtime-python
+path: packages/experimental/code-runtime-python
+desc: CPython subprocess implementation of the DeepSeek Harness code-execution seam
+deps: @deepseek-ai/schemastery
+peers: @deepseek-ai/dsh-code-runtime, @deepseek-ai/dsh-timeout, @deepseek-ai/cordis, @deepseek-ai/dsh-util-values
+srcFiles: 2  srcLoc: 3161
+
+## README.md (1 行)
+
+
+## 源文件与导出符号

@@ -1,0 +1,178 @@
+[
+  {
+    "group": "subagent",
+    "dir": "subagent-codex",
+    "short": "subagent-codex",
+    "oneLiner": "把 OpenAI Codex app-server 变成一次性子智能体后端：每单新进程新线程一回合，只回最终答案。",
+    "why": "删掉它，ctx.subagents 上就少了名为 codex 的 provider，dsh-tool-subagent 里指向 codex 的委派工具行会指向一个不存在的后端，模型无法再把任务交给真正的 OpenAI Codex 会话。具体塌法：想借 Codex 的账号体系、原生沙箱与审批策略做事的 Profile 全部失效，用户只能把任务留在 dsh 自己的 agent 里跑；而这些任务本来能利用 Codex 原生配置（认证、模型选择、workspace 信任）由其独立上下文完成，与父会话 KV cache 互不干扰。这是产品后端双件套之一（另一个是 claude-code），专门服务已持有 Codex 账号与配置的用户群——没有它，dsh 的委派面只剩自家 runtime 与 ACP 通用协议，少了一条生态兼容路径。",
+    "position": "上游是 dsh-subagent seam：插件通过 ctx.subagents.registerProvider 把 CodexProvider 挂上注册表（index.ts:135），模型的工具面则由 dsh-tool-subagent 以 provider: codex 的工具行暴露。直接调用方也可以对 ctx.subagents.start 传 provider 名。下游有两层：其一，每个 run 经 ctx.subprocess.spawn（spec.spawn 注入，run.ts:236）拉起包内固定路径的 `codex app-server --stdio` 子进程，进程生命周期归 dsh-subprocess 的 managed range；其二，协议层用自研的 CodexAppServerWire 对子进程说 0.153.4 版本的 app-server JSON-RPC。数据流单向收口：任务只能是非空 text blocks（textTask 校验），经 thread/start + turn/start 下行；Codex 的 commentary、推理、工具流量、stderr 全部不进父会话，只有 phase 为 final_answer（或兼容的 null phase）的最后一条 agentMessage 上升为结果，失败时换成一串固定格式的 safe diagnostic。run id 在父命名空间用 randomUUID 铸造，血缘由 subprocess seam 的 managed range 记账。",
+    "inside": "三个文件分工清楚。index.ts 定义 Config（providerName/model/env/permissionMode/disposeGraceMs）并实现 CodexProvider：capabilities 是 NO_START_CAPABILITIES，即 agentOptions、outputSchema、depthLimit、toolFilter、persona 全部 false，inheritsParentContext 为 false——跨进程后端声明不了父侧能力，service 会在 start 前拒绝这类请求。start() 只做一件事：从 request.parent.session.header.cwd 取工作目录，组出 CodexRunSpec 交给 startCodexRun。run.ts 是生命周期骨架：codexAppServerArgv 返回 [node, 包内 wrapper, 'app-server', '--stdio]，CLI 来自 @openai/codex@0.153.4 的 package.json bin，不碰 host PATH；startCodexRun 先 spawn，再走 initialize→initialized 握手、thread/start 建 ephemeral 线程，全部成功才发布 run（发布前失败会回滚并 reap 子进程）；发布后 wire.runTurn 跑唯一一回合，与 processFailure promise 竞速防进程早死；本地取消走 AbortSignal → wire.interrupt()（turn/interrupt RPC，尽力而为）；disposeCodexChild 关 wire、end stdin、terminate 并等 waitForExit 证明 managed range 静默。wire.ts 是协议适配器 CodexAppServerWire：构造时挂 JsonRpcLineTransport，handleServerRequest 把五种服务端请求（命令/文件审批、权限授予、用户输入、MCP elicitation）全部无人值守地拒绝或取消并记一条 safe diagnostic（wire.ts:571）；handleNotification 只认本 thread/turn 的 item/completed，phase==='final_answer' 的 agentMessage 存入 lastFinalAnswer，phase null 的做兼容兜底（wire.ts:668），turn/completed 到达才兑现 runTurn 的 promise；failureInfo 把 codexErrorInfo 归并为 limit/access-policy/service/transport/product-error 等粗类目，保留可选 httpStatus。",
+    "boundary": "归它管：Codex 这一种后端的 run 生命周期（spawn、握手、单回合执行、取消、分级处置）、无人值守审批策略（三种 permissionMode 映射到 thread/start 字段）、最终答案挑选规则、失败归类的 safe diagnostic。不归它管：注册表、run 生命周期不变量与能力协商归 dsh-subagent seam（这是 SubagentProvider 接口只含 capabilities+start 的划线依据）；进程终止阶梯（SIGTERM→SIGKILL 与 graceMs）归 dsh-subprocess；模型看到什么工具归 dsh-tool-subagent；后台 Job 登记与 job_output/job_kill 归通用 Job runtime。与 claude-code 的边界是纯产品线：同一个接缝、同一套 one-shot 约束，差别只在协议对象——本包对 Codex app-server 说自实现的 JSON-RPC，兄弟包对 Anthropic Agent SDK 说官方库调用。",
+    "tour": [
+      {
+        "file": "packages/subagent/subagent-codex/src/run.ts",
+        "line": 135,
+        "sym": "codexAppServerArgv",
+        "note": "固定用包内 @openai/codex 的 app-server --stdio，不查 host PATH：版本钉死 0.153.4，彻底排除 host CLI fallback。"
+      },
+      {
+        "file": "packages/subagent/subagent-codex/src/wire.ts",
+        "line": 288,
+        "sym": "CodexAppServerWire.startThread",
+        "note": "thread/start 带 ephemeral:true 并校验返回值：每 run 一条一次性线程，不支持续聊是协议层写死的，不是配置省略。"
+      },
+      {
+        "file": "packages/subagent/subagent-codex/src/wire.ts",
+        "line": 571,
+        "sym": "CodexAppServerWire.handleServerRequest",
+        "note": "五种服务端请求全部自动拒绝/取消并留一条固定 diagnostic：无人值守设计的核心，未知请求直接 fail closed。"
+      },
+      {
+        "file": "packages/subagent/subagent-codex/src/wire.ts",
+        "line": 668,
+        "sym": "CodexAppServerWire.handleNotification",
+        "note": "只收 phase final_answer 的 agentMessage，null phase 兜底，commentary 丢弃：最终答案挑选规则在此，父会话只见结论。"
+      },
+      {
+        "file": "packages/subagent/subagent-codex/src/index.ts",
+        "line": 135,
+        "sym": "apply → ctx.subagents.registerProvider",
+        "note": "插件 apply 的全部产出：把 NO_START_CAPABILITIES 的 CodexProvider 挂上 ctx.subagents，从此处可见接缝式插件的最小形态。"
+      }
+    ],
+    "gotchas": "协议版本钉死 @openai/codex@0.153.4，升级要重做握手、答案选择、审批、取消等全套证据，不能随手 bump。没有 host CLI fallback：可选依赖缺失、平台不支持或 payload 损坏时 provider 处于休眠态，第一笔委派在 initialize 阶段以 unknown 类目失败。凭证形态的环境变量会被 subprocess seam 洗掉，子进程要用的 API key 必须显式写进 config.env。permissionMode 默认 never，dangerously-bypass-approvals-and-sandbox 必须显式选择。没有任何交互通道：审批、用户输入、MCP elicitation 一律自动拒绝。无续聊、无 pooling、无进度流；Codex 的 reasoning、工具活动、stderr、diff 永不进父会话，stderr 只转发到 Host stderr。平台 payload 很大（darwin-arm64 约 282MB 解包）。无墙钟超时、无副作用回滚。",
+    "analogy": "像把一单活外包给 Codex 这家承包商：规矩是只收书面委托（纯文本任务）、每单新开一个独立工作间（新进程新 ephemeral 线程）、干完只交一份最终报告（final_answer 文本），中途的草稿、电话记录、买菜小票一概不带回来。你（父会话）唯一能远程操作的是喊停（interrupt），而它要你审批时，值守前台一律按公司政策回绝并记一条备忘。"
+  },
+  {
+    "group": "subagent",
+    "dir": "subagent-claude-code",
+    "short": "subagent-claude-code",
+    "oneLiner": "把 Claude Code（官方 Agent SDK）变成一次性子智能体后端：每 run 一次 SDK query，只回严格成功文本。",
+    "why": "删掉它，ctx.subagents 上少一个名为 claude-code 的 provider，指向它的委派工具行失效，模型无法把任务委派给真实的 Claude Code 会话。塌的具体形状：已付费、已登录 Anthropic 账号并配好 CLAUDE.md、项目设置的用户，无法让 dsh 借用这套原生配置与工具生态——每个 child 本可读取 host 上正常的 user/project/local 设置（因为刻意不传 SDK 的 settingSources），拥有独立上下文与 KV cache，不污染父会话。它与 subagent-codex 是同一设计决策的两个实例：产品后端的意义在于『原生配置是权威』——dsh 只固定 model、env、permissionMode 三样，其余全部尊重 Claude 自己的选择。没有这类包，dsh 的委派能力只剩自家 runtime 与通用 ACP 协议两条路，对既有产品用户群是一块真空。",
+    "position": "上游与 codex 完全同构：apply 里 ctx.subagents.registerProvider 挂 ClaudeCodeProvider（index.ts:151），模型侧由 dsh-tool-subagent 以 provider: claude-code 的工具行暴露。下游是一条官方链路：startClaudeCodeRun 调用 @anthropic-ai/claude-agent-sdk 的 query()，但通过 SDK 的 spawnClaudeCodeProcess 自定义 spawn 钩子（run.ts:370），把 SDK 要启动的真实 claude CLI 进程改为经 ctx.subprocess.spawn 落地（process.ts 的 claudeSpawnSpec 做翻译），于是 CLI 进程被纳入 dsh-subprocess 的 managed range，凭证先洗后加。数据流：任务文本块拼成一个 SDK prompt 下行；SDK 消息流上行但只挑一条——subtype 为 success、is_error 为 false、result 非空的 result 消息文本；permission_denied 事件只换成一条 safe diagnostic；reasoning、工具流量、stderr、usage、diff 全部留在产品内。取消经 AbortController 广播到 SDK，血缘仍由 subprocess seam 记账。",
+    "inside": "三个文件。index.ts 的 ClaudeCodeProvider 与 codex 兄弟几乎逐行对称（源码里还用 jscpd 注释标注了这是刻意的重复而非漏抽象）：NO_START_CAPABILITIES、inheritsParentContext false、start 只解析 cwd 后委托 startClaudeCodeRun。run.ts 是主体：claudeQueryOptions 构造 SDK 选项（run.ts:316）——persistSession:false 禁产品会话持久化，disallowedTools 禁 AskUserQuestion（plan 模式再禁 ExitPlanMode），canUseTool/onElicitation/onUserDialog 三个回调把一切交互请求自动拒绝并记录 unattended diagnostic，bypassPermissions 模式才换成 allowDangerouslySkipPermissions；spawnClaudeCodeProcess 钩子里先经 spec.spawn 拿到 SubprocessHandle 再包成 ManagedClaudeCodeProcess，并在 query() 返回后校验 child 已被捕获，否则按『SDK 未发布可控进程』失败——这是发布门槛：Query 和真实 CLI 句柄都在手才 publish。successfulResult（run.ts:206）执行最严验收：非 success 的 subtype 按 error_max_turns/error_max_budget_usd 等归 limit 类，is_error 或空 result 归 invalid-result。consumeClaudeQuery 消费完整消息流并要求正常迭代收尾。process.ts 是适配层：sdkEnvironmentOverlay 把 SDK 删掉的母环境变量补成 undefined tombstone，保证子进程环境与 SDK 意图逐名一致；ManagedClaudeCodeProcess（process.ts:67）把 SubprocessHandle 投影成 SDK 的 SpawnedProcess 接口（stdin/stdout/exit 事件/kill 转给 terminate）。dispose 阶段 disposeClaudeCodeChild 先 query.close 再 terminate+waitForExit。",
+    "boundary": "归它管：Claude Code 后端的 query 生命周期、三种交互回调的无人值守策略（五档 permissionMode）、严格成功验收、safe diagnostic。不归它管：注册表、能力协商、one-shot 语义归 dsh-subagent seam；CLI 进程的终止阶梯归 dsh-subprocess（本包只经 ManagedClaudeCodeProcess.kill 转发请求）；模型工具面归 dsh-tool-subagent；Job 登记归通用 Job runtime。与 Codex 包的划线是产品协议线：本包不自己实现任何 wire 协议——全部 JSON-RPC/消息流细节由官方 SDK 承担，这是它比 codex 包（自实现 704 行 wire.ts）省代码的原因，也是它必须信任 SDK 版本行为的原因。settingSources 缺省意味着『读宿主原生设置』被划为本包职责之外：不做过滤、不做 hermetic 模式。",
+    "tour": [
+      {
+        "file": "packages/subagent/subagent-claude-code/src/run.ts",
+        "line": 316,
+        "sym": "claudeQueryOptions",
+        "note": "SDK 选项总装：persistSession:false、禁 AskUserQuestion、canUseTool/onElicitation/onUserDialog 全自动拒绝——无人值守在此一次性成型。"
+      },
+      {
+        "file": "packages/subagent/subagent-claude-code/src/process.ts",
+        "line": 67,
+        "sym": "ManagedClaudeCodeProcess",
+        "note": "SDK SpawnedProcess 接口的投影：CLI 进程表面由 SDK 驱动，实体归 ctx.subprocess 的 managed range，kill 被转译为 terminate。"
+      },
+      {
+        "file": "packages/subagent/subagent-claude-code/src/run.ts",
+        "line": 206,
+        "sym": "successfulResult",
+        "note": "只认 subtype success、非 error、非空的 result 消息：最严验收规则，其余一切 outcome 都映射为带 stage/category 的失败。"
+      },
+      {
+        "file": "packages/subagent/subagent-claude-code/src/run.ts",
+        "line": 370,
+        "sym": "spawnClaudeCodeProcess 钩子",
+        "note": "query 选项内的自定义 spawn：SDK 以为自己在起进程，实际经 claudeSpawnSpec 落进 ctx.subprocess——本包最关键的一处接缝。"
+      },
+      {
+        "file": "packages/subagent/subagent-claude-code/src/index.ts",
+        "line": 151,
+        "sym": "apply → ctx.subagents.registerProvider",
+        "note": "与 codex 包对称的注册点：整个插件的价值浓缩为向 seam 提交一个 provider 实例。"
+      }
+    ],
+    "gotchas": "SDK 版本钉死 0.3.263，升级要重跑真实产品证据。无 host claude 可执行文件 fallback：依赖缺失/平台不支持/payload 损坏时第一笔委派在 query-start 失败（safe 的 query-start/unknown 事实，原始错误只在 cause 链与 Host 日志）。凭证被洗，子进程的 key 必须显式进 config.env。permissionMode 默认 dontAsk；bypassPermissions 必须显式选。由于不传 settingSources，宿主的用户/项目设置是权威——模型省略时选什么模型完全由 Claude 原生配置决定，没有 hermetic 生产模式。无续聊、无 pooling、无进度流、无产品会话持久化；collectOutput 在发布后恒为空数组，最终文本只从 result 消息取。无墙钟超时与副作用回滚。payload 大（darwin-arm64 解包约 325MB）。包内刻意保留与 codex 包的成段重复代码（jscpd 注释标注），别当成待重构的坏味道。",
+    "analogy": "同样是外包给承包商，这家（Claude Code）自带一支成熟的经纪人团队——官方 Agent SDK。你不直接跟工人说话，而是把需求单交给 SDK；但你坚持一个条件：SDK 雇的那名工人（真实 CLI 进程）必须挂到你的门禁系统（ctx.subprocess）名下，工牌、进出处、遣散流程全按你的规矩来。交货验收极严：只有盖着 success 章、非空、无错标的报告才算交付，其余一律退回并附一张只有编号没有细节的说明单。"
+  },
+  {
+    "group": "subagent",
+    "dir": "subagent-acp",
+    "short": "subagent-acp",
+    "oneLiner": "把任意 ACP 兼容 agent 变成 out-of-process 子智能体后端：每 run 新进程，经 Agent Client Protocol 驱动。",
+    "why": "删掉它，ctx.subagents 上少一个名为 acp 的 provider，dsh 失去『委派给非 dsh、非产品的第三方 agent』这条通用通道。塌掉的形状：另一个项目写的 ACP agent（或任何说 Agent Client Protocol 的进程）无法被委派——产品后端（codex/claude-code）绑定特定厂商，dsh-sdk 绑定 dsh 自家 runtime，只有本包的 command/args 是自由填的；需要进程隔离（child 绝不能碰父 harness 的 composition）的委派场景也随之消失，因为所有 in-process 后端都共享父进程。它是四个后端里唯一面向开放协议的：只要子进程实现 ACP 的 initialize/newSession/prompt 三步，就能当子智能体用。代价同样明确写死：本 provider 的 capabilities 全 false，service 会直接拒绝要 agentOptions、结构化输出、depth cap、tool filter、persona 的请求，而不是静默忽略。",
+    "position": "上游同前两个：apply 注册 AcpProvider（index.ts:205），模型侧由 dsh-tool-subagent 的 provider: acp 工具行暴露。下游是一次普通 spawn：startAcpRun 经 ctx.subprocess.spawn（spec.spawn，run.ts:349）启动 config.command，stderr inherit 到父流，stdin/stdout 是管道；协议层用官方 @agentclientprotocol/sdk 的 client + ndJsonStream 包住这对管道，依次走 initialize（声明零 client 能力，子进程自食其力）、session/new（带 cwd）、session/prompt。数据流有微妙差别：ACP 没有完整 assistant 消息概念，答案是从 session/update 通知里的 agent_message_chunk 文本块现场折叠出来的（AssistantOutputFold），所以取消或失败的 run 还能保住部分已产出的文本——这是 codex/claude-code 做不到的。session/request_permission 请求按配置的 allow/reject 策略自动应答，绝不打扰人类。停止原因由 acpStopReason 把 ACP 的 end_turn/max_tokens/refusal/cancelled/max_turn_requests 映射进 dsh 词汇表。run id 用父命名空间 UUID，child 的 sessionId 只活在 wire 内。",
+    "inside": "两个文件。index.ts 占 207 行，其中一大半在 cwd 上：isDirectory 用 statSync+accessSync(X_OK) 探测『能否作为子进程工作目录』（mode 600 的目录 stat 是 true 但 spawn 会 EACCES）；assertUsableCwd 要求绝对路径且可进入；resolveCwd 在 config.cwd 缺省时取 request.parent.session.header.cwd，两者都无则报错——注释里写明理由：一个 server 进程服务多个 session，静默回退到进程 cwd 会把孩子绑错工作区。apply 在加载期一次性校验（空字符串 cwd 显式报错、相对路径按 launch 目录解析一次）。AcpProvider 的 capabilities 显式五连 false。run.ts 的 startAcpRun（run.ts:337）是流水线：spawn → processRejected promise（进程干净退出永远不能赢得 startup race，只有 rejection 才参与）→ createAcpClientApp 挂两个 handler（run.ts:421-452）——onNotification 只对 agent_message_chunk 做 fold.pushText，thoughts/tool calls/plans 消费但不外露；onRequest 的 requestPermission 在 allow 模式下挑第一个 allow_once/allow_always 选项，否则回 cancelled。之后 initialize→session/new 全成功才 publish。取消路径：requestCancel 先本地 settle，再尽力发 session/cancel 通知，进程处置仍然权威。disposeAcpChild（run.ts:193）是两级阶梯：stdin end 后给 disposeEofGraceMs 的合作静默窗口（让 child 冲洗持久化、回收它自己的嵌套子进程），超时才 terminate（SIGTERM→grace→SIGKILL 由 seam 的阶梯接管）。acpStopReason（run.ts:221）里有个反直觉决策：max_turn_requests 映射为 error 而非 completed，因为任务没干净结束，宁报失败不报假成功。",
+    "boundary": "归它管：ACP 这一协议族后端的 spawn/握手/prompt 生命周期、权限自动应答策略、流式文本折叠、停止原因映射、EOF 优先的两级处置。不归它管：注册表与能力协商归 dsh-subagent seam（capabilities 全 false 的声明就是边界本身——进程边界外管不了的事，直接拒绝而不假装支持）；进程终止阶梯归 dsh-subprocess；child 的 session/模型/工具全部归 child 自己的进程（父只递任务文本和 cwd）；推理、工具活动等 trace 留在 child 的会话日志，本包不桥接。与 dsh-sdk 的划线是协议线：本包说开放协议 ACP，面向任意第三方 agent；dsh-sdk 说 dsh 自家 JSON-RPC，面向完整 dsh runtime，因此后者能传模型路由而前者不能。",
+    "tour": [
+      {
+        "file": "packages/subagent/subagent-acp/src/index.ts",
+        "line": 146,
+        "sym": "AcpProvider",
+        "note": "capabilities 显式五连 false：跨进程孩子无法执行父侧约束，seam 据此在 start 前拒绝请求而不是静默省略。"
+      },
+      {
+        "file": "packages/subagent/subagent-acp/src/run.ts",
+        "line": 337,
+        "sym": "startAcpRun",
+        "note": "全生命周期主线：spawn→initialize→session/new 成功才 publish，startup race 保证进程干净退出永远赢不了发布。"
+      },
+      {
+        "file": "packages/subagent/subagent-acp/src/run.ts",
+        "line": 431,
+        "sym": "session/requestPermission handler",
+        "note": "权限提示的自动应答：allow 挑第一个 allow 选项，否则回 cancelled——无人值守在此，且 tool 标题等原文永不进 diagnostic。"
+      },
+      {
+        "file": "packages/subagent/subagent-acp/src/run.ts",
+        "line": 221,
+        "sym": "acpStopReason",
+        "note": "停止原因映射表：max_turn_requests 与未知值都落 error——不干净结束绝不被报告为 completed，是防假成功的守门行。"
+      },
+      {
+        "file": "packages/subagent/subagent-acp/src/run.ts",
+        "line": 193,
+        "sym": "disposeAcpChild",
+        "note": "EOF 优先的处置阶梯：先给 child 冲洗自己嵌套子进程的合作窗口，超时才走 terminate——与产品后端 dispose 的关键差异。"
+      }
+    ],
+    "gotchas": "每个 run 新进程，无 pooling——每笔委派付全额 spawn + ACP 握手成本。只支持本地工作区：cwd 是递给同机子进程的本地路径，无远程映射设计。只收集 agent_message_chunk 文本：推理、工具活动、计划等留在 child 会话日志，ACP 上不出现。权限提示永远自动应答，没有人会看到 child 的 request_permission；allow 模式挑的是『第一个』allow 选项，无细粒度策略。child 若不说 ACP（比如启动即退出），只能靠连接观察流关闭来兜底。diagnostic 固定一行模板，stderr/异常文本/任务内容/环境值一律不进；结果边界 4096 UTF-8 字节。config.cwd 必须绝对路径且可进入（X_OK），空字符串显式报错。取消时部分文本能保住，但成功与失败都依赖 child 诚实发 stopReason。无墙钟超时与副作用回滚。",
+    "analogy": "像一个懂『世界语』（ACP）的翻译窗口：不管对方是哪家公司的 agent，只要会说这套问候语（initialize）、会开案子（newSession）、会接单（prompt），你就能把活递进去。窗口上装了两台自动应答机：对方申请许可时，按你预设的『一律批准』或『一律回绝』盖章，绝不找人签字。对方干活时的每一句播报（chunk）都被现场录音，所以哪怕中途叫停，说到一半的结论也还在你手里。"
+  },
+  {
+    "group": "subagent",
+    "dir": "subagent-dsh-sdk",
+    "short": "subagent-dsh-sdk",
+    "oneLiner": "把另一个 dsh 运行时变成子智能体后端：每 run 拉起完整子 harness，经 SDK 的 stdio JSON-RPC 驱动并传模型路由。",
+    "why": "删掉它，ctx.subagents 上少一个名为 dsh-sdk 的 provider，dsh 失去『委派给完整 harness 对等体』的能力。塌的具体形状：需要 child 拥有自己的 profile、patch 组合、会话持久化、模型路由与整套插件树的场景无路可走——产品后端（codex/claude-code）绑定别家产品，ACP 后端只递文本和 cwd，都传不进 dsh 特有的 initialize 路由（provider/model/reasoningEffort/maxTokens）。它是四个后端里唯一开启 agentOptions 能力的 out-of-process 后端（SDK_START_CAPABILITIES，index.ts:110），父可以在每次调用时改写孩子的模型路由；也是嵌套 dsh 的官方姿势：child 的 DSH_HOME 必须是隔离的绝对路径，防止嵌套 runtime 翻出启动者的 profile 和凭证。模型侧还能按调用选 provider/model/reasoning，而 maxTokens 保持部署管控——这套路由白名单只有本包能兑现。",
+    "position": "上游：apply 注册 SdkSubagentProvider（index.ts:199）；agentRouteDefaults 把配置的 provider/model 基线发布给 dsh-tool-subagent 做模型覆盖与 exact-route 预检，直接调用方则走 start() 里同样的 resolveSdkRoute 合并。下游与众不同：child 不是 ctx.subprocess.spawn 出来的，而是由 @deepseek-ai/dsh-sdk-client 的 DeepSeekHarness 客户端自行 spawn（run.ts:239 internals.createHarness）——这是 subprocess seam 文档化的例外（SDK 托管传输），代价是本包必须自己调 scrubbedParentEnv() 补上凭证洗涤（run.ts:245），也因此 index.ts 的 inject 只有 ['subagents']，没有 subprocess。数据流：start() 完成 child 的 initialize 握手（含 exact-model 与 effort 校验）才 publish；运行期 observe 回调过滤 method 为 session.event 且 sessionId 匹配的通知，把 SessionEvent 喂给 AssistantOutputFold；答案取最后一条完整非空 assistant/message（记录 usage 的空消息跳过），没有则退回累积的 text-delta 流。child 的 session 事件流被消费而不桥接进父日志——transcript 留在 child 自己的 session root，血缘上父只记委派工具调用与结果。",
+    "inside": "两个文件。index.ts：Config 有三个加载期即解析的路径字段（dshBin/patches 经 resolveConfiguredFile 校验为存在的常规文件，dshHome 必须绝对路径）；SDK_START_CAPABILITIES 冻结自 NO_START_CAPABILITIES 但打开 agentOptions:true；resolveSdkRoute（index.ts:116）按字段独立合并请求覆盖——reasoningEffort 特殊，没有实例默认值，请求不给就整体缺席，让孩子模型自己解析默认；agentRouteDefaults 在构造器里冻结并暴露给工具层。run.ts 的 startSdkRun（run.ts:233）：先经 internals.createHarness 组装 DeepSeekHarnessOptions（dshBin/profile/patches/dshHome/processCwd/env=洗后母环境+显式覆盖/shutdownTimeoutMs/两个 dispose grace，以及 cwd/provider/model/reasoningEffort/maxTokens 的路由组）；harness.start() 与 cancelSettled 竞速完成握手，发布前失败由 sdkStartupFailure 归类为 initialize/shutdown 两段 safe 事实，进程由 SDK 侧 reap。发布后 childSessionId 现铸（session-UUID），attempt 里 harness.session(childSessionId).run(prompt,{onNotification:observe}) 与本地取消竞速（run.ts:322）；turn 返回后 findLast 找最后一条 turn/end 事件，sdkChildOutcome（run.ts:147）做词汇表映射——completed/max-tokens 直通，blocked 映射 refusal，aborted 里 reason.kind 为 disposed 的补一条 child-disposed diagnostic，error/interrupted/缺失 terminal 都落 error。取消没有 wire 级 prompt cancel：dispose 先本地 settle 为 aborted，再走有界 shutdown 请求，然后 EOF→SIGTERM→SIGKILL 阶梯（teardown 经 harness.close）。internals 对象（run.ts:118）是测试替换 createHarness 的缝。",
+    "boundary": "归它管：dsh 子 runtime 的 spawn/握手/运行/取消/关停生命周期、agentOptions 路由白名单的合并语义、从 session.event 流提取答案、turn/end 词汇映射、SDK 托管传输下的凭证洗涤。不归它管：注册表与 one-shot 生命周期不变量归 dsh-subagent seam；进程终止阶梯名义上归 dsh-subprocess，但本包因走 SDK 托管传输而自备同款 ladder（这是边界上唯一的自担例外）；child 的 composition、会话持久化、工具、递归预算全部归 child 自己——所以工具部署要配 maxDepth: 'provider-managed'，深度管制下放给 child harness；persona/outputSchema/toolFilter 被 capabilities 拒绝，因为它们的执行权不跨进程。与 acp 的划线是『是否 dsh 同构』：能传路由是因为 child 说的就是 dsh 自己的协议。",
+    "tour": [
+      {
+        "file": "packages/subagent/subagent-dsh-sdk/src/index.ts",
+        "line": 110,
+        "sym": "SDK_START_CAPABILITIES",
+        "note": "四个 out-of-process 后端中唯一 agentOptions:true 的能力表：模型路由能跨进程传递，结构化输出/深度/工具过滤/persona 仍然拒绝。"
+      },
+      {
+        "file": "packages/subagent/subagent-dsh-sdk/src/run.ts",
+        "line": 239,
+        "sym": "internals.createHarness",
+        "note": "child 不是 ctx.subprocess spawn 的：DeepSeekHarness SDK 客户端自拉完整 dsh runtime，env 由本包手工 scrubbedParentEnv()+覆盖补上。"
+      },
+      {
+        "file": "packages/subagent/subagent-dsh-sdk/src/run.ts",
+        "line": 302,
+        "sym": "observe",
+        "note": "只放行本 child session 的 session.event 通知并喂给 AssistantOutputFold：答案提取与『transcript 不桥接进父日志』的边界都在这三行。"
+      },
+      {
+        "file": "packages/subagent/subagent-dsh-sdk/src/run.ts",
+        "line": 147,
+        "sym": "sdkChildOutcome",
+        "note": "child 最后一条 turn/end reason 到 seam 词汇的映射表：blocked→refusal、缺失 terminal→error，child-disposed 才附加 diagnostic。"
+      },
+      {
+        "file": "packages/subagent/subagent-dsh-sdk/src/index.ts",
+        "line": 116,
+        "sym": "resolveSdkRoute",
+        "note": "agentOptions 路由合并：字段级独立覆盖，reasoningEffort 无实例默认、请求缺席即整体缺席——路由白名单的精确语义。"
+      }
+    ],
+    "gotchas": "每 run 拉起完整 harness（整棵插件树），spawn 成本明显高于 ACP 后端的典型 child——这是全隔离的定价，无 pooling。dshHome 必须是绝对隔离路径，否则嵌套 child 会发现启动者的 profile 与凭证；dshBin/patches 在插件加载期就解析并要求真实存在的文件，配错直接 fail load。child 的凭证同样被洗，DEEPSEEK_API_KEY 要显式写进 config.env。取消无 wire 级 prompt cancel：本地先把结果 settle 成 aborted，再走有界 shutdown + EOF/SIGTERM/SIGKILL，child 正在跑的 turn 由其自身 disposed 机制收尾（此时结果仍 aborted 但附 child-disposed diagnostic）。child 的 session.event 流只用于提取答案，不进父日志，调试 child 要去 child 的 session root 翻 transcript。只支持本地 child 进程；远程 runtime 需要另一个后端。无墙钟超时与副作用回滚。",
+    "analogy": "像派活给自己的克隆分身：对方不是外人，就是另一台 dsh，有完整的脑子（插件树）、自己的记事本（session 持久化）和自选的武器（模型路由）。你通过对讲机（stdio JSON-RPC）下任务单，还能在单子上指定这次用哪颗模型、多大力气（reasoningEffort）。对讲机不传中间过程，只在你喊停时把对方已经念出口的话留住。分身住在独立宿舍（隔离 DSH_HOME），翻不到你抽屉里的钥匙。"
+  }
+]

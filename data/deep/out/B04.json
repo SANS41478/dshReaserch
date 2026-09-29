@@ -1,0 +1,52 @@
+[
+  {
+    "group": "core",
+    "dir": "session",
+    "short": "session",
+    "oneLiner": "唯一的会话真相：append-only 事件日志加 surface 折叠，模型可见历史全部从日志推导",
+    "why": "不加载这个包，ctx.sessions 这个 Service 就不存在，dsh-agent-loop 连 Session 都构造不出来：每一条 turn/start、step/start、system/message、request/header、assistant/message、tool/result 都要落到 session.append()，没有收件人就没有组成部分，崩溃之后更没有任何东西可以回放。紧跟着塌的是 session/event 这条事实流——session-persistence-jsonl 的 writer 订阅它写盘，session-projection 的每个 projection unit 靠 drive 折叠状态给 UI 出视图，session-controller 的 history journal 靠它推流给客户端，三者同时断供：磁盘上没有会话记录，界面上没有标题、待办、工具卡片和历史。compaction 失去 replace 的作用对象，压缩无从下手；fork 失去可复制的前缀，分叉会话不可能存在。最后每个包只能各自维护一份「当前 messages 数组」，于是出现第二份真相：模型看到的对话和界面看到的不再是同一件事，重启或分叉之后两边必然对不上。",
+    "position": "写端（上游）的主写者是 dsh-agent-loop：一次 turn 里它按序 append turn/start 与 step/start，把 core/system-prompt 渲染好的字符串写成 system/message，把入库的用户输入写成 user/message，真正发请求前写 request/header、request/context 和记录工具增减的 developer/message，模型流结束后按是否落地写 assistant/message 或 assistant/attempt，再由 tool-calls.ts 补上 tool/call 与 tool/result，收尾写 step/end、turn/end。次要写者是各领域插件，各自往同一条日志追加自己的 log-only 事实：core/tools 的 tool/ptc-dispatch*、compaction-basic 的 compaction/* 与那条走 replace 的 user/message、compaction-image-offload 的 image/offload，以及 approval、permission-presets、todo、session-title、feedback 等。每条事件落地后由本包同步 emit session/event，这是唯一的出站管道。它的依赖很少：只用到 dsh-llm 的类型与比对工具、dsh-util-values 的 snapshotJsonValue 与 deepFreeze、dsh-brand、dsh-scope，外加 cordis 本身，自己既不调模型也不碰磁盘。读数据流是「同一个 loop 边写边读」：buildRequest 用 requestHeader()、requestContext()、toolHistory() 取回归一化的请求信封，再用 deriveMessages() 取出这次要给模型的 Message[]；界面侧从不直读日志，session-projection 订阅事件流折叠成视图，api/session-controller 把事件编成 journal 推给前端。需要耐久时才有人调 ctx.sessions.flush(session)，那是全系统唯一的 durability barrier。",
+    "inside": "整个包由「一根日志、一层投影、一个 Store」三块组成。第一块是事件类型体系：types.ts 的 SessionEventMap 是 merge-extensible 的判别联合，turn/start、step/end、request/header 等是 log-only 记录，只有 system/message、developer/message、user/message、assistant/message、tool/result 这五类 SurfaceEventType 能产生模型消息；事件被编成 { type, seq, time, data, surfaceOp?, sourceEventSeqs?, ignorable? } 的信封，seq 严格等于日志下标，SessionSeq、SessionLogOffset、SessionSeqCursor 三个品牌把「存在的事件」「可能的空隙」「还没有事件」区分开。known-event-types.ts 的 KNOWN_SESSION_EVENT_TYPES 是这份词汇表的构造期快照：未知类型必须带 ignorable 标记，读者才敢跳过它。第二块是 surface 折叠：surface.ts 的 SurfaceManager 持有有序视图，nodes 是模型可见节点的 seq 序列，replaceGeneration 记替换次数、contentGeneration 记「已有内容被改动」的次数。每个事件的处理被拆成纯的 planSurfaceEvent 与提交的 applySurfacePlan，先规划后落地，规划失败就不会把状态改到一半。append 只是推到尾部；replace 是 { op: 'replace', startSeq, endSeq }，按当前 nodes 顺序把阴影区间整段替出来，并且 sourceEventSeqs 必须覆盖每一个被遮蔽的节点。assertToolResultRewrite 限制工具结果重写只能改 content，assertSystemHeadRewrite 保护 node 0 的系统提示词只能被恰好覆盖它的 system/message 平替重写。foldSurface(events, projections) 是同一套规则的纯离线版本，冷启动、格式迁移和浏览器端都跑它。第三块是追加语义本身：index.ts:722 的 Session.append 先用 snapshotJsonValue 一轮读完、校验并深拷，避免带状态的 getter 给校验和落库两份不同的值，deepFreeze 冻结后先 surfaceManager.validateNext，最后才 log.push 并 emit session/event，entry.appending 守卫禁止发布期间重入。世代不可变是这条链的自然结果：事件一旦进日志就被冻结，从不修改；所谓替换不是改写旧事件，而是在 nodes 里把旧 seq 换成新 seq，原始凭证永远留着供回放、审计和压缩摘要使用。第四块是从日志推导模型历史：deriveMessages() 沿着 surface.nodes 走，对每个 seq 调 deriveEventMessage，空内容的 system、developer、assistant 节点直接投影为 null 而不进 transcript；结果按 contentGeneration 缓存，纯尾部追加只算新节点，一旦发生替换或插件投影就整体重建，返回的数组每次新建而其中的 Message 是共享且冻结的。第五块是 projection：插件在 SessionEventMap 里用 @messageProjection 声明、通过 ctx.sessions.registerMessageProjection() 注册一个纯函数 project(event, context) 返回 Map<SessionSeq, Message>，典型例子是 compaction-image-offload 的 image/offload 把图片块永久换成已卸载标记——它既不 mint 消息身份也不改变节点归属；_assertProjections 保证缓存的消息不会活得比解释它的定义更久，插件卸载后会话宁可报错也不继续 derive。剩下三个增量 fold（requestHeader、requestContext、toolHistory）都只消费上次读过之后新增的事件；Store 侧则是 prepare、enter、announce 三段式生命周期，让 session 与 agent 在同一条 effect 里按序拆除，detachEntered 负责发布回滚，fork 走 buildForkSeed 复制前缀、打上 session/end-seed 世代标记，再用 ToolCallRecovery 与 openTurnClosers 给敞开的尾巴补上 synthetic 结果；Session 另有 firstLiveSeq 与 inheritedEventCount 两个进程内偏移，分别标明「构造 seed 的末尾」和「继承自父会话的切点」，二者只在 fork 种子里才会错开。invariant.ts 伴侣则用 session/event 与 internal/dispatch 两个钩子做 turn/step 括号配对和工具调用与结果配对的关系校验。",
+    "boundary": "明确归它管：追加写入的唯一入口与提交边界、事件的深冻结与 seq 连续性、surface 的顺序与替换合法性、从日志推导模型可见历史、fork 前缀的切点与世代标记、以及 flush 这个耐久性栅栏的所有权。明确不归它管并各有接手人：不调用模型，那是 dsh-llm 与各 adapter 的事；不渲染提示词，core/system-prompt 出字符串、loop 负责写成 system/message；不落盘，session-persistence-jsonl 订阅 session/event 异步刷写，本包只保证已提交的事件一定被发出；不把事件翻译成界面视图，那是 session-projection 折叠与 session-projection-cache 存快照；不决定何时检查点，那是 session-checkpoint-policy；不做历史格式迁移，session-format-v0 到 v4 的相邻迁移链先把物理格式翻译成当前一代才允许构造 Session；也不决定压缩策略与范围，compaction-basic 选区间，本包只判定这次 replace 合不合法。划线的依据只有一条：凡是必须跨进程跨重启保持一致、且只有日志所有者能判定其合法性的东西留在包内；凡是只依赖已提交事件并且失败也不影响日志的东西，一律推给订阅者。",
+    "tour": [
+      {
+        "file": "packages/core/session/src/types.ts",
+        "line": 281,
+        "sym": "SessionEventMap",
+        "note": "整机的事件词汇表就定义在这里：五个 SurfaceEventType 之外全部是 log-only，插件通过 declare module 往这张表里合并自己的键名。"
+      },
+      {
+        "file": "packages/core/session/src/index.ts",
+        "line": 722,
+        "sym": "Session.append",
+        "note": "快照、deepFreeze 与 surfaceManager.validateNext 全部发生在 log.push 之前，所以任何一条校验失败时，日志本身、派生缓存和已发出的事件流都不会留下痕迹。"
+      },
+      {
+        "file": "packages/core/session/src/surface.ts",
+        "line": 516,
+        "sym": "planSurfaceEvent",
+        "note": "规划与提交分离的关键：替换范围、工具结果重写限制、node 0 保护都在改动 _state 之前判定，折叠状态永远不会被改到一半。"
+      },
+      {
+        "file": "packages/core/session/src/surface.ts",
+        "line": 499,
+        "sym": "assertSystemHeadRewrite",
+        "note": "系统提示词的世代保护：覆盖 node 0 的替换必须是覆盖恰好那一个节点的 system/message，压缩范围也不能顺手把开头抹掉。"
+      },
+      {
+        "file": "packages/core/session/src/index.ts",
+        "line": 860,
+        "sym": "Session.deriveMessages",
+        "note": "模型可见历史的唯一出口：由 contentGeneration 决定是增量续算还是整体重建，每次返回新数组，而其中的 Message 仍共享冻结对象，消费者改不动日志。"
+      },
+      {
+        "file": "packages/core/session/src/surface.ts",
+        "line": 600,
+        "sym": "foldSurface",
+        "note": "同一个折叠的纯函数离线版：活对象的 _processDelta、冷启动恢复、格式迁移校验和浏览器端渲染走的是同一套不变式。"
+      }
+    ],
+    "gotchas": "几个反直觉的地方：append 不可逆，replace 只把旧节点从 surface nodes 里摘掉，原始事件仍在日志中，所以日志永远 append-only，但键值缓存会从第一个被遮蔽的消息起失效。空内容的 system、developer、assistant 节点投影为 null，想清空系统提示词必须对每个活跃 system 节点各写一条空白替换，只改最后一条不生效。eventAt()、snapshotEvents() 与 ownEvents() 已标记弃用，新生产调用被禁止，只要长度就读 session.seq。tool/result 的 error 只在一等消息 isError 为真时才允许存在，header.system 与空的 tools、adapterDefaults 直接被拒绝而不是规范化。fork 只修补敞开的尾部缺口，已关闭 step 里历史缺失的工具结果不会被补齐。注册过 projection 的插件一旦卸载，用过它的会话会直接拒绝继续 derive，这是「缓存不能活得比解释它的定义更久」的代价。最后，Session 本身只在内存里，不挂持久化后端就没有任何 durability。",
+    "analogy": "把它想成一本只准登入、不准涂改的会计流水账：每句提问、每次模型输出、每个工具结果，都是一行带连续序号、当场冻结的凭证，封面则是记录工作目录与父会话的 SessionHeader。模型看到的对话历史不是账本本身，是按账簿现算的一张报表——surface 决定列哪几行、怎么排，deriveMessages 把每行翻译成给模型的消息。压缩就是做一张合并凭证：旧行折进摘要行、报表不再显示，原始凭证却一张没删。开分店就是 fork：抄到某一行另立一本，只在敞口那笔补记结果未知。"
+  }
+]

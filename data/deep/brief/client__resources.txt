@@ -1,0 +1,203 @@
+# @deepseek-ai/dsh-client-resources
+path: packages/client/resources
+desc: Unified client resource model: protocol-registered providers turn URL addresses into live values, consumed through the useResource global standard hook
+deps: -
+peers: @deepseek-ai/cordis
+srcFiles: 4  srcLoc: 388
+
+## README.md (108 行)
+---
+description: "Client resource model: protocol-registered providers turn URL addresses into live values that any slot component reads through the useResource standard hook."
+kind: "package-reference"
+---
+# @deepseek-ai/dsh-client-resources
+
+English | [中文](README.zh.md)
+
+## Summary
+
+Use client resources when a component knows live data only by URL address, such as a tab record, link, or mention, while another client package owns the data. Resource addresses use `dsh-resource://<type>/…`; protocols that need a scope encode it in the path. Components receive the current value and later updates through the public `useResource` hook. Unsupported protocols and non-resource schemes, such as `sidebar://guide`, resolve to no resource.
+
+## Table of Contents
+
+- [Use this package](#use-this-package)
+  - [Read a resource](#read-a-resource)
+  - [Provide a protocol](#provide-a-protocol)
+  - [Hold a resource open](#hold-a-resource-open)
+- [Understand the implementation](#understand-the-implementation)
+  - [Lifecycle](#lifecycle)
+  - [Failures](#failures)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="use-this-package"></a>
+## Use this package
+
+Nothing needs configuration to mount: the plugin provides `ctx.resources` and contributes the `resource` root keyed hook through `ctx.slots.provideRoot`, so every slot component receives it whatever its scope.
+
+<a id="read-a-resource"></a>
+### Read a resource
+
+Every slot component receives `useResource` in its props. `useResource<P>(address)` names the protocol as the type argument and returns `{ status, value, failure }`: `none` when no provider is registered for the address's protocol (or the address is not a `dsh-resource://` URL), `loading` while the provider has not yielded, `live` with the latest `ok` frame's value, and `failed` when the latest frame reported a failure, with that failure beside the last value. Subscribing through the hook is what holds the resource open; a component that mounts while another holder keeps the resource alive reads the latest value at once.
+
+<a id="provide-a-protocol"></a>
+### Provide a protocol
+
+The protocol's owning client package declares its value type in `ResourceProtocolMap` and registers one provider as an owned effect. `open` yields `RemoteResult` frames: the current content first and one frame per later change, with a failure as an `ok: false` frame rather than a throw; it must stop when `signal` aborts:
+
+```ts ignore-check
+declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface ResourceProtocolMap { note: NoteView }
+}
+
+export const inject = ['resources']
+
+export function apply(ctx) {
+  ctx.effect(() => ctx.resources.register<'note'>({
+    protocol: 'note',
+    async *open(address, { signal }) {
+      yield await readNote(address, signal)
+      for await (const change of followNote(address, signal)) yield change
+    },
+  }), 'my-notes: note resource provider')
+}
+```
+
+A protocol has exactly one provider; a second registration throws. Registering a provider while addresses of its protocol are already held opens them; disposing it ends their streams and returns them to `none`.
+
+<a id="hold-a-resource-open"></a>
+### Hold a resource open
+
+`ctx.resources.pin(address, signal)` keeps a resource open without subscribing, until `signal` aborts. The right Sidebar pins every open tab's address for the tab record's lifetime, so switching tabs unmounts the body without closing its stream and switching back reads the latest value. `ctx.resources.source(address)` is the bare observable behind the hook, for callers outside React.
+
+<a id="understand-the-implementation"></a>
+## Understand the implementation
+
+<a id="lifecycle"></a>
+### Lifecycle
+
+One record per address holds a snapshot store, a holder count (hook subscribers plus pins), and the running stream's `AbortController`. The first holder opens the provider's stream; every later holder shares it; the last holder's release aborts the stream and resets the snapshot to idle (`loading` with a provider, `none` without). Records are kept for the page lifetime so `source()` stays reference-stable across React's render-then-subscribe window and a StrictMode remount.
+
+<a id="failures"></a>
+### Failures
+
+A failure is a frame, not a throw: a provider yields `{ ok: false, error }` and the resource turns `failed` with that error beside the last value; the next `ok` frame clears it. A stream that ends on its own keeps its last state. Frames that arrive after the release that aborted the stream are dropped, and the iterator is returned. A throw inside a provider's stream is a programming error and is not caught.
+
+<a id="model-experience"></a>
+## Model Experience
+
+None, as this package moves values between browser plugins and registers nothing model-facing.
+
+#### KV Cache effect
+
+None; resource streams do not assemble model requests.
+
+## Known Limitations and Deferred Work
+
+<a id="known-limitations-and-deferred-work"></a>
+
+- **Records live for the page lifetime** — an address's record stays in the registry after its last holder leaves; only its state is discarded. Memory grows with the number of distinct addresses ever read, not with reads.
+- **Providers own abort compliance** — the registry drops what a released stream still yields, but a provider that ignores `signal` keeps working until its next frame.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>
+
+**Runtime invariant:** No companion is published. Provider ownership and holder counts have one owner, the registry, with no independent runtime source to compare against; registration disposal and the open/close lifecycle are asserted by behavior specs.
+
+
+## 源文件与导出符号
+
+### packages/client/resources/src/client/contract.ts  (116 行)
+  declare module: declare module '@deepseek-ai/dsh-client-ui-slots' { | declare module '@deepseek-ai/cordis' {
+  36	type	ResourceProtocol
+  44	type	ResourceStatus
+  47	iface	ResourceSnapshot
+  60	type	UseResource
+  65	iface	ResourceOpenContext
+  71	iface	ResourceProvider
+  93	iface	Resources
+
+### packages/client/resources/src/client/index.ts  (42 行)
+  23	const	inject
+  30	fn	apply
+
+### packages/client/resources/src/client/resources.ts  (212 行)
+  46	const	RESOURCE_SCHEME
+  56	fn	protocolOf
+  75	class	ResourceRegistry
+      members: L80 constructor, L82 register, L99 pin, L106 source, L110 record, L119 create, L148 providerOf, L158 hold, L163 release, L171 attach, L180 detach, L185 start, L194 stop, L200 consume
+
+### packages/client/resources/src/index.ts  (5 行)
+  4	fn	apply
+
+## 其它关键文件
+
+### package.json
+{
+  "name": "@deepseek-ai/dsh-client-resources",
+  "description": "Unified client resource model: protocol-registered providers turn URL addresses into live values, consumed through the useResource global standard hook",
+  "version": "0.1.7-rc.2",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/client/resources"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-renderer"
+      ],
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "bundle": "tsdown",
+    "watch": "tsdown --watch"
+  },
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:~"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/dsh-client-store": "workspace:*",
+    "@deepseek-ai/dsh-client-test-runtime": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-renderer": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-slots": "workspace:*",
+    "@deepseek-ai/dsh-typert-protocol": "workspace:*"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/client.js",
+    "lib/types/**/*.d.ts"
+  ]
+}
+

@@ -1,0 +1,222 @@
+[
+  {
+    "group": "acp",
+    "dir": "acp",
+    "short": "acp",
+    "oneLiner": "把 dsh 会话挂到行业标准 ACP 协议上的自动化专用服务端",
+    "why": "dsh 有四种把自己暴露给外部的方式：ACP（行业标准 Agent Client Protocol，仅自动化）、SDK（自有 JSON-RPC over stdio）、Web GUI（HTTP+浏览器）、Headless（无前端的纯 bundle）。如果删掉 acp，第一种就整块塌掉：进程外 subagent 后端 dsh-subagent-acp 失去载体，测试跑批和脚本控制器只能退回自有 SDK 协议，第三方 Agent Client（如 Zed 这类标准 ACP 宿主）没有任何标准接口可接——它们不会为 dsh 学一套私有协议。具体后果：外部程序无法经标准 initialize/session/new/session/prompt/session/update 流程驱动持久会话，也无法做 session/list、session/resume、session/close 的跨进程重启恢复，dsh 就从「可被生态编排的 agent 运行时」退化成「只能被自家工具链驱动的封闭运行时」。它刻意只暴露标准 ACP v1 面：语义化更新、通用工具生命周期、一次性权限决策；DSH 特有的呈现数据（计划卡片、todo、终端视图）全不上线。",
+    "position": "上游是任何 ACP client，经 JSON-RPC over stdio 与 @agentclientprotocol/sdk 的 AgentSideConnection 通话；下游由 inject 声明：agents（Agent 工厂）、llm（模型目录与路由）、sessionPersistence（列表/恢复）、sessions（flush），peer 里还有 mcp-client（挂 MCP）、user-approval（权限瀑布声明合并）、attachment（图片准入门）、token-meter（可选）。数据流双向：client 的 session/prompt 走 index.ts 的 implementation.prompt 转入 AcpSession.prompt，经 admitAcpPrompt 验内容后 agent.followup() 入队；反向由 ctx 事件 session/event、agent/inbox/claimed、agent/error 驱动，AcpSession 把已提交事件投影成 session/update 通知串行送回。与 SDK 家族的分工同构而协议不同：ACP 用行业标准协议栈（@agentclientprotocol/sdk），SDK 用自家 dsh-sdk-protocol；两边都是 index.ts 做协议接线、核心类做服务层。",
+    "inside": "apply（index.ts:97）建 sessions Map 与 activating 集合，桥接五个事件（session/event、agent/inbox/claimed、agent/error、llm/adapters-updated、approval/request），然后把 implementation 对象（initialize、newSession、resumeSession、listSessions、setSessionConfigOption、closeSession、prompt、cancel）经 createAcpAgentApp 链式挂到 ndJsonStream(stdin, stdout) 上。每会话模块 AcpSession（session.ts:98）独占一个 Agent：create/resume 用 ctx.agents.create/resume 组合，setup 里 AcpModelControl.install 挂模型选择器、mountAcpMcpServers 验证并挂 MCP（stdio 验绝对命令、HTTP 验 URL，失败回滚未发布的 Agent）。prompt（session.ts:243）维持单一 inflight 槽：admission 阶段整批验证内容、快照路由、复核 Agent 身份，然后才 createUserMessage 并 followup；settleAfterQuiescence（session.ts:483）按显式取消→输出投递失败→Agent 区间失败→correlated turn 结束的优先级收束，映射成标准 stopReason（codec.ts 的 turnEndToStopReason）。事件投影在 onSessionEvent（session.ts:345）：outputTail 链保证每会话更新严格有序，assistant/message 走 updates.ts 的 assistantUpdates，tool/call、tool/result 各有投影。close（session.ts:428）是 memoized 静默拆除：取消→drain→subagents.drainContinuableDescendants（child-first）→ctx.sessions.flush→disposeAgent。approval/request（index.ts:155）把权限请求转成一次性的 session/request_permission，只给 allow-once/reject-once。",
+    "boundary": "明确不管：一切人类交互呈现——不做 session/load、删除、fork、additionalDirectories、modes、commands、plans、terminals、client 文件系统操作、elicitation（README 的 Known Limitations 逐项列出）；持久权限授予不归它（只转达一次性决策，归属 user-approval 体系）；协议帧编解码不归它（@agentclientprotocol/sdk 负责）。划线依据是 automation-only 设计决定：客户端是可信程序，要的是可靠的生命周期与语义事实，不是给人看的界面，所以凡是「给人看」的能力都被排除在 wire 之外。",
+    "tour": [
+      { "file": "packages/acp/acp/src/index.ts", "line": 62, "sym": "inject", "note": "声明四个必需服务 agents/llm/sessionPersistence/sessions——ACP 是纯服务层适配器，模型面都从全局层读，不自带组合。" },
+      { "file": "packages/acp/acp/src/index.ts", "line": 155, "sym": "ctx.on('approval/request')", "note": "权限请求桥接成一次性 session/request_permission：只回 allowed-once/rejected，绝不从未知客户端回应推断持久授权。" },
+      { "file": "packages/acp/acp/src/index.ts", "line": 378, "sym": "createAcpAgentApp 链式挂载", "note": "协议接线全貌：implementation 的 8 个方法逐一 onRequest/onNotification 挂到 ACP SDK 的 app，再 connect 到 stdin/stdout 的 ndJsonStream。" },
+      { "file": "packages/acp/acp/src/session.ts", "line": 243, "sym": "AcpSession.prompt", "note": "单 prompt 槽的准入门：admission 验证整批内容、快照路由并 pin 到 turn，取消赢得 admission 时绝不入队迟到的 turn。" },
+      { "file": "packages/acp/acp/src/session.ts", "line": 428, "sym": "AcpSession.close", "note": "memoized 静默拆除：cancel→whenIdle→outputTail drain→continuable 子代理→persistence flush→disposeAgent，failure 聚合成 AggregateError。" }
+    ],
+    "gotchas": "stdout 只走协议帧，组合里绝不能有 stdout logger。每会话同时只允许一个 prompt，第二个直接 invalidParams。图片 prompt 只在持久 attachment store 加精确图片能力路由时可用，base64 在准门后即丢弃、消息里只留附件引用。prompt 快照的路由贯穿整个 turn，并发改模型配置要到下一 turn 才生效。session/list 只列可恢复的根会话（排除 subagent 起源和有父亲的会话），分页 cursor 是不透明 base64url 且必须 canonical。不支持 additionalDirectories、session/load、删除、fork。",
+    "analogy": "像给一台设备装上行业标准的充电口：别的厂商的插头（Zed、测试脚本、进程外 subagent）不用转接头就能插上取电（创建会话、收语义更新）。但这口只供电不带装饰灯——想看炫彩界面（DSH 呈现卡片）得走另一条线（Web GUI）。"
+  },
+  {
+    "group": "sdk",
+    "dir": "protocol",
+    "short": "protocol",
+    "oneLiner": "SDK 自有 JSON-RPC over stdio 的线协议：一个帧传输类加全量方法类型",
+    "why": "SDK 家族是 dsh 暴露给外部的第二种方式：自有 JSON-RPC over stdio。协议层（本包）与服务层（sdk/server、sdk/client）刻意分开——没有这个包，server 端（TS 插件）、client 端（TS 库）和 Python SDK 三处各自手写帧解析和方法形状，必然漂移成三个不兼容的方言。它是纯库：没有插件、没有配置、没有注册，仓库根导出传输类与命名类型，源码模块不做深导出。若删掉它，dsh-sdk-jsonrpc-server 与 dsh-sdk-client 同时编译失败，Python SDK 失去镜像契约的权威出处；更隐蔽的损失是调试面——frame 规则（\\n 分帧、三类判别、错误码语义）与方法 payload 语义（messageId 是入队回执不是回合归属）都集中定义在这一个地方，两线端任何分歧都能在这里仲裁。",
+    "position": "上游与下游都是「线端」：被 sdk/server import（作为它监听 stdio 的传输与类型来源）、被 sdk/client import（作为它驱动子进程的传输与类型来源）、被 Python SDK 按形状镜像（不 import）。peerDependencies 里的 dsh-llm、dsh-session、dsh-subagent 决定了 wire 契约的词汇：通知 payload 直接内嵌 SessionEvent、ContentBlock、SubagentStopReason——会话词汇就是 wire 词汇。数据流：字节数组进 → drainLines 分帧 → handleLine 三分类派 → request handler 的返回值或 pending Map 的 resolve 出；本包不发起任何行为，只搬运。",
+    "inside": "两个文件撑起全部。transport.ts 的 JsonRpcLineTransport（62 行处）是双向端点：drainLines 按换行切帧，handleLine（201 行处）做三类判别——id+method 是请求，交 onRequest handler，缺 handler 回 -32601，handler 抛错回 -32603；id 是响应，handleIncomingResponse（240 行处）从 pending Map 取出等待者，error 帧reject成 JsonRpcResponseError（18 行处，保留 wire code 与 data）；method 是通知，交 onNotification。request()（121 行处）生成 req_<uuid> 形式的 id，支持 AbortSignal 撤离（删 pending 表项并 reject）；close() 只摘监听并 failPending，不销毁流。types.ts 用 HarnessSdkRequestMap（115 行处）与 HarnessSdkNotificationMap（107 行处）按方法名索引形状：三个 client→server 请求 initialize、session/prompt、shutdown，四个 server→client 通知 session.event、session.status、subagent.started、subagent.finished；SessionPromptResult.messageId 明确只是入队回执，SdkEncodedImageBlock 定义了内联图片如何进线。",
+    "boundary": "只管帧规则、方法名、payload 形状和错误语义；不管行为——initialize 等 Loader 就绪、prompt 入队、shutdown 退进程全在 sdk/server；不管连接建立——字节流由调用方拥有（stdin/stdout 或测试注入）；没有协议版本协商（serverInfo.version 不被校验）、没有 cancel 或会话关闭方法、server→client 请求是留待未来审批流的死能力。划线依据：协议包必须零行为才能同时服务两侧与第三方实现，任何行为混入都会让镜像者（Python）背上不该背的实现负担。",
+    "tour": [
+      { "file": "packages/sdk/protocol/src/transport.ts", "line": 62, "sym": "JsonRpcLineTransport", "note": "整包唯一运行时类：两端共用一个行分帧端点，构造时只吃 caller 拥有的 input/output 流。" },
+      { "file": "packages/sdk/protocol/src/transport.ts", "line": 201, "sym": "handleLine", "note": "协议核心分派：id+method=请求、id=响应、method=通知的三分类，一个 if 链讲清 JSON-RPC 的全部帧型。" },
+      { "file": "packages/sdk/protocol/src/transport.ts", "line": 18, "sym": "JsonRpcResponseError", "note": "错误响应在客户端侧的类型化：保留 wire code 与可选 data，是 SDK 家族四个类型化错误里最底层的一个。" },
+      { "file": "packages/sdk/protocol/src/types.ts", "line": 115, "sym": "HarnessSdkRequestMap", "note": "协议方法集的类型索引：initialize/session/prompt/shutdown 的参数与结果形状，Python SDK 镜像的就是这张表。" }
+    ],
+    "gotchas": "没有协议版本协商——握手只带 serverInfo.version（0.0.1），客户端不校验，pre-release 姿态。没有 cancel 和 session/close：放弃一个 turn 的唯一办法是关掉整个 runtime 进程。payload 深度依赖 dsh-session 的 SessionEvent 词汇，改事件形状就是改 wire 契约。Python SDK 是镜像不是 import，改方法或 serverInfo.name 必须同一变更里同步 Python 与 TS client。malformed 行被静默忽略，params 非对象折叠成 {}。",
+    "analogy": "一本外交照会格式手册：规定信封怎么折（换行分帧）、落款怎么读（id/method 三分类）、每类公文的固定栏目（方法类型表）。收文机关怎么批公文（server 行为）、信使走哪条路（字节流），它一概不管——所以两国（TS 与 Python）都能照着它办公。"
+  },
+  {
+    "group": "sdk",
+    "dir": "server",
+    "short": "server",
+    "oneLiner": "SDK 家族的服务端半边：把 runtime 会话与事件挂到自有 stdio JSON-RPC 上",
+    "why": "SDK 家族的协议层（dsh-sdk-protocol）只是形状，必须有服务端半边把它接到真实 runtime 上，否则 TS/Python SDK client 没有对端，`dsh --profile sdk` 启动后什么也不是。它回答三个问题：外部程序怎么证明 runtime 就绪（initialize 是 readiness 边界，等待整个 Loader 树落定）、怎么把一句话送进会话（session/prompt 建 agent、验内容、入队、立刻返回 messageId 回执）、怎么把 runtime 里发生的事送出来（把 Cordis 的 session/event、agent/status、session/created、subagent/end 四路事件翻译成 wire 通知）。删掉它，SDK 家族只剩一纸协议；runtime 与外部自动化之间没有桥，headless 和 ACP 各自覆盖的场景里，「用自有协议驱动完整 runtime」这一块就空了。",
+    "position": "上游是 SDK client（TS 的 dsh-sdk-client 与 Python SDK，均隔进程经 stdio），发来的方法在 handleRequest 分派；下游 inject 只有 agents 一个硬依赖，initialize 里按需现场挂 dsh-llm-deepseek adapter（仅当无已注册 adapter 且 provider 是 deepseek-official），事件源是 ctx 的四路事件。数据流双向：request → HarnessSdkJsonRpcServer 方法 → ctx.agents.create/followup；事件 → 构造器里注册的监听 → transport.notify('session.event' 等)。协议帧与类型全部来自 dsh-sdk-protocol，本包不定义任何 wire 形状——这就是协议层与服务层的分工。",
+    "inside": "index.ts 的 apply（46 行处）组装 JsonRpcLineTransport（stdin/stdout，测试可注入流）与 HarnessSdkJsonRpcServer；onRequest 里拦截 initialize 先 await ctx.get('loader')?.await()（84 行处）——插件可能先于异步兄弟（如 MCP 工具发现）激活，握手前必须等全树落定；shutdown 用共享 exitTask（67 行处 disposeAndExit：flush 响应 → rootFiber.dispose → exit(0)），并发 shutdown 只退一次。server.ts 的 HarnessSdkJsonRpcServer（75 行处）构造器订阅四路事件（95 行起）：session/event 全量转发不滤、subagent/end 只在 service 快照的 info.local 为真时转发为 subagent.finished（116 行处）——provider 名和血缘永远不能证明进程内性。initialize（137 行处）验 effort/maxTokens、验或挂 adapter、llm.resolveCallConfig 验真路由后才置 initialized。prompt（178 行处）经 getOrCreateSession（261 行处，sessionCreations Map 去重并发创建）→ assertLiveAgent → durablePromptContent（内联图片经 admitEncodedImages 落附件库）→ agent.followup → 返回 messageId。performShutdown（213 行处）拆 disposers、dispose 全部 agent handle 与 llmFiber。",
+    "boundary": "一条连接服务一个 runtime；每个 sessionId 首次 prompt 时才建 agent（ACP 是 session/new 显式建、可 list/resume/close——SDK 的生命周期留白是有意的：client 自己定义自动化区间）。不管 per-prompt 因果归属：messageId 只是入队回执，不指派助手消息或 turn/end；wire 没有 prompt-cancel，SDK 建的 agent 活到进程 shutdown。呈现细节、系统提示词、工具全归周围组合。stdout 纯净靠部署纪律（组合里不许有 stdout logger），本包不检查 sibling。",
+    "tour": [
+      { "file": "packages/sdk/server/src/index.ts", "line": 84, "sym": "initialize 的 readiness 等待", "note": "握手即就绪边界：await loader 树落定后才应答 initialize，首个 prompt 因此能看到异步兄弟（MCP 发现）的成果。" },
+      { "file": "packages/sdk/server/src/index.ts", "line": 67, "sym": "disposeAndExit", "note": "共享 exitTask：racing 的多个 shutdown 只 flush 一次、dispose 根 fiber 一次、exit(0) 一次。" },
+      { "file": "packages/sdk/server/src/server.ts", "line": 95, "sym": "构造器事件订阅", "note": "服务层的工作就是把 Cordis 事件翻译成 wire 通知：session/event、agent/status、session/created、subagent/end 四路尽在此处。" },
+      { "file": "packages/sdk/server/src/server.ts", "line": 178, "sym": "prompt", "note": "会话入队全流程：live-agent 复核、内联图片落附件库、followup、只返回 messageId 回执——不承诺任何后续归属。" },
+      { "file": "packages/sdk/server/src/server.ts", "line": 281, "sym": "createSession 的 ctx.agents.create", "note": "每 sessionId 惰性建一个 agent，路由与 maxTokens 来自 initialize 快照；不组合 preset，模型面读全局层。" }
+    ],
+    "gotchas": "stdout 是协议：组合进 stdout logger 会毁掉通道，插件不检测不否决。initialize 完成前发 session/prompt 直接被拒，客户端必须先握手。max-token 终止默认报 error，部署可用 maxTokensAsSuccess 改判成功。无 adapter 且 provider 非 deepseek-official 的 initialize 直接失败，不会静默换路由。wire 无 per-session 关闭——SDK 会话只能活到进程退出；unloading 仅本插件停止服务但不退进程（协议 shutdown 才 dispose 根 fiber）。",
+    "analogy": "餐厅的传菜口：厨房（runtime 组合）做菜，它按固定菜单（协议三方法）接单，把出菜进度（四路事件通知）实时报给订座的客人；菜单之外的单子和催菜（cancel）一律不受理——想催菜，只能让整家店打烊（shutdown）。"
+  },
+  {
+    "group": "sdk",
+    "dir": "client",
+    "short": "client",
+    "oneLiner": "SDK 家族的客户端半边：spawn runtime 子进程并把回合收束成 RunResult",
+    "why": "服务端半边（sdk/server）在 runtime 里等着，但没有客户端半边，TS 调用方要自己解析 dsh 可执行文件、spawn 子进程、做 initialize 握手、拼 session/prompt 帧、订阅并过滤四路通知、写一条到进程真正退出的拆解阶梯——这些每家集成者都要重写一遍。它把「驱动一个完整 harness」压缩成三行：new DeepSeekHarness({profile, provider, model})、await harness.run('say hi')、close()。删掉它，TS 侧的进程外委派（如 dsh-subagent-dsh-sdk 后端）与所有脚本化集成没有库可用，Python SDK 也失去同步设计决策（拆解阶梯、错误词汇、receipt-to-idle 收集）的对偶。它是 SDK 家族四个包里唯一运行在 harness context 之外的：所以它绕过 dsh-subprocess 服务直接 spawn——这是接缝的文档化例外。",
+    "position": "上游是任意 TS 程序（含 harness 内部的 subagent-dsh-sdk 后端）；下游依赖 @deepseek-ai/dsh 解析同版本 dsh bin（或调用方给 dshBin），依赖 dsh-sdk-protocol 的 transport 与 wire 类型，隔进程对端是 dsh-sdk-jsonrpc-server。数据流：run → client.prompt（session/prompt，拿 messageId）→ subscribeSessionTree 收通知 → 等自己的 messageId 出现在 agent/inbox/spliced 回执 → 继续收集到 session.status idle → finalResponse 从 events 倒序取最后一条 assistant/message。子进程的生命周期归本包：start 惰性、close 幂等且终端。",
+    "inside": "两层结构。下层 HarnessClient（client.ts:185）管进程与 wire：start 连接 transport 并挂通知分派、initialize（276 行处）做 memoized 握手、prompt（291 行处）只拿入队回执、subscribe（351 行处）返回 NotificationSubscription（awaitable next/tryNext/异步迭代）、subscribeSessionTree（370 行处）用 subagent.started 血缘在客户端侧过滤一棵会话树、close（389 行处）先协议 shutdown（默认 1s 上限）再走 stdin EOF→SIGTERM→SIGKILL 阶梯；四个类型化错误 JsonRpcResponseError、RequestTimeoutError、SdkProtocolError、TransportClosedError 覆盖全部失败模式。上层 DeepSeekHarness（api.ts:22）管回合语义：start（69 行处）失败后若清理成功则换新 client 允许重试、清理也失败则有序 AggregateError 并保留旧 client（绝不与未证明退出的进程并生）；HarnessSession.run（176 行处）是 receipt-to-idle 收集循环：订阅、prompt、等 isInboxReceipt（289 行处）认领自己的消息、逐条 validatedSessionEvent 边界校验、遇 idle 收束；finalResponse（300 行处）从事件倒序提取最后一条助手文本。dispose.ts 的 disposeRuntimeProcess（82 行处）是私有拆解阶梯，Windows 直接跳到强杀。",
+    "boundary": "不管 runtime 内部组合——profile、patch、工具、持久化全由调用方指定的组合决定；不做 mid-turn cancel（wire 没有方法，放弃回合等于关 runtime）；不做 per-prompt 因果归属——finalResponse 明确是区间内最后一条助手消息，steering、注入上下文和其他排队工作都可能贡献其中；凭证策略留给调用方（env 整体替换或 scrubbedParentEnv）；无打包可执行文件发现（TypeScript 侧只解析同版本 npm 包）。",
+    "tour": [
+      { "file": "packages/sdk/client/src/api.ts", "line": 22, "sym": "DeepSeekHarness", "note": "高层 API 入口：持有子进程跨越多次 run，cwd 在构造期就 resolve 成绝对值——否则会在子进程里二次解析（worker→worker/worker）。" },
+      { "file": "packages/sdk/client/src/api.ts", "line": 176, "sym": "HarnessSession.run", "note": "receipt-to-idle 收集循环：先订阅、再 prompt、等自己的 messageId 出现在 inbox 回执、收到 session.status idle 收束。" },
+      { "file": "packages/sdk/client/src/client.ts", "line": 370, "sym": "subscribeSessionTree", "note": "会话树是客户端侧概念：runtime 对 context 里每个会话都发通知，这里用 subagent.started 血缘边做过滤。" },
+      { "file": "packages/sdk/client/src/client.ts", "line": 389, "sym": "close", "note": "幂等终端关闭：先协议 shutdown（限时），失败再走拆解阶梯；closed 后拒绝复用。" },
+      { "file": "packages/sdk/client/src/dispose.ts", "line": 82, "sym": "disposeRuntimeProcess", "note": "三阶拆解：stdin EOF 协作静默 → SIGTERM → SIGKILL，只在真正退出后 resolve；Windows 因信号语义直接跳强杀。" }
+    ],
+    "gotchas": "实例持有子进程，必须 close() 或 await using，否则孤儿进程。finalResponse 不是因果回应——区间内任何来源的助手消息都可能成为它。握手失败后 client 引用不可缓存：成功清理会换新实例。close 幂等且终端，closed 的 harness 不再重试握手。清理也失败时 start 抛有序 AggregateError 并保留失败 client，绝不与退出未证明的进程并生一个新进程。mid-turn 无 cancel：放弃回合的唯一方式是关掉 runtime。",
+    "analogy": "犬舍管理员：你只需要说「跑一趟」（run），他负责放狗（spawn+握手）、盯着狗把活干完（receipt-to-idle）、把叼回来的东西交给你（finalResponse），收工时保证狗一定回笼（dispose 阶梯）——狗在园子里怎么打转（runtime 组合）他不掺言。"
+  },
+  {
+    "group": "host",
+    "dir": "webserver",
+    "short": "webserver",
+    "oneLiner": "Web GUI 的 HTTP 载体：命名路由注册台加唯一 fallback 席位",
+    "why": "Web GUI 是 dsh 的第三种暴露方式：HTTP+浏览器。删掉 webserver，这条方式整块没有入口——浏览器拿不到任何字节，/api 桥（client-connection）、插件资源、HMR 事件流、SPA dist 全都无处挂靠，host 家族其余插件（frontend-static、open-in-app、directory-picker-auto 对端口与 loader 的读取）同时失去依赖对象。它是 host 家族里唯一碰 socket 的包，且刻意不知道 harness 的任何概念：正因为它对业务零知识，任意 feature 插件才能以同一套注册协议接入，而不用改服务器代码。路由匹配规则固定为 exact 全表→最长前缀→fallback 席位，注册顺序无请求语义——这个可预测性是组合级契约。",
+    "position": "上游是浏览器（也含通过 prefix 路由反向代理进来的挂载点）；下游是被注册方：frontend-static 认领 fallback 席位、open-in-app 注册三条 exact/prefix 路由、client-connection 注册 /api 与认证、HMR 流走 upgrade 路由；同时被 inject 依赖（frontend-static、open-in-app）或按需读取（directory-picker-auto 读 host 采样、读 port）。数据流：request → match（exact→最长前缀→fallback，都未命中且无 fallback 则 404）→ route handler 全权拥有响应生命周期（可长开，如 SSE）。",
+    "inside": "WebServer extends Service（index.ts:125），肚子里五份状态：exact 表、prefixes 表、upgrades 表、fallback 槽、indexTaps 列表，外加 upgradedSockets 集合与 gzip 中间件。三个 register 方法（register 166 行处、registerUpgrade 181 行处、registerFallback 197 行处）都返回 disposer，重复注册抛错——路由模式是组合级契约，撞名即配置错误。[Service.init]（221 行处）listen 立即（失败即 FAILED fiber），upgrade 分发把每个升级 socket 记入集合——Node 的 closeAllConnections 不覆盖 upgraded socket，拆除时必须显式逐个 destroy；单个请求的 handler 异常回答 400 或毁 socket，绝不杀进程。索引渲染是两层流水：collectIndexInjections（348 行处）发一次 webserver/index-inject 事件让每个订阅者推入当前行，renderIndex（360 行处）先渲染结构化行、再按注册顺序跑 tapIndex 的原始 HTML 变换。gzip 经 compression+Negotiator，排除 SSE、range、.gz worker 镜像。",
+    "boundary": "明确不管：TLS、认证、origin 策略（绑 0.0.0.0 就是无防护暴露，请求策略归 route owner 如 connection）；文件服务（dist 归 frontend-static，它只是席位出租方）；harness 语义（不懂 session、agent、workspace）。升级后的 socket 协议协商与内容归 upgrade handler。划线依据：一个纯路由注册台才能让插件按统一协议长进来，任何策略混入都会让某个 feature 插件变成二等公民。",
+    "tour": [
+      { "file": "packages/host/webserver/src/index.ts", "line": 125, "sym": "WebServer extends Service", "note": "host 家族的 socket 唯一归属：三张路由表+fallback 槽+indexTaps 的全部状态都在这个 Service 里。" },
+      { "file": "packages/host/webserver/src/index.ts", "line": 197, "sym": "registerFallback", "note": "唯一席位模式：第二个注册抛错——两个 fallback 无法组合，SPA dist 服务器是 shipped 组合里唯一的认领者。" },
+      { "file": "packages/host/webserver/src/index.ts", "line": 319, "sym": "match", "note": "固定匹配序：exact 全表→最长前缀→undefined 落到 fallback；注册顺序不影响结果，路由模式必须两两不相交。" },
+      { "file": "packages/host/webserver/src/index.ts", "line": 360, "sym": "renderIndex", "note": "索引注入两层流水：先渲染 webserver/index-inject 事件收来的结构化行，再跑 tapIndex 原始变换——SPA 的 boot 清单由此进页面。" }
+    ],
+    "gotchas": "host 只接受 127.0.0.1 和 0.0.0.0 两个值——绑全网卡即把无认证路由与静态资产暴露给该网络，这是文档化的部署决策而非疏忽。fallback 未注册时未匹配请求 404（frontend-static 被卸载后浏览器看到的就是这个）。升级 socket 不在 closeAllConnections 覆盖范围内，服务靠自建集合显式销毁。gzip 不碰 SSE、range 响应与 .gz Worker 镜像（后者需要原样字节，worker 自己解压）。",
+    "analogy": "写字楼物业前台：只按楼层门牌（exact 与前缀）把访客领到对应公司门口，公司内部怎么接待它不管；没主来访客交给唯一指定的物业代理（fallback）处理，代理没到岗就请访客吃闭门羹（404）。"
+  },
+  {
+    "group": "host",
+    "dir": "frontend-static",
+    "short": "frontend-static",
+    "oneLiner": "认领 fallback 席位、向浏览器供 SPA dist 的静态服务器",
+    "why": "webserver 出租席位，总得有人来坐——这个包就是 shipped Web 组合里坐进 fallback 席位的那一个。删掉它，浏览器对 / 的请求得到空 404，Web GUI 前端没有任何入口，index 注入（boot 清单）与 <base> 冻结这些页面装配步骤也无处发生。它还把一个装配事实翻译成服务：distIndex（构建产物里 index.html 的绝对路径）是 composing application（dsh-web-app）通过包导出解析出来的知识，部署永远不该硬编码——这正是它独立成包的理由：席位认领、traversal 防线、MIME 表、索引认证接缝都是「供静态 dist」这一件事的内聚细节，塞进 webserver 会让路由台背上文件系统知识。",
+    "position": "上游是浏览器中未命中任何命名路由的 GET/HEAD 请求；下游 inject ['webServer', 'connection']——向 webServer 认领席位，index 响应前调 connection.authorizeIndex 做 token/cookie 认证。数据流：请求进 fallback handler → 405 检查 → serveStatic → resolve+normalize 后判 traversal → index 入口走认证+renderIndex，其他文件按 MIME 直读 → 200/403/404。",
+    "inside": "一个函数插件。serveStatic（index.ts:71）是核心：target 必须等于 distRoot 或在其下（80 行处）——防 traversal 的边界用 sep 而非 '/' 拼，因为 Windows 的 resolve 产出反斜杠路径，用 '/' 后缀会把每个合法子路径误判为越界；distRoot 与配置索引路径两个入口调 authorizeIndex 后经 renderIndex 渲染，其余现存文件按 MIME 表直读（缺知的扩展名走 application/octet-stream），ENOENT/EISDIR/ENOTDIR 映射成空 404。apply（113 行处）算出 distRoot=dirname(distIndex)，renderIndex 闭包先跑 ctx.webServer.renderIndex（结构化注入+原始 taps），再在 head 开标签后插入 <base href=\"./\">（119 行处）——把页面冻结在服务它的挂载点上，同一条索引因此既服务源站根也服务剥前缀的代理挂载；最后 ctx.effect 认领 fallback 席位（121 行处），卸载即释放席位。",
+    "boundary": "只服务静态文件与索引页；不管 API 路由（那是命名路由的事，405 也只对 fallback 语义成立）；认证本体归 connection（token、cookie、过期、签名记录都是它的，这里只调 authorizeIndex）；不做 pathname 路由（没有 History API 路径支持，缺路径返回显式 404 而非 SPA fallback）。划线依据：静态服务的每条规则（traversal、MIME、404 语义）都只关于文件系统与 dist 装配，与业务无关。",
+    "tour": [
+      { "file": "packages/host/frontend-static/src/index.ts", "line": 80, "sym": "traversal 防线", "note": "target 必须 是 distRoot 本身或 distRoot+sep 前缀——用 sep 而非 '/'：Windows resolve 出反斜杠，'/' 会误杀一切合法子路径。" },
+      { "file": "packages/host/frontend-static/src/index.ts", "line": 113, "sym": "apply", "note": "装配事实到服务：distRoot 从 distIndex 推出，renderIndex 闭包与 fallback 席位认领都在这一个函数里。" },
+      { "file": "packages/host/frontend-static/src/index.ts", "line": 119, "sym": "<base href> 注入", "note": "在所有变换之后插入文档基，冻结入口目录——同一条 index 才能同时服务源站根与代理挂载。" },
+      { "file": "packages/host/frontend-static/src/index.ts", "line": 121, "sym": "fallback 席位认领", "note": "ctx.effect 包裹 registerFallback：非 GET/HEAD 回 405，卸载 fiber 即还席，webserver 回到 404。" }
+    ],
+    "gotchas": "MIME 表刻意极简（Vite 产物集加 PWA manifest），陌生扩展名一律 octet-stream。缺失路径返回空 404 而不是 SPA fallback—— stale 链接是显式失败而非静默回首页。traversal 是 403。席位单主：第二个实例激活直接失败。index 要认证、静态资产公开——token 只护页面不护资源。",
+    "analogy": "展馆常设展厅的管理员：没指名找人的访客都归他；进展厅（index）先查登记牌（token/cookie），展品（静态资源）随便看；有人想翻墙进库房（traversal），直接 403 请出。"
+  },
+  {
+    "group": "host",
+    "dir": "open-in-app",
+    "short": "open-in-app",
+    "oneLiner": "把工作区目录在系统已装应用中打开的 host 端点三件套",
+    "why": "它解决的是 Web GUI 的收尾一公里：会话在浏览器里跑完，产物落在一个 workspace 目录，人往往想立刻跳进自己惯用的编辑器、Git GUI、终端或文件管理器继续人工工作。删掉它，Web 会话与本地工作流之间断开——用户要手动拷路径、找应用。它 1720 行却住在 host 里而不是 client 里，原因写在职责里：探测（读注册表、跑 xcode-select、扫应用目录）与启动（spawn 分离进程）必须发生在拥有文件系统与进程能力的主机侧，浏览器半边（client-ui-open-in-app）只做按钮。与 apiproxy 的 openPath 划界很清楚：那是「用 OS 默认应用开一个路径」（host 代码内部用），本包的主题是「由人选哪个应用开」——所以要每应用的探测、图标与启动器。",
+    "position": "上游是浏览器伴侣 dsh-client-ui-open-in-app（会话头部的 Open In 分裂按钮），经三条 webServer 路由通话；下游 inject ['webServer','connection','subprocess']——webServer 挂路由、connection 做信任栅栏（Host/Origin fence+浏览器认证）、subprocess 提供 PATH 解析；再加 dsh-launch-environment（SSH 判定）与 dsh-native-command（无 shell 命令执行）。数据流：GET /open-in-app/apps → availability() 懒解析 catalog → 返回可用 id 列表；GET /open-in-app/icon/<id> → 图标缓存；POST /open-in-app/open → 直接启动已验证 launcher（绝不现场重探测），spawn ENOENT 时单条重解析一次再试。",
+    "inside": "结构与机制分三层。catalog.ts 是编译期数据表：OPEN_IN_APP_CATALOG（181 行处）每条目声明各平台 locator 链（fixed/app/xcode/cli/file/scan/app-paths/install-record/github-desktop/desktop）。resolver.ts（761 行，机制所在）：resolveOpenInAppApps（647 行处）一次解析整张 catalog 成 id→verified launcher 的 Map——每条目按序试 locator，第一个产出「host 真实持有的产物」的胜出（验证过的启动器，不是安装记录）；SSH 启动直接空 Map 不探测；Windows 注册表经 RegistryViewOnce 每 pass 至多读一次。launchDetachedApp（74 行处）detached+stdio ignore+scrubbedParentEnv（绝不带 *KEY*/*SECRET* 启动外部应用）启动，launchWatchMs 观察窗内 spawn 失败或非零退出算失败，窗满即 unref 计成功——启动成败与进程存续解耦（kitty、JetBrains 全程前台）。icons.ts 的 extractAppIcon（143 行处）按平台提图标：macOS plutil/sips 出 128px、Windows PowerShell ExtractAssociatedIcon 出 32px、Linux 查 desktop entry 的 hicolor。index.ts 的 apply（138 行处）注册三条路由，安全集中一处：每条先过 connection.requestRejection，open 路由再做 wire 级校验（application/json 媒体类型、64KiB 上限、绝对路径且存在目录）。",
+    "boundary": "不做 OS 全量应用枚举——catalog 编译期固定（README 明说理由：OS 能定位应用，但不能证明某应用接受 workspace 目录、更不知道它要什么启动协议），加应用要改 OPEN_IN_APP_CATALOG 与浏览器词典；不做持久授权与凭证传递（scrubbed 环境+显式 adapter 条目）；不管 UI 渲染（浏览器半边独立成包）；「系统默认应用开路径」归 apiproxy 的 openPath。划线依据：探测/启动是主机能力，必须留 host；选哪个应用是产品决策，必须编译期固定才可验证。",
+    "tour": [
+      { "file": "packages/host/open-in-app/src/index.ts", "line": 156, "sym": "availability 懒解析", "note": "每插件生命周期一次解析：resolutions promise memoize，Map 是可变权威——路由供其键、启动用其值，点击永不重探测。" },
+      { "file": "packages/host/open-in-app/src/index.ts", "line": 296, "sym": "ENOENT 自愈", "note": "已验证 launcher 消失（卸载）时单条重解析一次再试：卸载方向即时自愈，安装方向要等重启。" },
+      { "file": "packages/host/open-in-app/src/resolver.ts", "line": 647, "sym": "resolveOpenInAppApps", "note": "整目录一次解析：SSH 启动直接空 Map，Windows 注册表每 pass 只读一次（RegistryViewOnce），产出 id→verified launcher。" },
+      { "file": "packages/host/open-in-app/src/resolver.ts", "line": 74, "sym": "launchDetachedApp", "note": "分离启动+凭证擦洗环境+观察窗：窗内非零退出算失败，窗满 unref 算成功——启动成败与进程生命周期解耦。" },
+      { "file": "packages/host/open-in-app/src/catalog.ts", "line": 181, "sym": "OPEN_IN_APP_CATALOG", "note": "编译期白名单：每条目声明各平台 locator 链，这是「不枚举 OS 应用」决策的数据形态。" }
+    ],
+    "gotchas": "SSH 启动（继承层有非空 SSH_CONNECTION/SSH_TTY）下列表恒空且拒绝启动，.env 值不能伪造 SSH 判定。新装应用要重启 host 才出现（解析每进程一次），卸载即时自愈。macOS 只查已知路径的 bundle 拼写，无 Launch Services 查询也无磁盘扫描。Windows 图标 32px 在高 DPI 上发虚；前台激活靠 Show 前合成一次 Alt 按键，安全桌面或受控远程会话里对话框可能开在背后。Windows 注册表读取按 root 批处理，GitHub Desktop 走 github open 无 shell。",
+    "analogy": "酒店礼宾部的叫车服务：他提前摸清城里有哪些靠谱车队（一次性解析 catalog），你报名字（app id）和地址（workspace 目录），他直接派那家 Verified 的车；不认识的名字不接单，车队换车（卸载）他能当场更新名单，但新开的车队（新装应用）要等他下次重新摸底（重启）。"
+  },
+  {
+    "group": "host",
+    "dir": "plugin-inventory",
+    "short": "plugin-inventory",
+    "oneLiner": "把 Cordis Loader 当前插件状态投影成只读 Remote 快照",
+    "why": "Web GUI 的插件清单设置页需要一个数据源来回答：宿主现在装了什么、每个插件启用与否、活着没有、失败在哪一行。没有这个包，浏览器侧对这些事实一无所知——Loader 状态锁在进程内。它刻意只读：不能启用/禁用/增删插件，没有历史、没有变更订阅，每次调用都重新读 Loader。这个「刻意的贫乏」是设计核心：Cordis 内部的 plugin/status 事件已经在维护 Entry.fiber 与 Fiber.state，任何缓存都只会多出一份需要同步的生命周期真相，所以本包选择每次即时投影。若删掉它，用户看到宿主组合的唯一途径变成读配置文件——而配置文件不等于运行事实（entry 可能 failed、可能被 disabled 祖先压制）。",
+    "position": "上游是浏览器端：Typert Remote 调 pluginInventory/list（client 侧渲染在 dsh-client-ui-settings-plugin-inventory），本服务 Remote-only、故意不做同进程 Context merge；下游 static inject ['loader']（52 行处），可选 peer 通过 ctx.get 解析：agentPresets（roster 的 compositionInventory）、pluginPackages（metaOf 读显示文案）、pluginManager（managementAvailable 标志）。数据流单向：list() → readPluginInventory → ctx.loader.entries() 遍历投影，无任何反向写入。",
+    "inside": "PluginInventoryGateway extends TypertRemoteService（index.ts:51），唯一方法 list（70 行处的 @Remote('list')）转调 readPluginInventory（82 行处）。投影逻辑：遍历 entries 跳过结构性 group 行，每行产出 entryId、moduleName、enabled（含 disabled 祖先的效果）、fiberPhase 与可选 meta（按 entry.parent.tree.ctx.baseUrl 从 pluginPackages.metaOf 取标题/描述/诊断）。核心映射表 FIBER_PHASE（41 行处）把 Cordis 的 FiberState 折叠成公共 phase 词汇：pending/loading/active/failed/unloading，而 DISPOSED 折叠成 null——有意不区分「从没启动」和「已拆除」，因为点时快照无法也不必回溯原因。有 roster 时再取 agentPresets.compositionInventory()（100 行处）：每个 preset 带信任属性、发布名、是否默认组合，及拍平的插件行（行内 fiberState 同样经 FIBER_PHASE 映射）；已立会话的 preset 从最新 standing generation 答，从未组合的从组合文件答（disabled 门按 Loader context 求值）——读取永不挂载 preset。",
+    "boundary": "明确不管：变更（无 enable/disable/add/remove，无对应方法）；历史与订阅（fiber 失败后被移除就消失，比较两次快照才能发现变化）；归因（不报告哪个 bundle/profile/override 引入了某 entry）。无 roster 时 agentPresets 字段缺失而非空数组。划线依据：一次读透 Loader 已经是全部事实来源，缓存、历史、写路径任何一项都会把「投影」变成「第二真相系统」。",
+    "tour": [
+      { "file": "packages/host/plugin-inventory/src/index.ts", "line": 52, "sym": "static inject = ['loader']", "note": "唯一硬依赖：Loader 是全部事实来源，agentPresets/pluginPackages 都是可选 peer 经 ctx.get 解析。" },
+      { "file": "packages/host/plugin-inventory/src/index.ts", "line": 70, "sym": "@Remote('list') list", "note": "Remote-only 服务：不做同进程 Context merge 是故意的——它只服务 Web GUI 宿主客户端。" },
+      { "file": "packages/host/plugin-inventory/src/index.ts", "line": 41, "sym": "FIBER_PHASE 映射表", "note": "FiberState 到公共 phase 的完整折叠：DISPOSED 有意归 null，快照不解释「为什么没有活根」。" },
+      { "file": "packages/host/plugin-inventory/src/index.ts", "line": 85, "sym": "readPluginInventory 的 entries 遍历", "note": "每次调用直读 ctx.loader.entries()、跳过 group 行——零缓存是对 Cordis 内部事件已维护真相的尊重。" }
+    ],
+    "gotchas": "点时快照：无历史无订阅，检测变化只能比较两次快照。failed 且已被移除的 entry 直接消失。phase 为 null 时不知道是没启动还是已拆除。无 roster 的部署里 agentPresets 字段缺失而非空。presets 的数据来源分叉：已立会话的答 standing generation（文件后来坏了也照答，因为会话跑的是挂载），从未组合的才读文件。",
+    "analogy": "机场航显屏：每次抬头都是此刻最真实的航班状态（即时读 Loader），但不存历史、不能改航班、也不告诉你为什么取消；想知道原因得去找地服（Loader 本身与组合配置）。"
+  },
+  {
+    "group": "host",
+    "dir": "directory-picker",
+    "short": "directory-picker",
+    "oneLiner": "目录选择接缝：把「怎么选目录」定义成可切换的 capability 契约",
+    "why": "Web GUI 必须让操作者选 workspace 目录，但正确的交互形态取决于部署形态：操作者坐在宿主显示器前，OS 原生对话框最自然；远程浏览器根本弹不出宿主侧对话框，只能应用内一层层浏览。没有这条接缝，每种形态都会在 workspace 流程里硬编码，换部署就要改代码。它的关键设计决策是把「交互形状不同」提升为类型事实：capability 是判别联合（kind: 'native' 有 pick，kind: 'browse' 有 list/createDirectory），不是一个统一方法集——两种交互的操作序列本质上不同，硬抽象成同名方法只会造出_least 公共分母接口。若删掉它，两个后端失去共同基类与词汇表，workspace 流程失去消费者 switch 的依据，「一行组合换交互」的机制（含 auto 选择器）无处立足。",
+    "position": "上游是消费者：workspace 流程经 Remote controller（directoryPicker/pick、directoryPicker/list、directoryPicker/createDirectory）与浏览器侧的 directory-flow 插槽；下游是两个后端——native 与 browse 各自子类化 DirectoryPicker 注册 ctx.directoryPicker。本包纯契约：无实现、无 IO。数据流：消费者调 capability() 一次（对象须终身稳定，消费者可跨调用捕获）→ 按 kind 分支 → 调形状内的方法 → browse 失败抛 DirectoryPickerError（封闭码集，被 1:1 映上 wire）。",
+    "inside": "一个文件讲完。两个 capability 形状：DirectoryPickerNativeCapability（index.ts:20，kind:'native'+pick(signal)——abort 终止 chooser，取消返回 null 而非错误）与 DirectoryPickerBrowseCapability（35 行处，kind:'browse'+list(path?)/createDirectory(path,name)——list 的 JSDoc 直接写明 fully-qualified 拒绝语义）。词汇注册表 DirectoryPickerCapabilities（66 行处）是 merge-extensible 的：新后端在自己的包里 declaration-merge 新形状（kind 字面量必须等于键名），不用改本包；DirectoryPickerCapability 由 keyof 派生联合——这就是「词汇可扩展而契约封闭」的类型机制。失败词汇 DirectoryPickerError（78 行处）携带封闭码（directory-unreadable/directory-exists/directory-create-failed）加 subject path，消费者做业务映射不需字符串匹配。abstract DirectoryPicker extends Service（103 行处）：子类实现 capability()，注册为 ctx.directoryPicker，第二个实现触发 cordis 标准 duplicate-service 错误。",
+    "boundary": "只定义契约与词汇；不管 OS 对话框怎么弹（native 包的事，osascript/Zenity/kdialog/Win32 COM）；不管文件系统怎么遍历（browse 包的事，有界窗口+fully-qualified 防线）；不管 boot 时怎么选（auto 包的事）；不管浏览器侧怎么渲染（client ui-* 包占 ui-workspace 的插槽）。与 ctx.fs 划界：选目录是 GUI 交互（人来选），ctx.fs 是 agent 的文件访问（机器来读写）——两者的信任模型和失败语义不同，所以分开。划线依据：契约包零实现才能让后端只依赖词汇不依赖彼此。",
+    "tour": [
+      { "file": "packages/host/directory-picker/src/index.ts", "line": 20, "sym": "DirectoryPickerNativeCapability", "note": "native 形状：pick(signal) 返回绝对路径或 null——取消是 null 不是错误，这是与 browse 失败语义的分野。" },
+      { "file": "packages/host/directory-picker/src/index.ts", "line": 66, "sym": "DirectoryPickerCapabilities", "note": "merge-extensible 注册表：新后端 declaration-merge 自己的形状而不改本包，kind 字面量必须等于键名。" },
+      { "file": "packages/host/directory-picker/src/index.ts", "line": 78, "sym": "DirectoryPickerError", "note": "封闭错误码+subject path：消费者按业务码映射 wire 失败，永不字符串匹配错误消息。" },
+      { "file": "packages/host/directory-picker/src/index.ts", "line": 103, "sym": "abstract DirectoryPicker extends Service", "note": "接缝本体：子类实现 capability() 注册为 ctx.directoryPicker，第二个实现被 cordis duplicate-service 拦下。" }
+    ],
+    "gotchas": "组合里没有后端时选目录无处发生（seam 只有契约）；挂两个后端直接抛错而不是静默覆盖。browse 契约一次只暴露一棵祖先链，无 multi-root 支持（Windows 盘根之上的枚举也在等真实消费者）。未知 capability kind 的文档化默认是隐藏入口而非报错。capability 对象必须终身稳定，消费者可能跨调用持有。",
+    "analogy": "电器面板的插座标准：本包只规定插口形状与电压（capability 契约与错误词汇）；装壁挂式还是移动式插座（native/browse 后端）由装修（组合）决定，甚至可以装个自动转换开关（auto）；电器（workspace UI 流程）只认插头，不关心墙里走的什么线。"
+  },
+  {
+    "group": "host",
+    "dir": "directory-picker-native",
+    "short": "directory-picker-native",
+    "oneLiner": "用系统原生对话框选目录的后端（osascript/Zenity/kdialog/Win32 COM）",
+    "why": "操作者坐在宿主显示器前时，原生目录对话框是最自然的交互——网页里一层层点目录在本地场景是纯粹的降级。这个「看起来简单」的后端实际有 721 行，因为三平台的对话框机制个个不平凡：macOS 要 osascript 且要识别用户取消（退出码 1 加 -128 模式）；Linux 有 Zenity 与 KDialog 两个世界、缺装要给出可操作错误而非静默退化；Windows 的现代 IFileOpenDialog 必须在子进程里做 koffi 驱动的 COM 对话，还要 DPI 感知、WM_CLOSE 中止、Show 前合成 Alt 按键抢前台——一个后台进程 spawn 的对话框默认开不到前台。删掉它，本机部署的选目录体验塌回浏览器内的逐层点击；它是「按环境切换三实现」里代表本地形态的那一极。",
+    "position": "上游是 directory-picker 接缝：NativeDirectoryPicker 注册 ctx.directoryPicker 提供 native capability；下游依赖 dsh-host-directory-picker（基类与类型）、dsh-native-command（无 shell 子进程运行器）、koffi（Windows COM 绑定）。数据流：capability.pick(signal) → pickNativeDirectory 按平台分派 → 原生进程的 stdout 出一条路径（或 null 取消）→ abort 信号终止原生进程而非留对话框挂着。",
+    "inside": "服务壳很薄：NativeDirectoryPicker（index.ts:22）持一个稳定 capability 对象（23 行处，kind:'native'，pick 纯转发 pickNativeDirectory）。全部机制在 native-picker.ts 的 pickNativeDirectory（48 行处）：darwin 分支跑 osascript 的 choose folder，输出清洗后返回，User canceled/-128 模式映射为 null；win32 分支走 pickWin32Directory——spawn 一个子进程，里面经 win32-dialog-logic.ts 的 runFolderDialog 用 koffi 调 IFileOpenDialog（FOS_PICKFOLDERS/FOS_FORCEFILESYSTEM/FOS_NOCHANGEDIR 标志），刻意没有机制 fallback 层（koffi 是打包依赖，装好即可用，失败原样浮出）；linux 分支先 zenity 后 kdialog，两者的 ENOENT 都识别，全缺则抛「install zenity or kdialog」这类可操作错误。所有平台：无 shell、caller 的 signal 经监听传导为进程终止、每个 pick 是一次无状态子进程往返。",
+    "boundary": "只管「弹一个系统对话框拿一个路径」；不做目录列出/创建（那是 browse 的原语）；不做宿主环境判定（auto 的事）；Linux 缺工具不退化成手输路径提示——组合层的退化路径是换 browse 后端，不是本包内兜底。划线依据：与 browse 的分界是交互形状（一次对话 vs 逐层原语），不是平台能力；Windows 不做机制 fallback 是因为 browse 才是文档化的组合级 fallback。",
+    "tour": [
+      { "file": "packages/host/directory-picker-native/src/index.ts", "line": 23, "sym": "稳定 capability 对象", "note": "seam 要求 capability 终身稳定：字段初始化时建一次，capability() 永远返回同一个对象。" },
+      { "file": "packages/host/directory-picker-native/src/native-picker.ts", "line": 48, "sym": "pickNativeDirectory", "note": "三平台分派全貌：osascript→null 识别、win32 独走 koffi 子进程、linux zenity→kdialog→可操作错误。" },
+      { "file": "packages/host/directory-picker-native/src/native-picker.ts", "line": 75, "sym": "win32 无 fallback 注释", "note": "文档化决策：koffi 子进程是唯一 native 层，机制级 fallback 已被明确否决——组合级退路是 browse。" },
+      { "file": "packages/host/directory-picker-native/src/native-picker.ts", "line": 100, "sym": "linux 双缺错误", "note": "两个 chooser 都不在时抛「install zenity or kdialog」——可操作错误而非静默退化成手输。" }
+    ],
+    "gotchas": "Linux 需要预装 zenity 或 kdialog，否则 pick 直接拒绝。Windows COM 拒绝或对话框崩溃原样浮出，没有机制 fallback。前台授权依赖合成输入：安全桌面、受限远程会话、前台是提权窗口时对话框可能开在别的窗口后面；该技术只在 Windows 11 验证过。只能在宿主显示器前用——远程场景该由组合层换 browse。",
+    "analogy": "让客人自己走到档案室亲手抽一个文件夹：最直观、零学习成本，但前提是客人人在楼里（操作者在宿主显示器前）；人不在楼里（远程部署），再好的礼宾也帮不了——该改用电话里一层层报（browse 后端）。"
+  },
+  {
+    "group": "host",
+    "dir": "directory-picker-browse",
+    "short": "directory-picker-browse",
+    "oneLiner": "浏览器内逐层列目录/建目录的后端，服务远程客户端",
+    "why": "远程部署（SSH 转发、无人值守宿主、纯浏览器客户端）根本弹不出宿主侧的 OS 对话框；没有这个后端，这些部署无法选 workspace——而 workspace 是 Web GUI 一切工作的起点。它把「选目录」降级成两个无呈现副作用的原语（list 一层、createDirectory 建一层），任何能上网的浏览器都能驱动，宿主侧什么都不渲染。这是「按环境切换三实现」里代表远程形态的一极：native 解决的是本地体验，browse 解决的是可用性下限。325 行里有三条硬防线（fully-qualified 路径、有界窗口、abort 竞速），都是「wire 值驱动宿主文件系统」这一场景特有的——浏览器传来的字符串绝不能相对宿主 cwd 或当前盘符解析。",
+    "position": "上游是 directory-picker 接缝与 workspace 流的 Select Workspace Directory 对话框（经 Remote controller 调 directoryPicker/list、directoryPicker/createDirectory）；下游依赖 dsh-host-directory-picker（基类）与 Node 的 fs/path 标准库，无其他包。数据流：list(path?) → fullyQualified 检查 → 流式 readdir 过有界窗口 → 名字序目录行 + crumbs 祖先链 + truncated 标志；createDirectory(path,name) → 双重校验 → mkdir → 新目录绝对路径。",
+    "inside": "BrowseDirectoryPicker（index.ts:187）实现 browse capability（capability 213 行处、list 217 行处、createDirectory 299 行处）。三个机制函数撑起质量：fullyQualified（50 行处）拒绝所有「isAbsolute 放过但实际相对当前 drive 解析」的 Windows 形态——无盘符根式（\\foo、/foo）与不完整 UNC 前缀（\\\\、\\\\server），POSIX 侧就是 isAbsolute；boundedInsert（76 行处）维护名字有序的有界窗口：满窗且候选名不小于尾元素时一次比较即拒（O(1)），否则二分插入 O(log keep)，所以一个 10 万子项的目录在 1001 窗下也只花 O(1)/候选，截断层报 truncated: true；raceAbort（108 行处）让每个 fs await 与 caller 的 signal 竞速——Node 的文件读不可撤回，弃读的迟到结算在这里被吞掉，断连的请求不会留下存活中的扫描。列表语义：只含目录、名字序、symlink 用 stat 探测可入性（断链环链静默跳过）、hidden 由宿主标注（POSIX 点前缀）；createDirectory 非递归（缺父是真失败）、拒绝分隔符与 ./..、已存在报 directory-exists。",
+    "boundary": "只做单层列出与单段创建；不做多根/盘根枚举（Windows 祖先链到盘根为止，跨盘等浏览器 UI 的路径输入）；不读 Windows hidden 属性（dirent 不暴露 FILE_ATTRIBUTE_HIDDEN，hidden 全平台按点前缀）；不做 browse-root 限制——workspace.create 本就接受任意路径，这里限根只是 UX 范围不是安全边界。划线依据：每个原语都是无状态的文件系统往返，会话状态（当前目录、面包屑位置）全部留在浏览器侧。",
+    "tour": [
+      { "file": "packages/host/directory-picker-browse/src/index.ts", "line": 50, "sym": "fullyQualified", "note": "wire 值绝不重定基：Windows 上 isAbsolute 放过的无盘符根式与不完整 UNC 都在此拒之门外。" },
+      { "file": "packages/host/directory-picker-browse/src/index.ts", "line": 76, "sym": "boundedInsert", "note": "有界窗口的 O(1) 尾拒+二分插入：任意大的目录内存都 O(maxEntries)，截断如实报 truncated。" },
+      { "file": "packages/host/directory-picker-browse/src/index.ts", "line": 108, "sym": "raceAbort", "note": "每个 fs await 都与 caller signal 竞速：断连或超时不留下存活中的扫描，弃读的迟到结算被吞。" },
+      { "file": "packages/host/directory-picker-browse/src/index.ts", "line": 187, "sym": "BrowseDirectoryPicker", "note": "browse capability 的实现类：list/createDirectory 两个无呈现原语就是远程形态的全部交互面。" }
+    ],
+    "gotchas": "maxEntries 默认 1000（对齐 GitHub web UI 的目录列边境界），hidden 行也计入。截断层不回填断链（窗口外发现断链也不从窗外补）。Windows 隐藏文件一律可见。祖先链到盘根为止，不枚举盘符。缺父目录的 createDirectory 是 directory-create-failed 而非自动补层级。",
+    "analogy": "电话里的仓库导购：客人不用到店，报一层看一层（list），要新柜子就下指令建一个（createDirectory）；每次最多报 1000 个名字（maxEntries），多了明说还有（truncated），地址必须报全（fullyQualified）——含糊的「三号库那边」一律不接。"
+  },
+  {
+    "group": "host",
+    "dir": "directory-picker-auto",
+    "short": "directory-picker-auto",
+    "oneLiner": "boot 时采样宿主环境、自动挂 native 或 browse 后端的选择器",
+    "why": "同一份组合常常要服务形态不同的宿主：本机工作站该用原生对话框，远程或无头会话只有应用内浏览可用。让部署作者手工预判等于把运行环境知识压给配置——而环境在 boot 前未必可知。auto 把选择变成一次 boot 时的纯决策加真实挂载：采样四个信号（绑定地址、SSH 启动、显示会话、Linux chooser 二进制），解析出一个后端 kind，然后把该后端的 host 包与 client UI 包作为两个真实 Loader entry 挂进内存根树——一行组合换两脸（后端能力与浏览器交互面同时换），接缝的「one-row-swaps-both-faces」不变量由 loader.create 直接保证。删掉它，每个部署都要自己写「什么环境装哪行」的判断；选错的代价也从配置错误降级为运行时可重试的失败对话框。",
+    "position": "上游是组合 yml：本行替掉具体的 -native/-browse 行；下游 inject ['webServer', 'loader']——webServer 读实际绑定 host（0.0.0.0 意味着有远程浏览器，OS 对话框够不着），loader 是挂载目标；dsh-launch-environment 提供 SSH 判定。数据流：apply → 采样 facts（bindHost/platform/ssh/env/linuxChooser）→ resolveDirectoryPickerBackend（纯函数）→ 按 kind 从 BACKEND_PACKAGES/SURFACE_PACKAGES 取包名 → ctx.loader.create 依次挂 backend 与 surface → effect disposer 反向卸载并 join fiber 拆除。",
+    "inside": "三个文件。resolve.ts 的 resolveDirectoryPickerBackend（49 行处）是整包决策核心，五条规则有序短路：绑定 host 非 127.0.0.1 → browse（全网卡bind意味着有 OS 对话框够不着的远程浏览器）；SSH 启动（继承层 SSH_CONNECTION/SSH_TTY，.env 不算）→ browse；darwin/win32 → native（显示会话默认存在）；linux 需 DISPLAY 或 WAYLAND_DISPLAY 非空、且 PATH 上有 zenity 或 kdialog（probe.ts 的 canExecute/hasLinuxChooserBinary）→ native；其余一律 browse——模糊即保守，browse 处处可用。index.ts 的 apply（62 行处）把挂载做成 effect：先 backend 后 surface（浏览器半边驱动后端注册的能力），每个 entry await fiber 激活，任一步失败则 unmount 已建 entry 再抛——留着半挂的 backend 会让重试撞上自己的 duplicate directoryPicker；根树 write() 是 no-op，挂载永不持久化回配置文件。BACKEND_PACKAGES/SURFACE_PACKAGES（38/50 行处）是固定组合词汇不是可调项：导出是因为 verify-cordis-config 需要每个组合方声明依赖。",
+    "boundary": "只做 boot 时一次性决策与挂载；不做每连接自适应（本机浏览器 native、远程浏览器 browse 同机并存需要接缝未携带的 per-client 能力通告）；不做运行时切换（一次 boot 一次采样，capability 终身稳定是接缝要求）；探测只读 PATH（shell alias 或非 PATH 安装的 zenity 仍判 browse）。固定交互的文档化方式不是配置字段，而是直接组合 -native/-browse 行；chooser 与具体后端行同挂会 fail loud（duplicate service、duplicate flow）。划线依据：决策依赖的信号全部是 boot 时可采样的进程事实，任何需要运行期观测的信号都超出本包边界。",
+    "tour": [
+      { "file": "packages/host/directory-picker-auto/src/resolve.ts", "line": 49, "sym": "resolveDirectoryPickerBackend", "note": "整包决策核心的五条短路规则：非 loopback→browse、SSH→browse、darwin/win32→native、linux 要显示+chooser、模糊一律 browse。" },
+      { "file": "packages/host/directory-picker-auto/src/index.ts", "line": 62, "sym": "apply", "note": "一次 boot 采样加 effect 挂载：解析、依次 loader.create 两个 entry、失败反卸——环境到交互的全部映射就在这一个函数。" },
+      { "file": "packages/host/directory-picker-auto/src/index.ts", "line": 38, "sym": "BACKEND_PACKAGES", "note": "固定组合词汇而非可调项：导出供 verify-cordis-config 强制组合方声明依赖，kind→包名一一对应。" },
+      { "file": "packages/host/directory-picker-auto/src/index.ts", "line": 88, "sym": "挂载循环与失败反卸", "note": "先 backend 后 surface、逐个 await 激活；catch 里 unmount 已建 entry，否则重试会撞上自己注册的 duplicate directoryPicker。" }
+    ],
+    "gotchas": "检测靠启动上下文推断操作者位置，而没有任何启动侧信号能证明它：tmux 剥掉 SSH_* 标记的会话、ssh -L 转发到本机的远程访问、darwin 上非 Aqua 会话的进程，都可能误判 native——错选不烂组合，但退化为后端已有的可重试失败对话框。Linux chooser 探测只读 PATH。一次 boot 服务所有客户端：per-connection 自适应要等接缝扩展 wire 通告。pin 一个交互的方式是直接组合那对包，本包没有配置字段。",
+    "analogy": "恒温混水阀：开闸时测一次水温（boot 采样四个信号），之后整段时间固定出热水或凉水（native/browse）——它不逐杯调整（无 per-connection 自适应），但装在哪面墙（组合行）是明确文档化的：想永远热水，直接接热水管（组合 -native 行）。"
+  }
+]

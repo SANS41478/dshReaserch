@@ -1,0 +1,102 @@
+[
+  {
+    "group": "experimental",
+    "dir": "inspector",
+    "short": "inspector",
+    "oneLiner": "跨 realm CDP 中枢：用 Chrome DevTools 同时调试 Host 与浏览器 Client 的 Cordis 运行时",
+    "why": "删掉它，dsh 系统功能零损失（它不参与任何模型请求链路，Model Experience 明确为 None），但整个仓库失去唯一一套图形化调试面。具体后果：无法在 Chrome DevTools 的 Elements 面板里看到活着的 Cordis 插件树（Context/Fiber 层级）；Console 面板没有 Host 和各浏览器页签的执行上下文，只能在文本日志里翻；Host 发出的每一次 fetch——包括发往模型供应商、带鉴权头和完整 body 的请求——没有任何 Network 视图可查；浏览器 Client 里的 JS 对象无法在 REPL 中求值和检查。也就是说，没有它，所有调试退化为 console.log 和事后日志分析。README 也明说它不进默认插件列表，必须显式 `dsh plugin --profile web add` 安装。",
+    "position": "上游有两类生产者：① Host 侧，cordis.patch.yml 把包显式挂载为 `experimental-inspector` 行，Host plugin 的 `inject` 是 `['webServer']`（要求部署里有 dsh-host-webserver 的 Web 服务器行），启动时经 `startInspector` spawn 出 Worker 并通过 MessagePort 递观测记录；② Client 侧，浏览器页面里的 Client plugin 读取 Host 注入到 index.html 的 `globalThis.__DSH_INSPECTOR__` bootstrap，拿 token 后直连 Worker 的 `/ingest` WebSocket。下游：Worker 自己在 `127.0.0.1:9230` 起独立 HTTP/WS 服务（`/json`、`/devtools/page/<id>`、`/ingest`），对 Host 主线程再通过 `node:inspector.Session` 建一条真 CDP 连接。数据流是单向观测为主：Host/Client 生产者 → `ctx.inspector.publish` 有界队列 → Worker 校验归一化 → 翻译成标准 CDP 域消息 → Chrome DevTools 前端；反向控制流（Runtime.evaluate、`cordis.getTree()` 查询、`DOM.resolveNode`）由 Worker 路由回拥有该对象的 Host 或 Client realm。",
+    "inside": "源码按执行环境切成 client/、host/、worker/、shared/ 四块，前三块几乎逐文件镜像对称。第一块 shared/ 是环境无关的协议与模型层，是理解全包的钥匙。bridge/ 子目录定义内部观测协议：observation.ts 声明 SourceOpenFrame、SourceAppendFrame、SourceCloseFrame 等帧类型——生产者不发 CDP 消息，只发这些带来源代次与序号的记录，parseSourceFrame 负责双向校验；control-codec.ts 解析 InspectorWorkerConfig（启动参数）与 InspectorClientBootstrap（注入页面的连接凭据）；version.ts 的 INSPECTOR_PROTOCOL_VERSION 被拼进 Client 的 WebSocket 子协议 token，版本不符直接拒连。cordis/ 子目录是语义核心：collector.ts 的 CordisTreeCollector.snapshot() 把活的 Context/Fiber 树遍历成一棵带 objectHandle 的 CordisTreeSnapshot，节点数受 maxNodes 截断、uid 为 null 的 Fiber 被跳过；RealmObjectRegistry 以代际方式持有活对象引用，新快照替换旧代时原子换代——这兑现了『Worker 线程从不触碰活 Cordis 对象』的安全不变量；projector.ts 把 Host 快照与多个 Client 快照合成为一棵 { host, clients } 检查树；model.ts 与 snapshot.ts 定义带版本号的 schema 与校验函数。第二块 host/ 与 client/ 是镜像的生产者面：各自 plugin.ts 把 InspectorService 挂到 ctx（Client 面用 declare module 声明并立即激活）；bridge/ 里 InspectorSourceBuffer 提供有界队列——溢出只记序号空洞、绝不阻塞被观测的业务操作；host 侧 InspectorWorkerLifecycle 管理 Worker 的启动、就绪与意外退出，client 侧 ClientBridgeLifecycle 管断线重连退避；inspection/network.ts 的 installFetchObserver 默认包裹 globalThis.fetch，tee 请求/响应流并按 maxBodyChunkBytes 切成 base64 块上报，调用者拿到原始 Response 不受任何影响。client 侧还多出 cdp/ 能力面：runtime.ts 的 ClientRuntimeExecutor 在页面里实现 evaluate、callFunctionOn、awaitPromise，ClientObjectStore 维护会话级对象句柄表并执行数量上限；sources.ts 的 ClientSourceCatalog 只编目构建产物 lib/client.js。第三块 worker/ 是 CDP 状态机：server.ts 的 startInspectorWorker 一屏组装全部部件——bridge/hub.ts 的 InspectorSourceRegistry 校验每个来源的每一帧并分发给两个 consumer（inspection/network-store.ts 的 NetworkStore 按字节上限留存网络数据，inspection/cordis-store.ts 的 CordisTreeStore 存树并支持断连快照保留）；bridge/runtime-rpc.ts 与 source-rpc.ts 的两个 Router 把 DevTools 命令经消息边界送回 Client 并做超时兜底；inspection/realm-store.ts 的 InspectorRealmRegistry 统一登记 Host 与 Client 的 realm。cdp/ 下按域分会话：runtime/session.ts 的 RuntimeDomainSession 把 Runtime.evaluate 按 contextId 路由到 Host 真执行上下文或 Client 合成上下文，object-table.ts 的 RuntimeObjectTable 管连接级 RemoteObjectId 的分配、预览与释放；dom/session.ts 的 CordisDomSession 把 Cordis 树投影成 Elements 文档，getDocument 默认只发三层、更深层靠 requestChildNodes 展开，NodeId 跨快照保持稳定；network/session.ts 与 debugger/session.ts 分别服务 Network 面板与 Host 断点。能力面的分野也在这里定型：对 Host 提供全量调试（Console、Sources、断点、Network 捕获），对 Client 只提供只读面（Runtime 求值、Console 事件、只读 Sources，Debugger 命令一律显式拒绝）；不依赖 CDP 的语义查询（如 cordis.getTree）走 shared/bridge/rpc.ts 的 InspectorQueryConnection，带 queryTimeoutMs 超时与失败传播。第四块 worker/realms/ 是 RealmBackend 适配器对：host 侧经 node:inspector.Session 直连主线程（所以 Host JS 暂停时求值与断点仍可用），client 侧把同一套 Backend 接口翻译成 bridge RPC 帧，两套 realm 在 cdp/realm-sessions.ts 里被统一调度、按连接开关。宿主方式的结论：DevTools 连的是 Worker 独立进程的 CDP WebSocket，页面本身既不注入 DevTools 也不代理 CDP。",
+    "boundary": "它只管观察，明确不管修改：`dom/session.ts` 顶部把 `DOM.setAttributeValue`、`DOM.removeNode`、`DOM.moveTo` 等列为 `READ_ONLY_METHODS` 拒绝执行；Client 侧断点、步进、调用栈明确不支持，target 级 pause/resume 只作用于 Host 的 node:inspector 调试器。它不管业务：不注册任何 ctx key 之外的模型、会话或工具服务，`InspectorService` 只有 `publish` 和只读的 `cordis.getTree()`。与 webserver 的划线：`inject: ['webServer']` 只说明部署形态要求有页面可注入 bootstrap，但 Inspector 的 HTTP 端口是 Worker 自己开的 9230，与 Host 网关完全分离——这是刻意的安全隔离（CDP 等于任意代码执行，只许 loopback）。与 dsh-client-modules/connection 的划线：页面加载 bundle、业务 WebSocket 归它们，Inspector 的 Client 只借 bootstrap 拿 token，另开一条 `/ingest` WebSocket。",
+    "tour": [
+      {
+        "file": "packages/experimental/inspector/src/index.ts",
+        "line": 63,
+        "sym": "inject",
+        "note": "Host 面强制注入 webServer：没有 Web 服务器行就不激活，端点与页面服务分离的部署前提写在这里"
+      },
+      {
+        "file": "packages/experimental/inspector/src/host/bridge/controller.ts",
+        "line": 185,
+        "sym": "startInspector",
+        "note": "Host 侧组装起点：MessageChannel 双端口 + 随机 base64url client token，spawnWorker 与 fetch 拦截都在此串起"
+      },
+      {
+        "file": "packages/experimental/inspector/src/worker/server.ts",
+        "line": 30,
+        "sym": "startInspectorWorker",
+        "note": "一屏看清 Worker 内部全部部件（NetworkStore/CordisTreeStore/两个 Router/RealmRegistry/Endpoint）的装配与关闭顺序"
+      },
+      {
+        "file": "packages/experimental/inspector/src/worker/cdp/domains/runtime/session.ts",
+        "line": 434,
+        "sym": "RuntimeDomainSession.announce",
+        "note": "为每个 Client realm 发 Runtime.executionContextCreated 合成上下文，跨 realm 路由的核心机制所在"
+      },
+      {
+        "file": "packages/experimental/inspector/src/shared/cordis/collector.ts",
+        "line": 50,
+        "sym": "CordisTreeCollector.snapshot",
+        "note": "把活 Context/Fiber 遍历成带 objectHandle 的快照并原子换代，『Worker 不碰活对象』这条不变量的物理边界"
+      },
+      {
+        "file": "packages/experimental/inspector/src/worker/inspection/network-store.ts",
+        "line": 93,
+        "sym": "NetworkStore",
+        "note": "CDP 无关的网络留存库：journal 字节上限、逐条容错 ingest，DevTools 断连不影响捕获"
+      }
+    ],
+    "gotchas": "README 的 Known Limitations 全部属实且不少：Client 主动调试整体不支持（Console 事件、求值、只读 Sources 可以，断点不行，返回显式 unsupported 错误）；Client Sources 只暴露 inspector 自己的 `lib/client.js`；页面 CSP 可以挡掉 Client evaluate；Client 身份仲裁依赖 Web Locks，没有它的浏览器无法区分复制出来的两个活页签；fetch 拦截只覆盖 `globalThis.fetch`，直接 Undici Client/Dispatcher 与插件激活前持有的 fetch 引用都观测不到；捕获不脱敏——cookie、鉴权头、完整 body 全记录，而 CDP target 等于任意代码执行，所以 Worker 只接受 127.0.0.1 绑定，且 CDP socket 本身无 token；Worker 意外退出没有自动重启，当前实例直接失败。另外它在 experimental 组，协议（`INSPECTOR_PROTOCOL_VERSION`）与配置面随时可能变。",
+    "analogy": "像给一台正在运转的机器装了一整套内窥镜加中控仪表盘：Host 主机舱可以用原厂工具（node:inspector）直接开箱检修；各个浏览器分舱只能通过专线把仪表读数送回来。中控室（Worker）把所有读数翻译成 Chrome DevTools 认识的通用语言，于是你用最熟悉的一块屏幕就能同时看两个舱——但只能看，以及按少数标了允许的按钮；分舱里那些真正动手术的操作（断点、改节点）一律被门口保安拦下。"
+  },
+  {
+    "group": "experimental",
+    "dir": "webworker-runtime",
+    "short": "webworker-runtime",
+    "oneLiner": "在浏览器 Web Worker 里跑完整 dsh 运行时：内存 VFS、Node 兼容层与 postMessage HTTP 隧道",
+    "why": "没有它，dsh 只能活在 Node 主机上，「打开网页就是一台 harness」的预览部署完全不存在。浏览器 Worker 没有 Node API、没有文件系统、不能 fork 进程，而整棵插件树（约 131 行插件）原封不动依赖这三样。这个包把缺口逐一补齐：`MemoryVfs` 承担 fs，自家 shell 进程层承担 child_process，postMessage 隧道把『HTTP 服务器』变成消息帧，`MODULE_PROXIES` 把每个 `node:*` 请求引到替身实现。塌掉的形态很具体：webworker-packer 打出的镜像没有任何消费者，apps/web 的 preview 模式、打包回归测试、无 Node 环境演示全部不存在。它是纯宿主（pre-Cordis 平台胶水），自己不注册任何业务服务。",
+    "position": "上游是两个：apps/web 的 preview 页面（经本包 client/ 的 `chooseWorkerHostSource` + `connectWorkerHost` 建 Worker、发 init 帧）和 webworker-packer——packer 在 Node 里为本包导出的 `lowerModuleSource` 与 `image-layout.ts` 合同打镜像，本包只消费镜像。下游是镜像内的整棵树：`createWorkerHost` 用镜像自带的 `@deepseek-ai/dsh-app-boot` boot 出 Cordis context，随后从 ctx 取出 `connection` 与 `typertGateway` 两个服务接进隧道；Node 兼容层则服务于镜像里所有原样打包的第三方包（Chokidar、readdirp、execa、koffi……）。数据流：页面 `fetch` → postMessage `TunnelRequestFrame` → Worker 的 `TunnelServer` → `connection.createSharedFetchHandler('/api')` 直接调树内路由（不经过网络栈）；流式响应用 `stream-item`/`stream-end` 帧下行，上传用 `stream-uplink-item`/`stream-uplink-end` 帧上行（Blob 走 structured clone、ReadableStream 直接 transfer 所有权）；树内日志经 `installLogSink` 落到 Worker console。",
+    "inside": "全包按职责分成六个部件。storage/ 是内存文件系统：memory.ts 的 MemoryVfs（类定义在 180 行，全包最大文件 1047 行）用两张数据结构承载一切——files Map 存文件字节、directories Set 存目录，路径统一规范成无尾分隔符的绝对 POSIX 形式；FileNode 上挂着 BigInt 的文件身份，配合 identities 表，保证 rename、unlink、硬链接之后已打开的文件描述符仍指向同一个文件（README 特意承诺 stat({bigint:true}) 与路径 stat 看到同样的 dev/inode）；每次成功变更后发布 VfsMutation 事件，喂给 fs-watch.ts 实现的 callback、polling、promise 三种 node:fs watcher，而镜像 seeding 刻意不触发事件；loadVfsImage 与 loadVfsOverlay 负责解包 gzip+tar 镜像并按序叠加数据层（tar.ts 是手写的 pack/parse），overlay 只许替换 home/ 与 workspace/ 之下的文件。compile/ 是 pack 期变换：transform.ts 的 lowerModuleSource（622 行）用一次 acorn parse 同时干两件事——把 ES module 语法改写成 CommonJS 包体（export/import/动态 import 全覆盖，辅助函数按需内联），并把每一个 await 挂起点改写为经过 AsyncLocalStorage 快照/恢复协议（__als）的调用；编辑基于区间切片拼接而非重新打印，所以变换后代码的行号与原始构建产物完全一致，堆栈能对回源文件。Worker 自身不带编译器：镜像 manifest 里记录 LOWERING_VERSION，worker-host.ts 的 requireLoweredImage 校验不符即拒绝挂载。module-system/ 与 module-proxies.ts 构成加载与平台分叉：module-loader.ts 的 WorkerModuleLoader 在镜像 package root 上实现 resolve、load、compile 与 createRequire，静态模块表由 builtins.ts 按同一张 proxy 表生成；module-proxies.ts 第 23 行的 MODULE_PROXIES 是全包唯一平台分叉，替身分三类——implemented/ 下的真实现（fs.ts 878 行，含 ReadStream/WriteStream/FileHandle 与流状态机；async_hooks.ts 407 行手写 ALS；child_process.ts 与真 zstd 编解码的 zlib.ts）、mock/ 下的结构桩（dns/net/vm/sqlite/worker_threads，符号齐全、一调用就在 console 报错并 throw）、external_packages/ 下的外部包替身（execa、koffi、sharp、node-pty、ws、ripgrep、libreoffice-kit）。shell/ 是子进程层：浏览器 Worker 不能 fork，node:child_process 在这里不是桩而是实现——child_process.ts 第 210 行的 spawn 再起一个同 bundle 的 Web Worker 当 shell 进程（由首帧 ShellStartFrame 决定角色），通过 shell/process/protocol.ts 定义的帧协议通信，子进程只能靠消息访问宿主 VFS；命令解释交给 @yarnpkg/parsers 的 parseShell，shell/programs/ 提供命令表（text.ts、files.ts、builtins.ts 覆盖常用 coreutils），landlock.ts 把内核 Landlock 降级为对每条 fs 请求的逻辑权限检查。transport/ 与 worker-host.ts 是服务面：tunnel.ts 第 226 行的 TunnelServer 在 postMessage 之上说 HTTP——init/res/stream/abort 帧类型、boot 完成前请求排队、boot 失败统一回 503、abort 帧会从启动队列里撤回请求避免 boot 后误执行；worker-host.ts 第 169 行的 createWorkerHost 串起总流程：installProcessGlobal 装 process shim（带 title 等 Node 探测字段防止走进 DOM 分支）→ 下载并挂载镜像与 overlay → requireLoweredImage 合同门 → 建 WorkerModuleLoader → 用镜像自带的 dsh-app-boot 启动树（boot 时注入 profileContext、loader.internal 与假 cmdline）→ tunnel.serve 接上 directFetch/openStream 两个 seam。worker-host.ts 第 309 行的 installLogSink 值得单独一提：它专治 cordis Logger 在没有 exporter 时静默吞掉警告的坑。client/ 是页面半边：source-chooser.ts 的 choosePreviewSource 提供启动来源选择，client.ts 的 WorkerTunnel 负责发 init 帧、loadBundle 按需以 Blob 执行插件组合包并把 tunnel-only source map 嵌成 Base64。",
+    "boundary": "管宿主不管内容：它 boot 的树里所有模型请求、会话、工具注册都归产品插件，本包 Model Experience 为 None，连日志都只转发 warn/error。镜像生产归兄弟包 webworker-packer——划线依据是『编译在 pack 时、加载在 run 时』：Worker 不带编译器也不带 acorn，packer 负责跑 `lowerModuleSource` 并把 `LOWERING_VERSION` 写进 manifest，`requireLoweredImage` 的合同门让任何一头违约都在 boot 时炸而不是运行时漂移。平台分叉集中在 `MODULE_PROXIES` 一张表里（文件头自称 the ONLY platform fork），镜像里其余 workspace 包按原样加载。与 apps/web 的划线：chooser/fixture/连接逻辑在本包 client/，静态 Worker bundle 的供给与页面部署归 apps/web；WebFS 等其它来源是 chooser 里独立授权的选项，不走本包 fixture。",
+    "tour": [
+      {
+        "file": "packages/experimental/webworker-runtime/src/worker-host.ts",
+        "line": 169,
+        "sym": "createWorkerHost",
+        "note": "装配总入口：TunnelServer 先立、start 里五步流程（process shim→VFS→合同门→loader→boot）一目了然"
+      },
+      {
+        "file": "packages/experimental/webworker-runtime/src/worker-host.ts",
+        "line": 236,
+        "sym": "appBoot.boot",
+        "note": "镜像内的树如何被 boot：profileContext 可编辑 profile、loader.internal 顶掉动态 import、cmdline 用假参数"
+      },
+      {
+        "file": "packages/experimental/webworker-runtime/src/compile/transform.ts",
+        "line": 622,
+        "sym": "lowerModuleSource",
+        "note": "pack 时唯一一次编译：一趟 acorn 同时出 CJS 包体与 ALS 挂起点改写，失败即 fail the build"
+      },
+      {
+        "file": "packages/experimental/webworker-runtime/src/storage/memory.ts",
+        "line": 180,
+        "sym": "MemoryVfs",
+        "note": "两张 Map 承载完整 fs 语义：FileNode 上的 BigInt 身份让描述符跨 rename/unlink 仍然有效"
+      },
+      {
+        "file": "packages/experimental/webworker-runtime/src/module-proxies.ts",
+        "line": 23,
+        "sym": "MODULE_PROXIES",
+        "note": "全包唯一平台分叉表：implemented/mock/external 三类替身一目了然，node:process 刻意缺席走全局 shim"
+      },
+      {
+        "file": "packages/experimental/webworker-runtime/src/transport/tunnel.ts",
+        "line": 250,
+        "sym": "TunnelServer.handleMessage",
+        "note": "postMessage 上的 HTTP 帧机：boot 前排队、abort 撤队、stream-uplink 直入 TunnelUplink"
+      }
+    ],
+    "gotchas": "README 的 Known Limitations 密度极高，逐条真实：会话日志明文落盘（worker 组合写死 `compression: 'none'`，无 zstd codec 之外的取舍）；`node:dns/promises`、`node:vm`、`node:net`、`node:sqlite`、`node:worker_threads` 是结构桩，调用即吼；execa 显式拒绝，preview 里跑不了 pnpm、装不了原生依赖；PTC Node 程序在启动子进程前就失败（process shim 冒充 `/dsh/bin/node` 身份只为激活 provider）；LibreOffice 转换拒绝创建；watcher 只看 VFS，`persistent`/`ref()`/`unref()` 是无效安慰（浏览器没有可引用计数的事件循环）；Landlock 是逻辑模拟不是内核隔离，`full` 也只覆盖 Worker 命令表；shell 不是 bash——没有循环、函数、job control，`&` 原地跑完，sed 只认替换脚本；shell 子进程无同步 fs（无 SharedArrayBuffer，跨域隔离的 GitHub Pages 给不了），目录遍历一项一个 round trip，两条并发命令可交错写；bundle 钉死 @yarnpkg/parsers 的 `lib/shell.js` 路径以避免 barrel 拖进 175kB 的 js-yaml；overlay 只能替换 `home/` 与 `workspace/`，配置编辑只在当前 Worker 生命周期内有效。",
+    "analogy": "相当于把整台 dsh 服务器打包装进一个行李箱（镜像 tar 包），托运到浏览器这个陌生国家后开箱即用：箱内自带一支假警察部队（Node 兼容层——谁问 Node API 都有人应答，真答不了的就当街大喊），一台小发电机（内存 VFS 顶替文件系统），一间微型审讯室（用另一个 Worker 冒充子进程的 shell 层），还有一部对讲机（postMessage 隧道）——门外访客以为自己访问的是真网站，其实每个 HTTP 请求都是一句对讲机暗号，由箱子里那棵 Cordis 插件树照常受理。"
+  }
+]

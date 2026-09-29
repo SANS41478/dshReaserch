@@ -1,0 +1,316 @@
+# @deepseek-ai/dsh-cordis-host-runner
+path: packages/extensions/cordis-host-runner
+desc: Dynamic package definition registry, host-half sandbox lifecycle, and invoke handler table for model-mounted dual-half packages
+deps: @deepseek-ai/dsh-util-values, @deepseek-ai/schemastery
+peers: @deepseek-ai/cordis, @deepseek-ai/dsh-agent, @deepseek-ai/dsh-brand, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-scope, @deepseek-ai/dsh-session, @deepseek-ai/dsh-tools, @deepseek-ai/dsh-typert-protocol
+srcFiles: 7  srcLoc: 3362
+
+## README.md (147 行)
+---
+description: "Host half of dynamic Cordis packages for agents and maintainers choosing, composing, or debugging the registry, sandbox, and run round trip."
+kind: "package-reference"
+---
+
+# @deepseek-ai/dsh-cordis-host-runner
+
+English | [中文](README.zh.md)
+
+## Summary
+
+`dsh-cordis-host-runner` exposes runtime inspection and keeps process-local dynamic definitions available to programmatic callers and browser controls. Host halves run in a `node:vm` realm; browser halves use the Client runner and approval UI. Definitions disappear on restart. Agents discover APIs through `tool-cordis` and install persistent bundles through Plugin Manager; no model tool creates dynamic definitions.
+
+## Table of Contents
+
+- [Use this package](#use-this-package)
+- [Understand the implementation](#understand-the-implementation)
+- [Further Exploration](#further-exploration)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="use-this-package"></a>
+## Use this package
+
+Mount this plugin for the inspection registry or programmatic dynamic-package lifecycle. Browser lifecycle consumers also require the Client runner and UI package. The shipped Creator workflow uses installed bundles instead of this definition registry.
+
+### Minimal configuration
+
+```yaml
+- name: '@deepseek-ai/dsh-cordis-host-runner'
+  config:
+    vmTimeoutMs: 5000
+```
+
+| Field | Default | Meaning |
+|---|---|---|
+| `vmTimeoutMs` | `5000` | Milliseconds the synchronous portion of a host half may run in the vm before evaluation is aborted |
+
+The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-cordis-host-runner) is the exhaustive source for every accepted field.
+
+### What a run does
+
+Programmatic callers use `define`, `run`, `stop`, and `undefine`; the browser panel operates existing definitions. Host-only packages activate in this process. A package with a browser half waits for approval or cancellation, then loads Host before Client. `mode: "run"` starts the current version; `mode: "update"` replaces it. Stop disposes the live effects and retains the definition; undefine also forgets it.
+
+### What happens to definitions
+
+Definitions are session-scoped and process-local: other sessions read them as absent, and restart clears them. Historical logs retain tool arguments and receipts but do not restore the registry. Reloading a browser page requires another explicit run to load its Client half.
+
+### Trust stance
+
+The sandbox isolates globals but is not a security boundary: Node globals are absent or redirect to Cordis services (`ctx.fs`, `ctx.web`, `ctx.bash`, the timer helpers), and a host half receives a façade without framework internals, yet the services it declares reach the live runtime. Treat a dynamic package like bash access — see the [self-referential toolset Agent Note](../../../.agents/notes/implemented/feature/2026-07-08-self-referential-cordis-toolset.md).
+
+-----
+
+<a id="understand-the-implementation"></a>
+## Understand the implementation
+
+<details>
+<summary>Implementation internals — click to expand</summary>
+
+This section explains the design behind the runner; the observable behavior is fully covered in [Use this package](#use-this-package).
+
+### Design philosophy
+
+The runner is built on two separations. **Registry and sandbox are one service.** The `DynamicCordisRunnerService` owns the definition registry, the vm sandbox, the host-half fiber lifecycle, and the invoke handler table, so a definition's whole life has one owner. **Versions are immutable packages.** A plugin holds packages that never change after `define`; `currentPackageId` and `nextPackageId` point at the running and target versions, and `mode: "run"` versus `"update"` encodes whether the target equals the current version. The browser round trip exists because a browser half can only be carried out by a page: the service emits a request, suspends, and is settled by the page's verdict, with the caller's `AbortSignal` as the only other exit.
+
+### Source map
+
+| File | Role |
+|---|---|
+| [`src/index.ts`](src/index.ts) | Service entry: `Config`, registry wiring, lifecycle verbs, steer messages |
+| [`src/registry.ts`](src/registry.ts) | Definition store: plugin and package identities, run attempts, approval requests |
+| [`src/sandbox.ts`](src/sandbox.ts) | `node:vm` evaluation: globals, Node-API traps, define-time syntax precheck |
+| [`src/guard.ts`](src/guard.ts) | Registration boundary: schema normalization, the sandbox `ctx` façade, plugin-shape checks |
+| [`src/lifecycle.ts`](src/lifecycle.ts) | Starting a host half under the `cordis-dynamic` fiber group |
+| [`src/inspect-registry.ts`](src/inspect-registry.ts) | The `ctx.cordisInspect` registry: host providers plus the mirrored client manifest |
+| [`src/types.ts`](src/types.ts) | Client-safe payload shapes for the `dynamicCordisRunner` remote namespace and forwarded events |
+
+### How a run flows
+
+`define` trims and requires the metadata, prechecks each half's syntax by compiling it (running nothing), mints the plugin and package ids, and records the definition against the session that asked. `run` resolves the target against `currentPackageId` and `nextPackageId`; a host-only package evaluates in the sandbox and commits immediately, while a browser-half package arms an approval request, emits `cordis/request-run`, and suspends. The answering page walks `runHostHalf`, `getClientCode`, then `resolveRequestRun`; a success naming the live revision commits the activation and sets `currentPackageId`, and `cordis/request-run-resolved` drops the pending affordance on every other page. `stop` retracts the live dispatch — handler disposers, fiber dispose, and the `cordis/dynamic-retract` broadcast — and leaves the definition runnable. Four forwarded events (`cordis/request-run`, `cordis/request-run-resolved`, `cordis/dynamic-package`, `cordis/dynamic-retract`) are declared on the client-safe `./types` subpath and allowlisted for delivery by `@deepseek-ai/dsh-api-remotes`, which is what lets a browser reach them through `ctx.remote.$on`.
+
+</details>
+
+-----
+
+<a id="further-exploration"></a>
+## Further Exploration
+
+Read these pages when the package-level contract is not enough. They move from the runner to the tools that call it, the browser half that answers it, and the generated surface.
+
+- [Tool package](../tool-cordis/README.md) — the read-only tools that use its inspection registry.
+- [Client runner](../cordis-client-runner/README.md) — the browser half that answers run requests and loads browser-half code.
+- [UI package](../ui-cordis/README.md) — the panel users approve and operate runs with.
+- [Generated configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-cordis-host-runner) — every accepted config field.
+- [Extensions subsystem](../../../docs/subsystems/extensions.md) — the generated `ctx.cordisInspect` and `ctx.dynamicCordisRunner` API and `cordis/*` events.
+- [Self-referential Cordis toolset Agent Note](../../../.agents/notes/implemented/feature/2026-07-08-self-referential-cordis-toolset.md) — sandbox semantics, lifecycle, and composition rationale.
+
+-----
+
+<a id="model-experience"></a>
+## Model Experience
+
+### Run outcomes, refusals, and diagnostics relayed to the owning session
+
+#### What the model sees
+
+This package registers no tool or prompt. Programmatic `run` calls and browser controls can steer the owning session with outcomes and diagnostics; stop and remove gestures inject a user message. Shipped model tools cannot create or update dynamic definitions.
+
+#### Token effect
+
+Conditional and data-dependent: messages arrive only when an event occurs, and each carries a bounded description of what happened; there is no fixed per-request cost.
+
+#### KV Cache effect
+
+None of its own. A host half that registers tools changes the next request's tool view, which invalidates prefix reuse from the first changed schema token; running or stopping a package with no tool registrations is prefix-neutral.
+
+## Known Limitations and Deferred Work
+
+<a id="known-limitations-and-deferred-work"></a>
+
+
+These limits define when the runner needs special care. They are current package constraints, not a task backlog.
+
+- **A successful run does not mean the UI rendered** — React renders after the load receipt; failures reach the owning session through steering and appear in the browser panel.
+- **A browser-half package suspends where no page is connected** — headless and ACP deployments hold the run until the asking turn is cancelled; host-only packages are unaffected.
+- **A suspended run request has no timeout** — it waits for a person until the asking turn is cancelled, so unattended automation cannot use packages with a browser half.
+- **`vmTimeoutMs` bounds only synchronous evaluation** — an async host-half body escapes it, matching the toolset's cooperative trust stance.
+- **A stale-success refusal leaves the request suspended** — when the answering page names a revision the registry has moved past, the resolution is refused (`accepted: false`) and the request stays answerable until another page answers or the caller cancels; the browser half does not read the acknowledgement.
+- **The run announcement carries no service declarations** — a browser half's declared `inject` is read from the plugin it returns in the page, so `cordis/request-run` carries metadata only, never code or service lists.
+- **`zod` is a runtime dependency of the generated Typert faces, not of `src`** — `./typert` and `./remote` resolve to unbundled `lib` files with a bare `import { z } from 'zod'`, so the package declares it even though nothing in `src` imports zod.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>
+
+**Runtime invariant:** No companion is published. The definition registry is process memory with no event stream to observe, and its one owned relation (a running definition owns a settled host-half fiber and its handler table) is established and unwound inside single awaited verbs, so package tests assert it directly.
+
+
+## 源文件与导出符号
+
+### packages/extensions/cordis-host-runner/src/guard.ts  (837 行)
+  551	fn	sandboxDefineTool
+  604	fn	normalizeHandler
+  626	fn	sandboxRegisterTool
+  790	fn	isPlugin
+  802	fn	guardedPlugin
+  832	fn	pluginName
+
+### packages/extensions/cordis-host-runner/src/index.ts  (1277 行)
+  inject: L130 ['tools']
+  declare module: declare module '@deepseek-ai/dsh-llm' { | declare module '@deepseek-ai/cordis' {
+  54	fn	CordisDynamicPluginId
+  63	fn	CordisDynamicPackageId
+  72	fn	CordisDynamicPluginRunId
+  81	fn	ApprovalRequestId
+  93	iface	Config
+  101	iface	DynamicCordisSnapshotRow
+  129	class	DynamicCordisRunnerService
+      members: L144 constructor, L156 define, L215 undefine, L232 undefineFromPanel, L253 run, L330 runHostHalf, L389 getClientCode, L418 resolveRequestRun, L443 settleUserRun, L461 stop, L485 stopFromPanel, L503 syncInspectManifest, L516 resolveInspectQuery, L530 inventory, L556 snapshot, L587 reference, L615 listPlugins, L625 inspectPlugin, L649 inspectPackage, L689 reportRenderFailure, L723 reportClientGuardFailure, L746 invoke, L773 resolvePlan, L815 activate, L828 startFresh, L888 startHost, L922 settleActivation, L986 commitActivation, L999 runResponse, L1015 announceResolved, L1024 steerRunOutcome, L1054 steerRenderFailure, L1074 steerHostHandlerFailure, L1099 steerGuardFailure, L1122 claimRuntimeFailure, L1131 injectUserRunOutcome, L1152 injectUserContext, L1161 cancelPending, L1176 createAttempt, L1193 failAttempt
+
+### packages/extensions/cordis-host-runner/src/inspect-registry.ts  (248 行)
+  declare module: declare module '@deepseek-ai/cordis' {
+  16	iface	HostCordisInspectQueryContext
+  24	iface	HostCordisInspectProviderRegistration
+  45	class	CordisInspectRegistryService
+      members: L52 constructor, L61 register, L75 syncClientManifest, L90 list, L107 query, L135 resolveClientQuery, L157 queryClient, L205 if, L206 if, L222 if, L233 if, L243 if, L245 if
+
+### packages/extensions/cordis-host-runner/src/lifecycle.ts  (58 行)
+  22	fn	startHostHalf
+  55	fn	missingServices
+
+### packages/extensions/cordis-host-runner/src/registry.ts  (277 行)
+  14	type	DynamicCordisHandler
+  17	iface	DynamicCordisRun
+  37	iface	DynamicCordisDefinition
+  51	iface	DynamicCordisPlugin
+  73	iface	DynamicCordisPendingRequest
+  85	iface	DynamicCordisDefineRequest
+  101	iface	DynamicCordisDefineReceipt
+  111	iface	DynamicCordisReference
+  123	iface	DynamicCordisPluginInspection
+  135	iface	DynamicCordisPackageInspection
+  141	class	DynamicCordisRegistry
+      members: L154 mintPluginId, L165 mintPackageId, L173 mintPluginRunId, L181 mintApprovalRequestId, L189 add, L198 get, L207 delete, L215 all, L224 ofSession, L233 armRequest, L242 peekRequest, L251 claimRequest, L261 disarmRequest, L270 pendingRequestFor
+
+### packages/extensions/cordis-host-runner/src/sandbox.ts  (238 行)
+  101	fn	createSandbox
+  136	fn	syntaxErrorContext
+  151	fn	parseErrorMessage
+  184	fn	precheckCode
+  226	fn	evaluateHostCode
+
+### packages/extensions/cordis-host-runner/src/types.ts  (401 行)
+  declare module: declare module '@deepseek-ai/cordis' {
+  11	type	CordisDynamicPluginId
+  14	type	CordisDynamicPackageId
+  17	type	CordisDynamicPluginRunId
+  20	type	ApprovalRequestId
+  23	type	CordisInspectRequestId
+  26	type	CordisInspectPlatform
+  29	iface	CordisInspectMethodManifest
+  41	iface	CordisInspectProviderManifest
+  51	iface	CordisInspectProviderView
+  57	iface	CordisInspectQueryRequest
+  71	type	CordisInspectQueryResolution
+  80	iface	CordisInspectQueryResolved
+  86	iface	CordisInspectResolveAck
+  92	type	CordisDynamicRunMode
+  95	type	RequestRunOutcome
+  98	iface	CordisErrorDetails
+  106	type	CordisRunStatus
+  118	iface	CordisHalfState
+  128	iface	CordisRunDiagnostic
+  144	iface	DynamicCordisRunAttempt
+  166	iface	DynamicCordisPackage
+  178	iface	DynamicCordisRunRequest
+  198	iface	DynamicCordisRequestResolved
+  206	iface	DynamicCordisRetracted
+  216	iface	DynamicCordisInventoryPackage
+  230	iface	DynamicCordisInventoryRow
+  251	type	DynamicCordisUndefineReceipt
+  256	iface	DynamicCordisRenderFailure
+  268	type	DynamicCordisRunResponse
+  305	type	DynamicCordisStopResponse
+  310	type	DynamicCordisHostHalfResult
+  323	iface	DynamicCordisClientSource
+  337	type	DynamicCordisRunResolution
+  351	iface	DynamicCordisResolveAck
+  357	type	DynamicCordisInvokeResult
+
+## 其它关键文件
+
+### package.json
+{
+  "name": "@deepseek-ai/dsh-cordis-host-runner",
+  "description": "Dynamic package definition registry, host-half sandbox lifecycle, and invoke handler table for model-mounted dual-half packages",
+  "version": "0.1.7-rc.2",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/extensions/cordis-host-runner"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./types": {
+      "types": "./lib/types/types.d.ts",
+      "default": "./lib/types/types.js"
+    },
+    "./typert": {
+      "types": "./lib/typert.host.d.ts",
+      "default": "./lib/typert.host.js"
+    },
+    "./remote": {
+      "types": "./lib/typert.remote-client.d.ts",
+      "default": "./lib/typert.remote-client.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/types/**/*.js",
+    "lib/types/**/*.d.ts",
+    "lib/typert.host.js",
+    "lib/typert.host.d.ts",
+    "lib/typert.remote-client.js",
+    "lib/typert.remote-client.d.ts"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/dsh-util-values": "workspace:*",
+    "@deepseek-ai/schemastery": "workspace:~",
+    "zod": "^4.4.3"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/dsh-agent": "workspace:*",
+    "@deepseek-ai/dsh-brand": "workspace:*",
+    "@deepseek-ai/dsh-llm": "workspace:*",
+    "@deepseek-ai/dsh-scope": "workspace:*",
+    "@deepseek-ai/dsh-session": "workspace:*",
+    "@deepseek-ai/dsh-tools": "workspace:*",
+    "@deepseek-ai/dsh-typert-protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/cordis-plugin-timer": "workspace:~",
+    "@deepseek-ai/dsh-agent": "workspace:*",
+    "@deepseek-ai/dsh-b

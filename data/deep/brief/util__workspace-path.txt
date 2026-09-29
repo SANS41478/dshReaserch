@@ -1,0 +1,118 @@
+# @deepseek-ai/dsh-util-workspace-path
+path: packages/util/workspace-path
+desc: Browser-safe Workspace path and display helpers
+deps: -
+peers: @deepseek-ai/cordis
+srcFiles: 2  srcLoc: 198
+
+## README.md (52 行)
+---
+description: "Browser-safe Workspace path helpers for joining relative paths, abbreviating POSIX homes, and deriving display titles."
+kind: "package-library"
+---
+
+# dsh-util-workspace-path
+
+English | [中文](README.zh.md)
+
+## Summary
+
+Browser-safe path helpers shared by Workspace-facing client and controller packages. The package joins Workspace-relative paths, abbreviates POSIX home directories for display, derives Workspace titles from POSIX or Windows paths, splits a path into its directories and final segment for display, and owns the `dsh-resource://file/…` address grammar that names a workspace file across the Sidebar and the resource model. `relativizeToCwd` removes the workspace prefix for display while preserving paths outside that directory. It has no Cordis service or runtime state.
+
+## Table of Contents
+
+- [File addresses](#file-addresses)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="file-addresses"></a>
+## File addresses
+
+A resource address is `dsh-resource://<type>/…`, and the type — the URI host — is the resource protocol key (`file`, or one a plugin declares in `ResourceProtocolMap`); any other scheme is a navigation protocol, defined elsewhere. `dsh-resource://file/session/<sessionId>/<path>` names the Session that authorizes the Host read and a workspace-relative or absolute path. Leading slashes remain part of the path: `/etc/hosts` is `dsh-resource://file/session/s//etc/hosts`, a Windows drive is `dsh-resource://file/session/s/C:/x/y.txt`, and UNC is `dsh-resource://file/session/s///server/share/y.txt`. The Host resolves paths and enforces access. The `absolute/<path>` form remains parseable but carries no authorizing Session, so the file provider cannot read it and Preview does not claim it; neither current nor Tab Session is borrowed. The grammar lives in [`src/file-address.ts`](src/file-address.ts); the path helpers stay in [`src/index.ts`](src/index.ts), which re-exports it.
+
+`sessionFileAddress(sessionId, path)` normalizes `\` to `/` and drops leading `./`, but preserves leading `/` characters. Every id and path segment is component-encoded with `:` kept literal. `fileAddressFor(sessionId, cwd, path)` always builds a Session address: paths inside `cwd` become relative; other absolute paths, including when `cwd` is unknown, stay absolute within that Session address. `absoluteFileAddress(absolutePath)` builds only the Session-less form. `parseFileAddress(address)` checks the exact file-address prefix, ignores query and fragment suffixes, decodes each segment, and returns `{ scope, sessionId, path }` for a Session address or `{ scope, path }` for the Session-less form. Another type or scheme, an unknown scope, a missing id or path, or a malformed escape returns `undefined`.
+
+`fileMediaUrl(base, path)` builds an authenticated file-route URL from an already-decoded absolute path. It accepts HTTP(S) application bases and the Desktop `dsh-app://app/` origin, preserves literal percent signs and deployment prefixes, and rejects other application bases, relative paths, network-path prefixes, and control characters. Markdown owners decode authored URLs before calling it; native file-card paths are passed unchanged.
+
+-----
+
+## Known Limitations and Deferred Work
+
+<a id="known-limitations-and-deferred-work"></a>
+
+- **Resolution is lexical** — it recognizes POSIX absolute paths, Windows drive paths, and UNC paths, preserves the Workspace path's separator when joining a relative path, and does not access a filesystem or canonicalize `.` and `..` segments.
+- **Home abbreviation is POSIX-only** — Windows paths remain unchanged because a portable browser cannot infer Windows home-path equivalence safely.
+
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>
+
+**Runtime invariant:** No companion is published. This utility owns no mutable runtime relationship.
+
+
+## 源文件与导出符号
+
+### packages/util/workspace-path/src/file-address.ts  (113 行)
+  27	type	FileAddress
+  65	fn	sessionFileAddress
+  76	fn	absoluteFileAddress
+  89	fn	parseFileAddress
+
+### packages/util/workspace-path/src/index.ts  (125 行)
+  17	fn	isAbsoluteWorkspacePath
+  27	fn	resolveWorkspacePath
+  42	fn	abbreviateHomePath
+  58	fn	workspaceTitleOf
+  73	fn	pathPartsOf
+  92	fn	fileAddressFor
+  107	fn	relativizeToCwd
+  120	fn	fileMediaUrl
+
+## 其它关键文件
+
+### package.json
+{
+  "name": "@deepseek-ai/dsh-util-workspace-path",
+  "description": "Browser-safe Workspace path and display helpers",
+  "version": "0.1.7-rc.2",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/util/workspace-path"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/types/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:~"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:~"
+  }
+}
+

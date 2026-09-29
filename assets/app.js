@@ -5,11 +5,13 @@
 'use strict'
 
 const D = window.DSH_DATA
-const { packages: PKGS, services: SVCS, tools: TOOLS, events: EVENTS, bundles: BUNDLES, layers: LAYERS, code: CODE } = D
+const { packages: PKGS, services: SVCS, tools: TOOLS, events: EVENTS, bundles: BUNDLES, layers: LAYERS, code: CODE, deep: DEEP } = D
 
 /* ---------- 索引 ---------- */
 const byShort = new Map(PKGS.map(p => [p.short, p]))
 const byName = new Map(PKGS.map(p => [p.name, p]))
+/** 逐包精读解读（265 包全覆盖），键 group/dir */
+const deepOf = p => DEEP && DEEP[`${p.group}/${p.dir}`]
 const byGroup = new Map()
 for (const p of PKGS) {
   if (!byGroup.has(p.group)) byGroup.set(p.group, [])
@@ -95,6 +97,15 @@ function md(s) {
   out = out.replace(/@@(\d+)@@/g, (_, i) => store[Number(i)])
   // 保护块内部可能残留的行内代码标记，交给 code() 处理
   return out.replace(/&lt;code&gt;([^&]*)&lt;\/code&gt;/g, '<code>$1</code>')
+}
+
+/** 精读解读专用渲染：文本可能含 Map<SessionId, T> 这类泛型尖括号，
+ *  不能走 md()（会把它们当 HTML 标签）。先整体转义，再还原 **bold** 与 `code`。 */
+function dmd(s) {
+  let out = esc(String(s ?? ''))
+  out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+  out = out.replace(/`([^`]+)`/g, '<code>$1</code>')
+  return out.replace(/\n{2,}/g, '<br><br>')
 }
 
 /** 纯文本版的行内 md（无既有 HTML 的场合） */
@@ -194,7 +205,7 @@ function initSearch() {
   const build = () => {
     if (idx) return idx
     idx = []
-    for (const p of PKGS) idx.push({ kind: '包', name: p.short, sub: p.desc || p.group, href: `#/pkg/${p.group}/${p.dir}`, hay: `${p.short} ${p.name} ${p.desc} ${p.summary} ${p.group}`.toLowerCase() })
+    for (const p of PKGS) { const dd = deepOf(p); idx.push({ kind: '包', name: p.short, sub: (dd?.oneLiner) || p.desc || p.group, href: `#/pkg/${p.group}/${p.dir}`, hay: `${p.short} ${p.name} ${p.desc} ${p.summary} ${p.group} ${dd?.oneLiner || ''}`.toLowerCase() }) }
     for (const s of SVCS) idx.push({ kind: '服务', name: `ctx.${s.key}`, sub: s.desc, href: `#/svc/${s.key}`, hay: `ctx.${s.key} ${s.desc} ${s.owners.join(' ')}`.toLowerCase() })
     for (const t of TOOLS) idx.push({ kind: '工具', name: t.names, sub: t.pkg, href: `#/tools`, hay: `${t.names} ${t.pkg} ${t.requires}`.toLowerCase() })
     for (const e of EVENTS) idx.push({ kind: '事件', name: e.name, sub: `${e.mode} · ${e.consumers.slice(0, 50)}`, href: `#/events`, hay: `${e.name} ${e.mode}`.toLowerCase() })
@@ -256,7 +267,7 @@ function pageHome() {
       <span class="c-ico">🦴</span>
       <div class="c-title">${esc(p.short)}</div>
       <div class="c-en">packages/${p.group}/${p.dir}</div>
-      <div class="c-desc">${md((p.desc || '').slice(0, 96))}</div>
+      <div class="c-desc">${esc(((deepOf(p)?.oneLiner) || p.desc || '').slice(0, 96))}</div>
       <span class="c-tag">${p.srcFiles} 文件 · ${p.srcLoc.toLocaleString()} 行</span>
     </a>`
   }).join('')
@@ -349,7 +360,7 @@ function pageMap() {
   return `
   <div class="crumb"><a href="#/">首页</a><span>/</span>全站地图</div>
   <h1>全站地图</h1>
-  <p class="lead">按能力域组织的完整包清单。<strong>点击任意包名进入详情</strong>，可以看到它的摘要、依赖关系、以及属于哪个服务接缝。</p>
+  <p class="lead">按能力域组织的完整包清单。全部 <strong>${PKGS.length}</strong> 个包都做过逐包源码精读——点击任意包名进入详情：一句话定位、为什么必须有它、系统位置、内部结构、职责边界、带行号的源码带读、坑与通俗复述。</p>
 
   ${sorted.map(g => {
     const meta = GROUP_META[g] || { zh: g, ico: '📦', d: '' }
@@ -695,23 +706,57 @@ function pagePkg(group, dir) {
     ? p.peers.map(d => { const s = depShort(d); return s.startsWith('cordis') ? `<span class="dep peer">${esc(s)}</span>` : pkgLink(s) }).join('')
     : ''
 
+  // 逐包精读解读（265 包全覆盖）
+  const d = deepOf(p)
+  const deepHtml = d ? `
+  <details class="official-summary"><summary>官方 README 摘要（脚本自动抽取，点开对照）</summary>
+    <p class="lead">${md(p.summary || p.desc || '')}</p>
+  </details>
+
+  <h2>为什么必须有它</h2>
+  <p>${dmd(d.why)}</p>
+
+  <h2>在系统里的位置</h2>
+  <p>${dmd(d.position)}</p>
+
+  <h2>内部结构</h2>
+  <p>${dmd(d.inside)}</p>
+
+  <h2>职责边界</h2>
+  <p>${dmd(d.boundary)}</p>
+
+  ${d.tour?.length ? `<h2>源码带读 <span class="badge">${d.tour.length}</span></h2>
+  <table class="tour">
+    <thead><tr><th style="width:34%">位置</th><th>为什么值得看</th></tr></thead>
+    <tbody>${d.tour.map(t => `<tr>
+      <td><a class="srclink" href="#/code/${encodeURI(t.file)}:${t.line}"><code>${esc(t.file.split('/').pop())}:${t.line}</code></a><div style="font-size:10.5px;color:var(--tx-3);font-family:var(--mono)">${esc(t.sym || '')}</div></td>
+      <td style="font-size:12.5px">${esc(t.note)}</td>
+    </tr>`).join('')}</tbody>
+  </table>` : ''}
+
+  ${d.gotchas ? `<h2>坑与边界条件</h2><p>${dmd(d.gotchas)}</p>` : ''}
+
+  <div class="analogy"><div class="t">🗣️ 通俗复述</div>${dmd(d.analogy)}</div>` : `
+  <h2>它是什么</h2>
+  <p class="lead">${md(p.summary || p.desc || '')}</p>`
+
   return `
   <div class="crumb"><a href="#/">首页</a><span>/</span>${meta.ico} ${esc(meta.zh)}<span>/</span>${esc(p.short)}</div>
   <div class="hero">
     <div class="kicker">packages/${esc(p.group)}/${esc(p.dir)}</div>
     <h1>${esc(p.short)}</h1>
-    <p>${esc(p.desc || '')}</p>
+    <p>${d ? esc(d.oneLiner) : esc(p.desc || '')}</p>
     <div class="badges">
       <span class="badge ac">${esc(p.name)}</span>
       <span class="badge">${p.srcFiles} 个源文件</span>
       <span class="badge">${p.srcLoc.toLocaleString()} 行</span>
+      ${d ? '<span class="badge ok">已逐包精读</span>' : ''}
       ${p.dshField?.bundle ? '<span class="badge warn">bundle 补丁层</span>' : ''}
       ${p.dshField?.profile ? '<span class="badge warn">profile 模板</span>' : ''}
     </div>
   </div>
 
-  <h2>它是什么</h2>
-  <p class="lead">${md(p.summary || p.desc || '')}</p>
+  ${deepHtml}
 
   <div class="src-entry">
     <span style="font-size:12px;color:var(--tx-3)">读源码 →</span>

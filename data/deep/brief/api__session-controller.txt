@@ -1,0 +1,496 @@
+# @deepseek-ai/dsh-api-session-controller
+path: packages/api/session-controller
+desc: Session Remote commands, cold reads, and live control transport
+deps: @deepseek-ai/dsh-brand, @deepseek-ai/dsh-deque, @deepseek-ai/schemastery
+peers: @deepseek-ai/cordis, @deepseek-ai/dsh-agent, @deepseek-ai/dsh-agent-default-model, @deepseek-ai/dsh-agent-presets, @deepseek-ai/dsh-api-gateway, @deepseek-ai/dsh-attachment, @deepseek-ai/dsh-client-connection, @deepseek-ai/dsh-client-file-upload, @deepseek-ai/dsh-commands, @deepseek-ai/dsh-file-reference, @deepseek-ai/dsh-fs, @deepseek-ai/dsh-jobs, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-native-command, @deepseek-ai/dsh-scope, @deepseek-ai/dsh-session, @deepseek-ai/dsh-session-persistence, @deepseek-ai/dsh-session-projection, @deepseek-ai/dsh-session-projection-cache, @deepseek-ai/dsh-session-query, @deepseek-ai/dsh-session-title, @deepseek-ai/dsh-skill, @deepseek-ai/dsh-subagent, @deepseek-ai/dsh-typert-protocol, @deepseek-ai/dsh-typert-registry, @deepseek-ai/dsh-util-time, @deepseek-ai/dsh-util-values, @deepseek-ai/dsh-util-workspace-path, @deepseek-ai/dsh-workspace
+srcFiles: 34  srcLoc: 8136
+
+## README.md (132 行)
+---
+description: "Host and Client session control: create, resume, prompt, follow history, and project live session state."
+kind: "package-reference"
+---
+# Session Controller
+
+English | [中文](README.zh.md)
+
+Desktop analytics follows the [product collection policy](../../client/product-analytics/README.md), including its launch-time switch. Web usage is excluded.
+
+## Summary
+
+`@deepseek-ai/dsh-api-session-controller` owns the Host `ctx.sessionController` service and the generated Client `session`, `skills`, and `fileReferences` Remote namespaces. It serves Session lifecycle and history, the Host-generation model catalog, human background-job kill, workspace-path opening, user-invocable skill discovery, and Agent-scoped file references. Use it through API Gateway when a Client needs operations addressed by a Session.
+
+## Table of Contents
+
+- [Use this package](#use-this-package)
+- [Client references](#client-references)
+- [Session media references](#session-media-references)
+- [Configuration](#configuration)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="use-this-package"></a>
+## Use this package
+
+History pages and follow opening snapshots carry one `{ type: 'event', event: SessionWireEvent }` record per durable Session event. The Client retains each accepted record as one durable `SessionEventLikeEntry`; Assistant token boundaries remain inside the compact stream on `assistant/message` or `assistant/attempt`. Tool arguments, result content, failures, and `tool/result.data.meta` pass through unchanged; the controller does not resolve a Tool definition, run a presenter, or attach UI data.
+
+The Client journal validates current Session event envelopes before publishing follow snapshots, live entries, or history pages. It reuses the browser-safe Session validators for required surface markers, exact replacement endpoints, earlier unique source seqs, embedded Assistant provider metadata, request-header omissions, and tool-error consistency. Invalid records fail without field stripping or normalization; range membership and source existence remain durable-log checks on the Host.
+
+Each endpoint states its activation policy. List reads only stored headers and projection-cache rows: it never calls per-session stat or opens a cold Session body. A current-format cache identity may supply every list hint; a lifecycle-matching predecessor cache may supply only its version-compatible title as a stale display fact, never as an authoritative fold seed. Search, attachment, history pages, log following, skill discovery, and workspace-path opening can inspect persistence without activating an Agent; `canOpenWorkspacePath()` reports native-opening availability without addressing a Session. Cancellation requires live state; queue mutation, model, rename, prompt, and file-reference operations may resolve or resume an ordinary Session. Prompt rejects content with neither non-whitespace text nor an attachment before resolving the Agent or appending Session events; queue edits accept only non-empty text content. Prompt admission consumes opaque receipts from the injected [`fileUploads`](../../client/file-upload/README.md) Host service and resolves every same-Agent receipt before sending the complete ordered content list through `ctx.attachments`. Prompt retries whose `requestId` is already queued or logged return the original acceptance without inserting another message. Create and fork are the only operations that create a new Agent directly. The service applies one preset-aware resume policy and subagent ownership fence to its own methods and to the Typert Agent and Session lookups used by other Remote namespaces. Queue mutation has one narrow exception: a live child whose current projected identity is continuable and comes from its own non-seed suffix accepts the ordinary Edit, Remove, and QueueDock Steer actions across both inbox destinations. One-shot, missing, unknown, corrupt, seed-only, or cold children remain rejected without resume. The skill catalog uses a live Agent when present or the recorded preset's standing scope when cold, so listing never starts an Agent. The authenticated delivery routes use `workspaceDesktop()` for the serving Host name and file-manager behavior. `openWorkspacePath({ path, action: "reveal" })` delegates file-manager navigation to the native adapter; omitting `action` opens the file-type association, including HTML and SVG. Both operations require the composed filesystem to map the requested Host path to the same canonical process path; unmapped remote paths are refused before a native command runs. `session.projections` reads one complete baseline through a live-preferred Session observation without activating an Agent. It returns null for a missing Session and serves any registered projection keys. The Client exposes shared values and explicit-read state through `projectionsBySession`; domains select their own keys. Session-list summaries carry `agentAvailable`, updated through existing summary and status events independently of durable projections. Initial reads and live projection frames use the same sequence ordering.
+
+Client list rows and resident Sessions use the current `sessionListMetadata` projection to reject stale blank-session hints; recency is the later of the summary timestamp and the projected last user prompt. When SessionManager creates an instance before its list row arrives, it reconciles blankness with metadata already retained for that Session. An opened conversation is therefore not reused by New Session even when an older list response still marks it blank.
+
+Explicit-id `session.create` adopts a live Session or resumes a persisted Session while retaining its writer lock. Writer contention returns `session/writer-held`; callers may try another blank without suppressing unrelated failures. `session.list` includes persisted blanks using cached metadata, without opening cold log bodies.
+
+Client list refreshes retain unchanged row objects and reuse the items array when order and values match. Each row's `retainedBy` contains positive local reference-source counts; Host metadata refreshes cannot overwrite them. Cache membership checks use a per-refresh ID set, so reconciliation grows linearly with the current list and retained cache sizes. Host summary updates replace running and Agent availability; local create/fork responses only fill missing metadata on existing rows. Removed ordinary Sessions retain projection stores only when their catalogs contain children.
+
+Background-job rows and observation streams belong to [`dsh-api-job-controller`](../job-controller/README.md); the control stream carries projections only.
+
+Projection reads retain loading and failure state independently of their values. Reconnect cancels reads from the previous connection and reloads previously requested projections; live membership updates arrive through the control stream. Parent availability comes from Host summaries and remains unknown until a summary or a successful list baseline establishes it. Address lookup resolves projected children without selecting them or creating scopes.
+
+Accepted prompts and observed running keep their Client display conversion across list refresh, reconnect, and Session-object replacement. The Manager retains these observations by Session id; they do not establish durable history. Drafts, projection stores, and sidebar display rules retain their existing behavior. The [blank rollback decision](../../../.agents/notes/implemented/bug-fix/2026-09-15-client-session-blank-reconciliation.md) defines retention and late-response handling.
+
+The Client adapter exposes `SessionEventStream`, a Gateway `RemoteJournalStream` bound to one ordinary or direct-subagent address. It opens follow before the initial page, publishes only contiguous `replace`, `prepend`, `append`, and `settle-assistant` changes, and repairs reconnect or sequence gaps through a tail page. Backwards paging has two verbs: `loadOlder()` pulls one Turn-aligned page, and `loadThrough(seq)` — the turn-jump loader — loops Turn-aligned pages until the window covers the target seq, lowering a shared target on repeated calls, stopping on a page that makes no progress, and reporting busy through the same `loadingOlder` snapshot bit. The Web adapter explicitly opts into cursorless Assistant frames: each opening carries the active attempt's `startedAfterSeq`, `nextIndex`, and compact stream, and every stream member becomes a Client-only `assistant/live-chunk` entry ordered between durable cursors. The Host captures a follower-local arrival ordinal with that baseline and suppresses buffered frames at or before the cut; a replacement Agent may restart frame revision at one. A durable `assistant/message` or `assistant/attempt` arriving after an active opening stays staged only when its seq follows `startedAfterSeq` and its Turn and Step match; the matching end type, seq, and index releases the durable entry. A successful message retains its transient rows until the owning `step/end`, so pending tool identities remain available for dispatch. Failed or interrupted settlements retire their rows immediately; earlier same-step retries remain visible. Revision, dense-index, or settlement gaps for a known attempt reopen follow, while a controller that missed the start ignores unknown-attempt frames and publishes their durable settlement normally. An abandoned end publishes a settlement delta without a durable entry so its transient rows retire immediately. A durable gap-repair page has no Assistant baseline, so its held notification reopens follow once for a paired page and baseline. Every history record covers exactly its event seq. A business, persistence, or unresolved continuity failure terminates the stream, while only physical carrier loss selects automatic resumption. `SessionControlStream` is a Gateway `RemoteSnapshotStream`; every generation opens with a complete process-local baseline, so reconnect replaces projection state instead of treating transient values as durable events. At each ready Host generation, a synchronous Client subscription clears retained projection values and watermarks before refreshing queries and restarting the control stream, including Sessions absent from the control baseline. The first control stream waits for generation readiness, so its opening values cannot precede invalidation. Outstanding list responses from the previous generation cannot republish those values. Within a generation, a delayed control baseline cannot overwrite or clear newer sequenced values, whether they arrived through a live Session's list block, a history page, or a frame; a cached list block, viewed from the projection cache for a cold Session, yields to the connected Session's baseline whatever watermark it carries. The durable `inbox` projection carries both pending lists through the same cold-read and reconnect path as other projections. Client Agent contexts provide the identity used by the independent [`fileUpload`](../../client/file-upload/README.md) service; Session objects expose lifecycle, prompt, queue, and history operations rather than file transfer.
+
+The Session object also carries local submission echoes: `session.beginSubmission` inserts one into `SessionSnapshot.pendingSubmissions` synchronously, before the caller serializes and prompts, so a conversation UI can show the message on the submit click's own frame. The echo stores ordered image previews and durable file references. Session derives its `transcript`, `queued`, or `steering` placement from the current running state and requested delivery mode, then retains that placement until the display handoff. The prompt's `requestId` is the correlation identity: the Host echoes it as the durable user source's `rpcId`, including pending messages in the `inbox` projection. Queued echoes retire one animation frame after queue acceptance; Chat echoes follow the admission rule below. Identified failures and abandonment retire unadmitted echoes immediately. Disposal preserves observed admission and fails other unsettled submissions. Each retirement fires `onRetire` exactly once; an observed retirement includes the ordered durable attachment references so the composer can release successful cards while preserving failed drafts. Echoes are Client memory only; reload and reconnect rebuild the conversation from durable events alone.
+
+
+During uninterrupted following, transcript and steering echoes stay in Chat through Inbox acceptance and claim until their durable messages arrive. After a local Chat message is admitted, its identity remains until the Inbox watermark reaches its next-turn or next-step claim seq: Chat already renders the durable Node, while Chat and QueueDock exclude matching stale Inbox rows. Other queued messages remain visible. A replacement follow baseline withdraws receipt-confirmed echoes as observed, using their accepted attachment references; unconfirmed submissions remain pending. Host data then supplies the pending or admitted rows. Reconnecting between claim and admission can briefly omit that bubble; withdrawal confirms acceptance, not execution or failure.
+
+The user-invocable `skills/list` metadata includes the winning provider’s optional instruction-file `path`. The composer can preview that file without loading every skill body or activating a cold Agent.
+
+Fork copies the exact inclusive event prefix selected by `atSeq`, including a cut inside an open turn. The child records its inherited marker before synthetic fork results and closing events. Omitting `atSeq` selects the latest completed turn and its standalone tail, stopping before the next turn or queued input; a nonexistent event is rejected. The chat action selects a completed turn.
+
+A resume blocked by an existing write handle returns `session/writer-held` with the Session id; other resume failures retain `gateway/internal`.
+
+`loadThrough(seq)` retains older pages privately until its shared target is covered or loading ends, then publishes the successful pages as one ordered prepend. Live events remain visible while history loads. A later page failure retains the successful prefix; replacing the history window discards buffered pages from the replaced window. Ordinary `loadOlder()` publishes one Host-selected page directly.
+
+The Client's initial `follow`, reconnect openings, and `loadOlder()` request at least 50 append-origin `user/message` and `assistant/message` events and cross at least two `turn/start` events, including the partial Turn at the loaded window's beginning. The Host stops at the first Turn start satisfying both minima, or at 500 counted messages or history exhaustion, whichever comes first. Steering does not add a Turn boundary. Intervening events accompany the page without counting toward the message budget. The optional `turnWindow` on page and follow requests supplies these minima under `maxMessages`. `loadThrough()` uses the same rules with a 200-message minimum per page; the 500-message cap does not limit the whole jump. Requests without `turnWindow` retain message-aligned paging.
+
+Queue edits replace pending content with non-empty text only.
+
+Attachment authorization reads declared content fields of built-in Session events and completed assistant stream blocks, including flat V4 tool-role messages. Unknown event payloads and unrelated fields cannot authorize attachment reads.
+
+The controller composes `ArchivedSessionGate` through `ctx.plugin`: it loads once the Agent registry, Session store, and Workspace registry exist and unwinds with the controller. Its `agent/pre-step` listener rejects a step proposed for an archived Session or for a subagent descendant of one — read from the Session header's lineage fields, never a fork — so a late waking delivery ends its turn as `blocked` without a model request; unarchiving lifts the gate for the whole lineage. The work an archived Session still runs is reported and stopped by its owners through the Workspace registry's archive admission ([seam](../../workspace/workspace/README.md)): the running turn by the [Agent registry](../../core/agent/README.md), owned jobs by the [job registry seam](../../jobs/jobs/README.md), subagent descendants by the [Subagent](../../subagent/subagent/README.md) runtime, reminders by the [Schedule](../../schedule/schedule/README.md) plugin; this controller reports nothing itself.
+
+<a id="client-references"></a>
+## Client references
+
+`sessions.retain(target, { source, signal? })` immediately acquires one exact Client generation and starts its shared initial history opening. The target is a known Session id or a durable direct-parent subagent address; the Host validates an explicit address when history opens. The returned reference supports idempotent `release()` and `Symbol.dispose`; its `ready` Promise follows the shared `Session.open()` result and resolves to the exact binding when that attempt settles, including when a Remote failure is represented by `openState: 'error'`. It rejects when `Session.open()` rejects, its waiter is cancelled, or the reference is released early. Cancelling one waiter does not cancel another owner's opening. `sessions.using(target, options, operation)` waits for that settlement, holds its reference until the callback settles, and propagates rejected readiness and callback failures.
+
+References keep local Session data, scoped Contexts, and history streams alive, not Host Agents. Ordinary Session retention never adds a catalog row. Retained subagents with a known direct-parent address keep a fallback row and notify list readers even before the parent catalog arrives; these rows do not join Host-list membership. Fork-title assignment sends rename directly and applies the returned title projection without retaining the child or opening its history. Final release withdraws the generation before teardown; later acquisition can create a new generation with the same id. `binding(id)` and `scope(id)` only borrow an existing generation. `retainInfo(id)` observes stable read-only source counts independently of catalog membership and performs no history I/O. Consumer source keys are declaration-merge extensible; navigation and completion acknowledgement belong to UI consumers, not this Controller. See [Client Session references](../../../.agents/notes/implemented/architecture/2026-09-15-client-session-references.md) for ownership and teardown rules. An unknown-mode subagent address permits history reads with direct-parent validation. Successful descriptor restoration determines the displayed mode; failures remain local to the child, and control requests still require a confirmed continuable identity.
+
+<a id="session-media-references"></a>
+## Session media references
+
+`SessionMediaReferences` mounts `GET|HEAD /api/file?path=<absolute path>` on the authenticated `connection.fetch` channel when `connection`, `fs`, and `attachments` are composed. It reads ordinary files through `ctx.fs`, including temporary paths outside registered workspaces and files in remote providers. Neither directory containment nor MIME categories restrict access; `mime-types` supplies the response type, with `application/octet-stream` for unknown extensions. GET reuses `readBytes` for preflight and ongoing byte limits; HEAD reads metadata only. All files use `ctx.attachments.imageLimits.maxImageBytes` (normally 20 MiB); exceeding this limit returns 413. Responses contain the complete file, ignore Range, and carry `private, no-store`, `nosniff`, and a sandbox CSP so directly opened HTML/SVG cannot execute with the API origin. The Client rewrite lives in `ui-chat` (`AssistantMarkdown`); audio/video responses are available, while Markdown audio/video player nodes remain separate work.
+
+GUI model selection requires the exact provider/model pair in the available catalog; unavailable choices reject with `session/model-unavailable`. Prompt admission retains the saved route without a catalog availability gate, so request execution reports missing credentials or unavailable models. `initializeDefaultModel()` saves the first available account model after login when no other provider has a configured API key; credential checks use configured references independently of model availability. A provider with no available models rejects initialization with `session/provider-models-unavailable`. Availability never substitutes another model or rewrites a Session selection.
+
+A successful `selectModel` response acknowledges the Session-local selection without waiting for the default profile setting to save. Default saves run in the background in submission order; a failure logs a warning and leaves the Session selection intact. New Sessions read the last successfully saved default.
+
+-----
+
+<a id="configuration"></a>
+## Configuration
+
+| Field | Default | Meaning |
+|---|---:|---|
+| `nativeOpen` | platform-detected | Whether Session workspace paths can be handed to a native desktop opener |
+
+The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-api-session-controller) is the exhaustive source for accepted fields and their JSDoc.
+
+-----
+
+<a id="model-experience"></a>
+## Model Experience
+
+None, as invoked Agent commands own any model-visible effect.
+
+#### KV Cache effect
+
+No direct effect; model requests remain owned by the Agent and LLM packages.
+
+## Known Limitations and Deferred Work
+
+<a id="known-limitations-and-deferred-work"></a>
+
+- The image byte cap does not validate decoded dimensions or pixel count.
+- A failed follow resumption remains visible to the caller instead of retrying indefinitely.
+- The raw browser upload is one streaming HTTP request without resumable offsets; a retry sends the file again from byte zero.
+- File-reference completion uses the shared Agent lookup and can resume a cold Session; the `skills/list` catalog is the non-activating alternative for skill metadata.
+- Accepted/running display memory lives only in Client memory and is lost on page reload.
+- That memory is not shared between tabs: one tab can show a converted row while another still shows `New Session` for the same Session.
+
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>
+
+**Runtime invariant:** No companion is published. Every page and frame is checked against the addressed durable Session.
+
+
+## 源文件与导出符号
+
+### packages/api/session-controller/src/agent.ts  (537 行)
+  20	class	ApiSessionNotFound
+  23	class	ApiSessionSubagentOwnership
+      members: L25 constructor
+  31	class	ApiSessionCwdConflict
+      members: L32 constructor
+  46	class	ApiSessionPresetConflict
+      members: L47 constructor
+  61	type	ApiSessionAgentError
+  64	type	ApiSessionAgentResult
+  80	fn	hasApiSessionSubagentOwner
+  97	fn	apiSessionSubagentOwnershipError
+  112	fn	inspectApiSession
+  140	class	ApiSessionAgentController
+      members: L147 constructor, L170 resolveAgent, L179 resolveObservedAgent, L183 resolve, L239 ensureSession, L283 selectionFor, L333 selectForNextRequest, L346 consumeSelection, L360 presetForSession, L370 serializeImageAdmission, L381 composeAgent, L399 liveAgent, L407 resume, L421 resumeObserved, L444 createOrAdopt, L497 agentOptions, L502 installSelection, L511 presetForObservation, L518 assertPresetUnchanged
+
+### packages/api/session-controller/src/archived-session-gate.ts  (57 行)
+  23	const	ArchivedSessionGate
+  43	fn	underArchivedSession
+
+### packages/api/session-controller/src/assistant-stream.ts  (103 行)
+  27	class	SessionAssistantStreamAccumulator
+      members: L38 accept, L84 snapshot
+
+### packages/api/session-controller/src/catalog.ts  (117 行)
+  20	fn	buildModelCatalog
+  80	fn	modelAvailable
+  97	fn	hasProviderApiKey
+
+### packages/api/session-controller/src/client/contract/events.ts  (206 行)
+  7	iface	AssistantLiveChunkEvent
+  20	type	SessionEventLike
+  23	type	SessionEventLikeEntry
+  28	type	SessionLiveEventEntry
+  30	iface	SessionAssistantSettlementEntry
+  35	type	SessionTransientEventEntry
+  98	type	SessionEventChange
+  109	iface	SessionEventWindow
+  117	type	SessionEventSource
+  120	class	MutableSessionEventSource
+      members: L131 getSnapshot, L138 subscribe, L148 replace, L158 prepend, L167 append, L181 settleAssistant, L198 publish
+
+### packages/api/session-controller/src/client/contract/session.ts  (156 行)
+  24	type	PendingSubmissionRetirement
+  32	iface	BeginSubmissionInput
+  44	iface	SubmissionHandle
+  52	iface	ProjectionsFace
+  63	iface	ISession
+  155	type	SessionFace
+
+### packages/api/session-controller/src/client/contract/sessions.ts  (164 行)
+  22	type	SessionTarget
+  25	iface	SessionReference
+  36	iface	SessionRetainOptions
+  42	iface	SessionRetainInfo
+  49	iface	ISessions
+
+### packages/api/session-controller/src/client/contract/snapshot.ts  (92 行)
+  9	iface	PendingSubmissionImage
+  21	iface	PendingSubmissionImageAttachment
+  27	iface	PendingSubmissionFileAttachment
+  33	type	PendingSubmissionAttachment
+  38	type	PendingSubmissionPlacement
+  46	iface	PendingSubmission
+  60	type	OpenState
+  63	iface	PromptError
+  69	iface	SessionSnapshot
+
+### packages/api/session-controller/src/client/index.ts  (150 行)
+  declare module: declare module '@deepseek-ai/cordis' {
+  80	iface	SessionReferenceSourceMap
+  88	type	SessionReferenceSource
+  98	const	inject
+  112	fn	apply
+
+### packages/api/session-controller/src/client/ordered-baseline.ts  (44 行)
+  11	fn	mergeOrderedBaseline
+
+### packages/api/session-controller/src/client/scope.ts  (77 行)
+  9	type	AgentContext
+  21	iface	AgentScopeHandle
+  44	fn	createScope
+  65	fn	scopeOf
+  74	fn	scopeIdentityOf
+
+### packages/api/session-controller/src/client/session-wire-event.ts  (47 行)
+  14	fn	assertSessionWireEvent
+
+### packages/api/session-controller/src/client/sessions/assistant-stream.ts  (230 行)
+  26	type	ClientAssistantStreamResult
+  44	class	ClientAssistantStream
+      members: L58 replace, L109 acceptDurable, L129 acceptFrame, L199 attemptForSettlement, L211 publish
+
+### packages/api/session-controller/src/client/sessions/history-records.ts  (36 行)
+  13	fn	historyEntries
+  24	fn	historyRecordFirstSeq
+  33	fn	historyRecordLastSeq
+
+### packages/api/session-controller/src/client/sessions/lineage.ts  (86 行)
+  10	iface	TitledSessionSummary
+  17	iface	SessionListEntry
+  44	fn	flattenLineage
+
+### packages/api/session-controller/src/client/sessions/manager.ts  (854 行)
+  42	type	SessionListPhase
+  45	iface	SessionSearchResultItem
+  51	iface	SessionListSnapshot
+  62	iface	SessionProjectionSnapshot
+  84	class	SessionManager
+      members: L126 constructor, L135 resolveTarget, L159 subagentAddress, L184 drop, L197 dispose, L213 startSessionDisposal, L223 drainSessionDisposals, L236 get, L265 createSession, L290 effectiveBlank, L300 retainedIds, L312 pruneEngagement, L317 projectionStore, L339 refreshProjections, L378 agentAvailable, L383 updateParentAvailability, L393 refreshList, L466 search, L488 create, L532 fork, L559 rename, L571 mergeSummary, L577 recordMutation, L591 subscribe, L599 getListSnapshot, L609 projectionValues, L619 handleControlFrame, L628 replaceControlBaseline, L642 handleSessionAdded, L657 applyListBlock, L677 handleSessionRemoved, L705 handleSessionStatus, L717 handleSessionActivity, L726 handleSessionError, L736 handleConnected, L752 buildListSnapshot, L803 switch
+
+### packages/api/session-controller/src/client/sessions/notifier.ts  (98 行)
+  8	class	Notifier
+      members: L16 constructor, L23 subscribe, L31 markDirty, L39 markFrameDirty, L50 notifyNow, L61 ensureFresh, L67 schedule, L82 invalidateSchedule, L87 flush
+
+### packages/api/session-controller/src/client/sessions/projection-store.ts  (245 行)
+  38	type	UseProjection
+  52	iface	ProjectionsBaseline
+  92	class	ProjectionValueStore
+      members: L106 faceOf, L116 get, L125 seqOf, L134 values, L149 subscribeAny, L159 apply, L176 applyCached, L194 seed, L215 clear, L222 changed, L228 channel
+
+### packages/api/session-controller/src/client/sessions/remotes.ts  (47 行)
+  18	iface	SessionCommandsRemote
+  28	iface	SessionSubagentsRemote
+  41	iface	SessionRemotes
+
+### packages/api/session-controller/src/client/sessions/service.ts  (711 行)
+  26	iface	SessionSummary
+  54	iface	SessionListState
+  66	class	SessionCreateError
+      members: L73 constructor
+  82	class	SessionForkError
+      members: L89 constructor
+  98	iface	SessionBinding
+  231	class	ClientSessions
+      members: L253 constructor, L282 retain, L297 using, L311 retainInfo, L337 subagentAddress, L345 refreshProjections, L353 refresh, L364 search, L375 handleControlFrame, L383 handleSessionAdded, L391 handleSessionRemoved, L399 handleSessionStatus, L407 handleSessionActivity, L415 handleSessionError, L420 handleConnected, L431 create, L451 fork, L480 scope, L489 retainAgentScope, L502 scopeOf, L515 sessionOf, L529 binding, L533 retainScope, L558 retentionSnapshot, L562 publishRetention, L576 retireScope, L588 materializeScope, L609 projectList, L682 startScopeDrop, L696 drainScopeDrops, L703 dropScope
+
+### packages/api/session-controller/src/client/sessions/session.ts  (942 行)
+  52	const	PAGE_MESSAGES
+  57	const	JUMP_PAGE_MESSAGES
+  71	iface	SessionOptions
+  96	class	Session
+      members: L184 constructor, L209 bindScope, L215 unbindScope, L228 beginSubmission, L254 prompt, L322 readAttachment, L336 updateQueue, L347 cancel, L372 rename, L387 command, L394 open, L406 loadOlder, L428 loadThrough, L486 resync, L507 subscribe, L515 getSnapshot, L526 handleRunning, L544 configureSubagent, L558 handleSubagentParentAvailable, L572 handleBlank, L581 handleRemoved, L590 handleAgentError, L599 dispose, L616 doOpen, L646 acceptEventChange, L668 installWindow, L707 publishAssistantEntry, L737 prependWindow, L751 appendLive, L764 observeSubmissionEvent, L793 observeSubmissionInsertions, L804 observeSubmissionMessage, L818 retireAdmittedSubmission, L828 observeSubmissionInbox, L846 scheduleObservedRetirement, L857 retireFailedSubmission, L865 finishSubmission, L876 failEventStream, L888 buildSnapshot, L915 sessionAddress
+
+### packages/api/session-controller/src/client/time-zone.ts  (15 行)
+  8	fn	resolvedClientTimeZone
+
+### packages/api/session-controller/src/client/transport.ts  (247 行)
+  38	type	ClientSessionPageRequest
+  41	type	SessionRemote
+  50	type	SessionJournalChange
+  84	type	SessionControlStream
+  90	iface	SessionControlStreamOptions
+  100	iface	SessionEventStreamOptions
+  115	fn	createSessionControlStream
+  137	class	SessionEventStream
+      members: L149 constructor, L223 readPage, L238 repairRequest
+
+### packages/api/session-controller/src/commands.ts  (692 行)
+  88	class	SessionCommandController
+      members: L94 constructor, L105 create, L151 selectModel, L193 rename, L221 fork, L311 prompt, L379 requireModel, L391 attachment, L432 updateQueue, L511 cancel, L527 resolveAgent, L533 rejectCreation, L558 readSessionState, L568 forkWorkspace, L607 if, L619 if, L620 for, L645 switch, L675 for, L686 for
+
+### packages/api/session-controller/src/control.ts  (122 行)
+  17	class	SessionControlController
+      members: L21 constructor, L55 baseline, L62 projectionBaseline, L77 broadcast, L87 push, L95 end
+
+### packages/api/session-controller/src/file-references.ts  (43 行)
+  inject: L18 ['fileReferences', 'typert']
+  declare module: declare module '@deepseek-ai/cordis' {
+  17	class	SessionFileReferences
+      members: L21 constructor, L33 list
+
+### packages/api/session-controller/src/history.ts  (446 行)
+  42	class	SessionHistoryController
+      members: L50 constructor, L77 page, L243 sourceFor, L287 if, L288 if, L306 if, L311 if, L317 validateHistoryWindow, L321 if, L326 if, L347 if, L355 if, L361 if, L368 if, L375 if, L383 if, L403 for
+
+### packages/api/session-controller/src/index.ts  (529 行)
+  declare module: declare module '@deepseek-ai/cordis' {
+  79	iface	Config
+  85	iface	SessionControllerInternals
+  99	class	SessionController
+      members: L135 constructor, L201 promote, L219 resolveAgent, L229 inspect, L252 list, L263 search, L273 create, L283 selectModel, L292 initializeDefaultModel, L310 modelCatalog, L319 canOpenWorkspacePath, L327 workspaceDesktop, L340 openWorkspacePath, L370 workspacePathApplications, L384 verifyDesktopPath, L403 rename, L415 fork, L426 prompt, L437 attachment, L447 updateQueue, L457 cancel, L468 page, L480 follow, L491 projections, L520 control
+
+### packages/api/session-controller/src/list.ts  (342 行)
+  45	fn	applySessionListMetadata
+  64	fn	truncateUnicodeCodePoints
+  76	class	ApiSessionList
+      members: L78 constructor, L107 summaryFor, L126 list, L146 summarizeCold, L167 search, L269 projectionsFor, L303 if, L311 if, L314 if, L321 if
+
+### packages/api/session-controller/src/media-references.ts  (78 行)
+  66	const	SessionMediaReferences
+
+### packages/api/session-controller/src/model-selection-projection.ts  (84 行)
+  81	fn	installModelSelectionProjection
+
+### packages/api/session-controller/src/remote-events.ts  (15 行)
+  declare module: declare module '@deepseek-ai/dsh-typert-protocol' {
+
+### packages/api/session-controller/src/skill-catalog.ts  (108 行)
+  inject: L20 ['agents', 'sessionQuery', 'typert']
+  declare module: declare module '@deepseek-ai/cordis' {
+  19	class	SessionSkillCatalog
+      members: L23 constructor, L35 list, L93 scopeFor
+
+### packages/api/session-controller/src/types.ts  (627 行)
+  declare module: declare module '@deepseek-ai/dsh-session-projection/types' { | declare module '@deepseek-ai/dsh-session/types' { | declare module '@deepseek-ai/dsh-typert-protocol' { | declare module '@deepseek-ai/dsh-llm' { | declare module '@deepseek-ai/cordis' {
+  45	iface	SessionListMetadata
+  58	iface	SessionProjectionHints
+  74	iface	SessionProjectionBaseline
+  81	type	SessionProjectionValues
+  89	type	PromptContentPart
+  100	iface	ModelSelection
+  107	iface	ModelSelectionProjectionState
+  115	iface	ModelSelectionProjection
+  123	iface	ModelReasoningEffort
+  130	iface	ModelReasoning
+  136	iface	ModelCatalogModel
+  144	iface	ModelProviderGroup
+  151	iface	ModelCatalogFailure
+  158	iface	ModelCatalog
+  167	type	QueueAction
+  177	iface	SessionSummary
+  191	iface	SessionSearchItem
+  197	const	SESSION_SEARCH_RESULT_LIMIT
+  200	const	SESSION_SEARCH_SNIPPET_MAX_CODE_POINTS
+  240	iface	SkillListRequest
+  245	iface	SkillEntry
+  259	iface	SkillListValue
+  264	iface	SessionListRequest
+  269	iface	SessionListValue
+  274	iface	SessionSearchRequest
+  279	iface	SessionSearchValue
+  285	iface	SessionCreateRequest
+  293	iface	SessionCreateValue
+  299	iface	SessionSelectModelRequest
+  304	iface	SessionSelectModelValue
+  309	iface	SessionRenameRequest
+  315	iface	SessionRenameValue
+  321	iface	SessionForkRequest
+  328	iface	SessionForkValue
+  333	iface	SessionPromptRequest
+  344	iface	SessionPromptValue
+  349	iface	SessionAttachmentRequest
+  355	iface	SessionAttachmentValue
+  361	iface	SessionUpdateQueueRequest
+  368	iface	SessionUpdateQueueValue
+  373	iface	SessionCancelRequest
+  378	iface	SessionCancelValue
+  383	iface	SessionOpenWorkspacePathRequest
+  393	iface	SessionOpenWorkspacePathValue
+  398	type	SessionRequestId
+  408	type	SessionAddress
+  418	iface	SessionProjectionsRequest
+  423	type	SessionProjectionsValue
+  426	iface	SessionEventEntry
+  432	iface	SessionWireHeader
+  446	type	SessionWireSurfaceOp
+  451	type	SessionHistoryRecord
+  458	iface	SessionWireEvent
+  471	iface	SessionPageRequest
+  487	iface	SessionFollowRequest
+  494	iface	SessionAssistantStreamAttempt
+  507	iface	SessionAssistantStreamBaseline
+  513	type	SessionAssistantStreamFrame
+  546	iface	SessionPage
+  552	type	SessionFollowFrame
+  566	iface	SessionControlBaseline
+  571	iface	SessionProjectionUpdate
+  579	type	SessionControlFrame
+  623	type	SessionProjectionValue
+  626	type	SessionWorkspacePathApplication
+
+## 其它关键文件
+
+### package.json
+{
+  "name": "@deepseek-ai/dsh-api-session-controller",
+  "description": "Session Remote commands, cold reads, and live control transport",
+  "version": "0.1.7-rc.2",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/api/session-controller"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./types": {
+      "types": "./lib/types/types.d.ts",
+      "default": "./lib/types/types.js"
+    },
+    "./remote-events": {
+      "types": "./lib/types/remote-events.d.ts",
+      "default": "./lib/types/remote-events.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./typert": {
+      "types": "./lib/typert.host.d.ts",
+      "default": "./lib/typert.host.js"
+    },
+    "./remote": {
+      "types": "./lib/typert.remote-client.d.ts",
+      "default": "./lib/typert.remote-client.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "external": [
+        "@deepseek-ai/dsh-api-gateway/client"
+      ],
+      "inject": [
+        "@deepseek-ai/dsh-api-gateway",
+        "@deepseek-ai/dsh-client-file-upload"
+      ],
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "bundle": "tsdown",
+    "watch": "tsdown --watch"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/client.js",
+    "lib/types/**/*.js",
+    "lib/types/**/*.d.ts",
+    "lib/typert.host.js",
+    "lib/typert.host.d.ts",
+    "lib/typert.remote-client.js",
+    "lib/typert.remote-client.d.ts"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/dsh-brand": "workspace:*",
+    "@deepseek-ai/dsh-deque": "workspace:*",
+    "@deepseek-ai/schemastery": "workspace:~",
+    "mime-types": "^3.0.2",
+    "zod": "^4.4.3"
+  },
+ 

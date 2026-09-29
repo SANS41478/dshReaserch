@@ -1,0 +1,52 @@
+[
+  {
+    "group": "core",
+    "dir": "agent-loop",
+    "short": "agent-loop",
+    "oneLiner": "唯一的 Agent 驱动：跑 turn/step 循环，把排队输入、模型请求与工具执行写成会话日志",
+    "why": "dsh-agent 里只有契约：Agent 接口、注册表、agent/* 事件，没有执行体。把这一行从 cordis.yml 里删掉，ctx.agents.setFactory 就没人调用，ctx.agents.create() 与 resume() 立刻抛错，声明式 agents 一个也不启动——provider 和 model 配好了、工具注册好了、session 日志也写得动，但没有任何东西消费它们：消息能进 session，却永远不会有 assistant 回复。更细的三处同时塌：一是再没有生产者写 turn/start、turn/end、step/start、step/end，本包注册的 turnBoundary 投影永远停在初值，按 step 渲染的 UI 失去定位；二是 request/header 不再落地，从会话日志重放请求头的链路断了，invariant 对账失去基准；三是 tool/call 永不被派发，tools 里的 schema 沦为死数据。换言之，不加载它，系统只剩「会记账」的基础设施，塌掉的是「会思考」的那一半。",
+    "position": "上游两类：宿主层在 cordis.yml 里 mount 它并用 agents[] 声明 id/provider/model；程序侧调用方走 ctx.agents.create() 与 resume()。两条路都落到 AgentLoop.create / createAgent / resume，因为构造函数里一句 ctx.agents.setFactory(this) 让它成为 ctx.agents 背后的唯一工厂，调用方从不 import 本包。下游是 static inject 的六个服务：ctx.sessions 提供 Session 的 append、deriveMessages、requestHeader；ctx.llm 的 prepareCall 绑适配器、stream 出流；ctx.tools 给出 executionMode 与 TOOL_RUNTIME_SCHEDULER；ctx.systemPrompt 用 assemble 产出权威 prompt，本包反向给它注册 provider、model、cwd 三个 variable；ctx.sessionProjections 承载它注册的那两个投影。可选依赖 ctx.sessionPersistence，由 resumeWith 先 open(id,'write') 抢写权再冷读。数据流向是一条 U 形：宿主或 hook 把消息投到 ctx.agents.get(id).inbox，本包在 turn 边界 claim 出来，作为 user/message、system/message 追加进 session，下一次请求再用 session.deriveMessages 反向喂给 ctx.llm，回来的 assistant/message、tool/call、tool/result 沿 session/event 广播给 UI 与旁观插件。反向只有观察面：UI、telemetry、compaction 都靠 session/event 与 agent/* 事件旁观，从不 import 本包；唯一伸出去的校验手是 invariant.ts 这个 Cordis 伴随插件，它挂在 llm/stream 上把每个被打过标记的请求用会话日志重算一遍，任何分歧直接 fail。",
+    "inside": "AgentLoop extends Service implements AgentFactory（index.ts:330），static inject 六个下游：agents、sessions、llm、tools、systemPrompt、sessionProjections。构造函数一次性布防：注册两个投影——turnBoundaryProjectionDefinition（折叠 turn/start、turn/end、step/start、step/end）与 inboxProjectionDefinition；ctx.agents.setFactory(this)，从此它是 ctx.agents 背后唯一的工厂；向 ctx.systemPrompt 注入 provider、model、cwd 三个 variable；再遍历 config.agents 启动声明式条目。FactoryOwnership 用一根 teardown 信号统收 liveAgents 与 startupTasks。创建路径的枢纽是 prepare()：它产出未发布的 PreparedAgent（agent、fused abort signal、publish、memoized dispose），它把调用方取消、fiber 卸载、工厂 teardown 三路 fuse 成一根 signal，并在任何资源生成之前就登记 disposer；publish() 按 agents.enter、sessions.announce、agents.announce 发布；initializeAgent() 把 setup 与发布裹进 prepared.agent.runMaintenance()。resume 走 resumeWith：先 persistence.open(id,'write') 抢写权并排除并发 resume，冷读后用 interruptedTurnClosers 补齐崩在半途的 turn。循环本体 ReactLoopAgent（agent.ts:98）是一台三态机：idle、maintenance、running，running 态携带 AbortController、turn、step、wakeRequested。输入入口统一是 send(input, target, wakeup)：followup 投 next-turn，steer 投 next-step 并唤醒，inject 投 next-step 但不唤醒；send 在插入前算好 wakingAfterAbort，投向已中止活动的唤醒消息会被改投 next-turn，以免被 reentrant cancel 吞掉。wakeDriver() 决定是自己起 driver 还是把唤醒 latch 给正在 maintenance 或正在收尾的活动；driver 就是 kick() 里那个 while (await this.turn()) {}，外层 try/finally 吞掉一切异常，退出时若有 latch 且 inbox 仍有待办就再开一轮。turn() 返回 true 时换一根新 AbortController、清掉旧 latch、step 归零，随即被引擎再次调用，这一次一次续接就是 round 的推进。turn 的开合（agent.ts:296）：进场先 throwIfAborted，append turn/start；preStep 拒绝记 blocked，非首轮批次为空直接 break，首轮批次为空则不花任何 model call 记 completed；每次 step 前 append step/start，finally 里必定 append step/end。step 抛错时先落 ToolCallRecovery.results()，给没有结果的工具调用补 TOOL_OUTCOME_UNKNOWN 或 TOOL_NOT_STARTED。turn/end 的 reason 收束一切：aborted 时把 AgentCancelCause 拷贝成纯数据挂上去（live reason 带着 Node fetch 挂的 stack），max-tokens 具备粘性，后续正常完成的 step 不许降级它；当结果已定且 inbox.nextStep 为空时派发 serial agent/turn-stopping，这是系统里唯一的预算外刹车点。step（agent.ts:398）是一个 attempt 重试循环：prepareRequest 经 agent/request waterfall 拿到 config 与 PreparedLlmCall，SystemPromptProjection.project 决定 rendered prompt 是 append 还是幂等清场，首轮才把 decision.messages 作为 user/message 追加，buildRequest 随后 deepFreeze header 与 message identity 并产出 markAgentLoopRequest 标记过的不可变请求，交给 AssistantStreamAttempt 逐 chunk 累积。finish 为 error 或 aborted 时进 agent/request-error waterfall，监听器返回 {kind:'retry'} 才继续下一次 attempt；正常收尾必须过 live.settle('assistant/message', append)，先确认 durable 结算成功再发 end 帧，故 UI 见到的每个 chunk 都排在结算之后。没有 tool-call 块返回 completed，有则交 executeToolCalls，返回 null 就让 turn 再转一圈。剩下的四个部件各司其职：inbox.ts 的 ReactLoopInbox 把增删改归一成一次 splice 加一条持久的 agent/inbox/spliced 事件，队列因此崩溃可恢复；claim(target, turn) 一次取走全部 next-step，target 为 next-turn 时再取一条，并逐条发 agent/inbox/claimed；tool-calls.ts 按 executionMode 切成 exclusive barrier 或受限滚动池，池上限每次建组时才从 volatile 的 config.maxParallelToolCalls 采样，commitReady 只跨连续 slot 提交以保证结果仍按 model 顺序；assistant-stream.ts 用 AssistantStreamAccumulator 与 BlockAssembler 把同一批 chunk 折成流式视图与 canonical blocks 两份；runtime-context.ts 的两个 projection 只算差异不提交。",
+    "boundary": "归它管：一次对话的执行节奏——什么时候开一次 turn、一次 step 花几个 model call、prompt 与工具集怎么落到 surface、结果怎么落成不可变的 session 事件、何时允许重试、何时必须停下；以及支撑这个节奏的三张表：inbox 投影（谁在排队）、turnBoundary 投影（走到第几步）、request/header（这次请求长什么样）。不归它管：prompt 内容归 ctx.systemPrompt，本包只调 assemble 并用 SystemPromptProjection 决定落地形态；工具怎么执行归 dsh-tools，本包只定并发形态与顺序；怎么连模型、怎么退避重试归 dsh-llm，本包只用 PreparedLlmCall 里那条 bound stream；历史怎么省 token 归 compaction，本包只响应 surface 变化；能不能执行归 permissions 与 sandbox。划线依据很直白：凡是要回答「下一步做什么」的决策都在环里，凡是「这一步具体怎么做」的实现都在环外。唯一留出的跨界点是 agent/pre-step 与 agent/turn-stopping 这两个 hook——它们是给策略层的扩展位，不是它自己的策略。",
+    "tour": [
+      {
+        "file": "packages/core/agent-loop/src/agent.ts",
+        "line": 252,
+        "sym": "ReactLoopAgent.kick",
+        "note": "driver 边界：while (await this.turn()) {} 在一个 try/finally 里跑完整轮，外层吞掉异常——插件失败只结束一个 turn，不杀死循环；同一 driver 里连续的多个 turn 就是 round。"
+      },
+      {
+        "file": "packages/core/agent-loop/src/agent.ts",
+        "line": 296,
+        "sym": "ReactLoopAgent.turn",
+        "note": "turn 的开合：进场 throwIfAborted 后 append turn/start，批次目标从 next-turn 切成 next-step，出口把 turnEnds（aborted 时带 AgentCancelCause，max-tokens 具粘性）写进 turn/end。"
+      },
+      {
+        "file": "packages/core/agent-loop/src/agent.ts",
+        "line": 398,
+        "sym": "ReactLoopAgent.step",
+        "note": "一次 step 是一个 attempt 重试循环：prepareRequest、系统提示 reconcile、buildRequest、AssistantStreamAttempt、executeToolCalls 五段串成一节，无工具调用才返回 completed，返回 null 就让 turn 再转一圈。"
+      },
+      {
+        "file": "packages/core/agent-loop/src/inbox.ts",
+        "line": 109,
+        "sym": "ReactLoopInbox.claim",
+        "note": "轮次认领点：一次取走全部 next-step，target 为 next-turn 时再追加一条 next-turn；认领是纯删除不写 outcome，靠逐条 agent/inbox/claimed 通知而非拼接前的快照视图交付消息。"
+      },
+      {
+        "file": "packages/core/agent-loop/src/tool-calls.ts",
+        "line": 199,
+        "sym": "runGroup.fillPool",
+        "note": "模型请求与工具执行的交替点：排他调用自成 barrier，parallel 调用走受限滚动池，每次 start 前重分类，结果仍按 model 顺序提交。"
+      },
+      {
+        "file": "packages/core/agent-loop/src/agent.ts",
+        "line": 175,
+        "sym": "ReactLoopAgent.cancel",
+        "note": "取消路径：不设 keepInbox 就清空两条 pending 列表并清掉 latch，再 abort 当前 activity；已推送的流式文本仍以 interrupted:true 落库。"
+      }
+    ],
+    "gotchas": "配置式 agents 若没写 sessionId，每次启动都 mint 一个新的 ${id}-session-<uuid>，永远 resume 不到上一轮；sessionId 与 resumeSessionId 互斥且全局不得重复。并行分类是一元的：只判断单个调用自身是否安全，不比较兄弟调用或目标资源，凡可能冲突的必须显式标 exclusive。没有内置 turn 预算，工具结果不 concludesTurn 就一直续 step，要刹车只能在 agent/turn-stopping 里自己 cancel。取消是协作式的：已推给用户的文本会以 interrupted:true 落成 assistant/message 而不是被抹掉，未派发的工具调用也留一条 ABORTED_BEFORE_DISPATCH 的合成结果而非消失。maxParallelToolCalls 是 volatile config，每次建组才采样，运行中改配置即刻生效。失败步骤只在关闭前补结果，不重写已关闭的历史；声明式条目也没有 per-agent persona 或 setup hook。",
+    "analogy": "把它想成餐厅里唯一在运转的那台灶台。前台 dsh-agent 只登记订单和挂做完了的牌子，菜单由 systemPrompt 写，锅铲食材由 tools 供，账本是 session。灶台负责节奏：先看轮到哪几桌（inbox claim），开一次火即一次 turn；每个 attempt 先念当日菜单给厨师长（prepareCall 加 buildRequest），等他报菜名再一次性派锅（executeToolCalls），派完看要不要加菜（next-step），直到他说上齐才关门（turn/end）。中途撤单不是把锅扔了，而是作废没下锅的单、收尾已下锅的菜，端上桌的照样算钱。"
+  }
+]

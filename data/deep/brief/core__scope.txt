@@ -1,0 +1,203 @@
+# @deepseek-ai/dsh-scope
+path: packages/core/scope
+desc: Scoped-context registration primitive (scope tags, scope-filtered event dispatch) for the DeepSeek Harness
+deps: -
+peers: @deepseek-ai/dsh-invariants, @deepseek-ai/cordis
+srcFiles: 4  srcLoc: 567
+
+## README.md (114 行)
+---
+description: "The scoped-registration library for plugin authors and maintainers building registries or event surfaces that isolate contributions per agent or per group."
+kind: "package-library"
+---
+
+# @deepseek-ai/dsh-scope
+
+English | [中文](README.zh.md)
+
+## Summary
+
+`dsh-scope` lets plugin authors give each agent or group an isolated contribution set with a shared lifetime. Child scopes inherit ancestor contributions, with the nearest definition taking precedence, while ancestor scopes can observe descendant activity; neither relationship works in reverse. Disposing a scope removes everything owned by it. Use this dependency-free library when per-agent or per-group isolation must work without depending on the agent loop or presets.
+
+## Table of Contents
+
+- [Use this package](#use-this-package)
+- [Understand the implementation](#understand-the-implementation)
+- [Further Exploration](#further-exploration)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="use-this-package"></a>
+## Use this package
+
+Plugin authors use `dsh-scope` to give one agent (or one group) its own registration world. The registries in the core group build on it — a tool registered through `agent.ctx` is visible only to that agent — and the same primitive serves any custom registry or scope-filtered event.
+
+### Mint a scope
+
+`createScope(ctx, key)` creates a scope under `ctx`'s fiber: its `ctx` carries the scope tag, and everything registered through it is both scope-visible and scope-lifetime. `dispose()` unwinds every registration through the scope; `rawDispose` is the exact Cordis disposer for nesting the teardown in an ordered composite effect.
+
+```text
+const scope = createScope(ctx, agent)
+scope.ctx.on('agent/status', ({ agent, status }) => track(agent, status))
+// later:
+await scope.dispose()   // unwinds every registration made through scope.ctx
+```
+
+### Route scoped events
+
+`scopeTarget(base, key)` builds the opaque carrier a scope-filtered event dispatches with. Untagged listeners stay global; a listener tagged with `key` receives events for that key and its descendants. The carrier carries routing state only — the real subject travels in the event arguments.
+
+### Build a scoped registry layer
+
+Registry authors use `ScopedLayers`, `NamedEntries`, and `AnonymousEntries` to hold one eager global layer plus lazily created exact-scope layers: reads never create layers, `merge()` materializes insertion-ordered named shadows along the scope chain, and `effect()` derives visibility and ownership from the same context. A scoped layer is reclaimed only when its whole aggregate is empty.
+
+-----
+
+<a id="understand-the-implementation"></a>
+## Understand the implementation
+
+<details>
+<summary>Implementation internals — click to expand</summary>
+
+This section explains how the package realizes the behavior above; the observable contract is covered in [Use this package](#use-this-package).
+
+### Design concept
+
+The registration context determines both visibility and ownership: a registration made through a scoped context is visible in that scope and disposed with it, preventing a contribution from being visible in one scope but torn down with another. The primitive routes trusted same-process plugins; it is not a sandbox or an authority boundary. Handing out a scoped context also hands out the minting plugin's service-resolution API (resolution walks the minting fiber's dependency chain), so a scope is minted from the plugin whose dependencies the scoped registrations need.
+
+### Source map
+
+| File | Role |
+|---|---|
+| [`src/index.ts`](src/index.ts) | `createScope`, `scopeOf`, `scopeTarget`, `bindScopeParent`/`scopeParentOf`/`scopeChainOf`, carrier marks |
+| [`src/store.ts`](src/store.ts) | `ScopedLayers`, `NamedEntries`, `AnonymousEntries`, `ScopeLayer` |
+| [`src/invariant.ts`](src/invariant.ts) | Invariant companion over the generated scoped-event map |
+| [`src/scoped-events.generated.ts`](src/scoped-events.generated.ts) | Generated resolver map of declared scoped events |
+
+### The parent chain
+
+One relation powers both directions: registration views inherit DOWN the chain (a child scope sees its ancestors' layers), while event admission extends UP it (a listener tagged with an ancestor receives events dispatched to a descendant key). Binding is once — a key that already has a parent throws, and only the returned binding may re-link it — and every link rejects a cycle. `scopeChainOf` returns `[key, parent, …]` nearest-first.
+
+### Event filtering
+
+`scopeTarget` composes the base's existing `Context.filter` with the scope predicate: an untagged listener is admitted; a tagged listener is admitted iff its tag is the dispatch key or an ancestor of it; `key === undefined` admits untagged listeners only. `{ global: true }` listeners bypass filtering. The `Scoped<T>` brand demands the carrier as the `this` type of a scope-filtered event, so dispatching with a bare subject is a compile error.
+
+</details>
+
+-----
+
+<a id="further-exploration"></a>
+## Further Exploration
+
+The package-level contract is enough for most consumers; read these when you need the surrounding domain and the design rationale.
+
+- [Scoped registration subsystem](../../../docs/subsystems/scope.md) — the identity, carrier, and layer types.
+- [Agent-scope contexts Agent Note](../../../.agents/notes/implemented/architecture/2026-07-08-agent-scope-contexts.md) — the security non-goals and context design.
+- [Agent-scope runtime design Agent Note](../../../.agents/notes/implemented/architecture/2026-07-12-agent-scope-runtime-design.md) — how the loop builds per-agent scopes.
+- [Core group map](../README.md) — how the core packages compose.
+
+-----
+
+## Known Limitations and Deferred Work
+
+<a id="known-limitations-and-deferred-work"></a>
+
+These limits define when the primitive needs special care. They are current package constraints, not a task backlog.
+
+- **Only scope-aware APIs isolate state** — registries must file by `scopeOf()` and events must dispatch through `scopeTarget()`; an arbitrary Cordis service remains context-global merely because it is called through a scoped context.
+- **A context carries one nearest scope key** — the hierarchy lives in the key-level parent relation, not in context tags; nested scope contexts still shadow to a single tag, and multi-membership policy sets remain unsupported.
+- **Service reachability comes from the scope minter** — handing out `Scope.ctx` also hands out the minting plugin's injected services, so a broader minter cannot later be narrowed by the holder.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>
+
+
+## 源文件与导出符号
+
+### packages/core/scope/src/index.ts  (205 行)
+  15	type	ScopeKey
+  27	type	Scoped
+  42	iface	ScopeParentBinding
+  72	fn	bindScopeParent
+  89	fn	scopeParentOf
+  98	fn	scopeChainOf
+  105	iface	Scope
+  124	iface	CreateScopeOptions
+  137	fn	createScope
+  154	fn	scopeOf
+  170	fn	scopeTarget
+  192	fn	isScopeCarrier
+  201	fn	carrierKeyOf
+
+### packages/core/scope/src/invariant.ts  (42 行)
+  11	const	name
+  13	const	inject
+  40	const	apply
+
+### packages/core/scope/src/scoped-events.generated.ts  (51 行)
+  48	fn	scopedSubjectResolverFor
+
+### packages/core/scope/src/store.ts  (268 行)
+  12	iface	ScopeLayer
+  30	class	NamedEntries
+      members: L33 constructor, L43 insert, L61 get, L70 has, L78 keys, L86 entries, L94 values, L102 isEmpty
+  114	class	AnonymousEntries
+      members: L122 append, L139 values, L147 isEmpty
+  159	class	ScopedLayers
+      members: L165 constructor, L180 peek, L192 chainLayers, L208 merge, L226 effect
+
+## 其它关键文件
+
+### package.json
+{
+  "name": "@deepseek-ai/dsh-scope",
+  "description": "Scoped-context registration primitive (scope tags, scope-filtered event dispatch) for the DeepSeek Harness",
+  "version": "0.1.7-rc.2",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/core/scope"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./invariant": {
+      "types": "./lib/types/invariant.d.ts",
+      "default": "./lib/invariant.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/invariant.js",
+    "lib/types/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/dsh-invariants": "workspace:*",
+    "@deepseek-ai/cordis": "workspace:~"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-invariants": "workspace:*",
+    "@deepseek-ai/cordis": "workspace:~"
+  }
+}
+

@@ -1,0 +1,11 @@
+# @deepseek-ai/dsh-client-ui-sidebar-textpreview
+path: packages/client/ui-sidebar-textpreview
+desc: Text preview tab type for the right Sidebar: the fallback viewer for file: addresses, drawn from the file resource with line navigation, wrap, and reload
+deps: -
+peers: @deepseek-ai/cordis
+srcFiles: 11  srcLoc: 910
+
+## README.md (1 行)
+
+
+## 源文件与导出符号

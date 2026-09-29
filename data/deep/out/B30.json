@@ -1,0 +1,173 @@
+[
+  {
+    "group": "client",
+    "dir": "ui-settings",
+    "short": "ui-settings",
+    "oneLiner": "Settings 域基础包：共享配置表单、describe 镜像与全部 settings.* slot 类型契约，自己不渲染任何界面",
+    "why": "删掉它，Web 端所有可编辑偏好同时塌掉：models 页改不了 provider 路由，theme/locale 存不了偏好，General 里的开关全部失效——因为它们都不直接跟 Host 的 settings API 说话，而是经这个包提供的 ctx.configForms 和 ctx.settingsSchema。更隐蔽的塌法是通信层：整个浏览器只有一个 SettingsDescribeMirror 在读 settings.describe（startup RPC 预算按一个读者算的），每个功能包若各自拉取，启动请求数会随功能数线性膨胀；写冲突防护（revision fence）、写队列串行化、write 答案折回镜像这些机制也会在每处重复实现或干脆缺失。还有一层：settings.section、settings.plugins.tab、settings.onboarding 等 slot 类型都声明在它的 contract/slots.ts 里，没有这份共享契约，壳与各域页互相 import 就会打破 client bundle 的纯度门（禁止跨插件值导入）。",
+    "position": "上游是谁调用它：ui-settings-general（壳）、ui-settings-models、ui-theme、locale、ui-settings-plugins 等所有拥有偏好的功能包，通过 inject 'configForms' 拿到服务；Host 侧它的 node 半包只做一件事——向 settings 服务声明 auto:false。下游是它依赖谁：inject ['remote','remote.settings']，即 api-remotes 提供的 settings Remote 命名空间；它持有浏览器里唯一的 settings.describe 读者。数据流：启动时 mirror.ensure() 拉全量 describe；Host 推 settings/document-updated、断线重连发 connection/reset 时重新 load；任何写入走 ConfigFormController.mutate 的 path ops（带 revision），Host 应答的 namespace view 经 acceptView 折回镜像，不额外走线读。",
+    "inside": "三个核心类加一份契约。其一 SettingsDescribeMirror（settings-mirror.ts）：全浏览器唯一的 settings.describe 读者，序列化所有读请求——in-flight 期间的再次 load 只标记 rerun 而不并发第二条线读，读前清 rerun、读后比对 generation，保证失效不丢也不重；非回环页面 persistence 为 'memory'，状态直接终态 'unavailable'，永不发线读。其二 ConfigFormController（config-form.ts）：每个 Host entry 一份的派生视图+写队列，重复 get(entryId) 返回同一实例；set/unset/mutate 都进 tail 串行队列，mutate 携带 expectedRevision，冲突时 recover 走 mirror.load 重读；decode 默认用 schema.rehydrate+validate 校验，坏信封视为无值。其三 ConfigForms extends Service，注册为 ctx.configForms：get() 发放共享表单，describe() 暴露跨命名空间的 read/fold 面，whileServed(namespaces, register) 是关键的跟随机制——注册回调在任一被跟随命名空间出现在镜像时执行，全部消失时跑 disposer，官方 Plugins 页四个配置页就骑在它上面（一个命名空间没被组合，页面就无痕迹）。另外 SettingsSchemaService 注册为 ctx.settingsSchema（rehydrate/validate/setPath/deletePath）；DeveloperToolsPreference 持有共享的 ui-settings.enabled 偏好；contract/slots.ts 用 declare module 一次性声明 settings.launcher/trigger/header/action/close/section/plugins.tab/onboarding/general.item 九个 slot 类型。",
+    "boundary": "归它管：settings 的传输、缓存一致性、写并发、schema 校验、slot 类型契约、developer-tools 这个共享偏好的值本身。明确不管：任何界面。设置壳（面板、导航、触发按钮）在 ui-settings-general；Models/Plugins/General 各域页在各自包里；连 General 的偏好行也由各功能包自己注册（theme 注册 Appearance 行，locale 注册 Language 行）。划线依据是 README 里那条所有权规则：浏览器对设置文档只保有一份共享镜像，所有派生面读同一源；而 slot 类型集中声明是因为壳和页必须共享类型又不许互相值导入——类型归域基础包，渲染归壳，内容归功能。壳缺省时 slot 冲突在 slot core 加载期大声失败，本包不需要运行时仲裁。",
+    "tour": [
+      { "file": "packages/client/ui-settings/src/client/settings-mirror.ts", "line": 73, "sym": "SettingsDescribeMirror", "note": "全浏览器唯一的 settings.describe 读者：rerun 标记+generation 防丢失，是启动 RPC 预算只有一份读的机制根据。" },
+      { "file": "packages/client/ui-settings/src/client/config-form.ts", "line": 241, "sym": "ConfigForms extends Service", "note": "ctx.configForms 的本体：注释明说用 Service 而非共享函数，是因为 client bundle 纯度门禁止跨插件值导入。" },
+      { "file": "packages/client/ui-settings/src/client/config-form.ts", "line": 317, "sym": "ConfigForms.whileServed", "note": "页面跟随命名空间的机制：Host 没组合 owner 就没有页面，停止 serve 就自动撤下，官方配置页全靠它。" },
+      { "file": "packages/client/ui-settings/src/client/index.ts", "line": 39, "sym": "persistence = isLoopback ? 'host' : 'memory'", "note": "非回环浏览器拿不到持久设置的总开关：memory 模式下表单终态 unavailable、写直接拒绝。" },
+      { "file": "packages/client/ui-settings/src/client/contract/slots.ts", "line": 57, "sym": "SlotMap 'settings.section'", "note": "settings.* slot 类型的集中契约地：壳渲染、功能注册、类型归域基础包，三方互不依赖。" }
+    ],
+    "gotchas": "非回环页面（远程浏览器）拿不到任何持久设置：persistence 被解析为 memory，表单从 unavailable 起步、永不跨线写，尽管 Connection 已对 API 做了认证——这是刻意的 Client 策略不是 bug。Coding Tools 开关在这种页面退化为浏览器本地 observable，刷新即失。镜像的 'unavailable' 是终态但 'ready' 不是：后续刷新失败时继续用旧值服务，只在 error 字段报错。ConfigForms.get 按传入 entryId 建控制器，入口必须与 Host 插件 entry id 一致，否则读写到不存在的命名空间。whileServed 返回的 disposer 归调用者所有，需自行包进 ctx.effect。",
+    "analogy": "它像一栋写字楼的物业总控室：每家公司（功能包）想改自己楼层的水电（偏好），不去市政厅（Host）排队，而是找总控室拿一张表单，总控室统一对接市政厅、统一核对版本号防止两个人同时改错、并把批下来的结果同步贴到大堂公告栏（共享镜像）。总控室自己不装修任何办公室——装修是壳（general）和各租户（models 等）的事。"
+  },
+  {
+    "group": "client",
+    "dir": "ui-settings-models",
+    "short": "ui-settings-models",
+    "oneLiner": "设置里的 Models 页：provider/模型路由的增删改查、API key 写入与首轮 DeepSeek 引导，一张三源联接的快照",
+    "why": "删掉它，用户就没有任何图形界面去配置「跟哪些模型说话」：不能存 DeepSeek/第三方 API key（credentials.set 的唯一入口面）、不能给 pi-ai 声明自定义路由（中转站、自建 OpenAI/Anthropic 兼容端点）、不能编辑模型目录（context window、maxTokens、输入模态），首轮用户也收不到版本化内测公告和官方 DeepSeek 引导对话框。模型选择器里能列出路由是一回事，能创建、修复、删除路由是另一回事——后者只有这一页做。它还是 cordis.patch.yml 之外唯一被设计为「普通用户可安全触碰」的 llm 配置面：密钥只存进 credential 引用而永不落配置文件，删除行会连带清理页面自己派生的 <ROUTE>_API_KEY 凭据但绝不碰它无法证明所有权的东西。",
+    "position": "上游：ui-settings-general 的壳把 settings.section 账本投影成导航，本包注册 id 'models'、order 10 的一个 section；首轮引导则由壳的 onboarding 舞台按 order 挂载（welcome-notice -100、deepseek-official 0）。下游：inject 九个服务——configForms/settingsSchema（ui-settings 的域基础）、remote 的 llm/credentials/settings/session 四个命名空间、locale、slots。数据流是三源联接：llm.listProviders（活跃路由）× llm.listConfigurableProviders（可配置目录）× settings 共享镜像（各命名空间 section）在 ModelsSettingsStore.load 里 join 成 rows，再对每行的凭据引用做一次批量 credentials.describe 富化；编辑时卡片按 path ops 写 settings.mutate（带 revision），成功后先采纳返回的红色acted 子树再写凭据，失败则只重试凭据阶段；五路推送失效（settings/document-updated、credentials/record-updated、credentials/reference-updated、llm/adapters-updated、connection/reset）经 refreshIfLoaded 收敛，无轮询。",
+    "inside": "结构分四层。① 编排（client/index.ts）：apply 读页面初始化全局量 credentialOnboarding（Electron 预置标记会关掉自动引导），注册 Models section 及其两个扩展座位（settings.models.provider-card keyed、settings.models.footer list），再注册两个 onboarding 步骤。② 联接与派生（store.ts）：joinProviderDirectory 把活跃路由和声明目录并集、deepseek-account/deepseek-official 置顶；deriveKeyRef 从路由 id 派生 MINIMAX_CN_API_KEY 式引用；protocolChoices 从 pi-ai 命名空间自己的 schema 读出可声明协议，保证页面选项与 adapter 接受值不漂移；onboardingReadiness 纯函数从同一 join 投影首轮状态——任一可用 provider 即结束引导，只有完全没有的人才被问官方 key。③ Host 操作（operations.ts）：createModelsOperations 把五个 Remote 调用包成回调（describeCredential/storeCredential/removeCredential/writeSettings/discoverModels），卡片只拿回调不拿 context，settings/conflict 被译成明确的 conflict 结果。④ 编辑卡片（ProviderEditor/ModelsSection/DeepSeekModelsEditor/ModelListEditor 等）：pathOps 计算最小 set/unset 集合——只命名卡片真正观察到的字段，所以未展示的模型字段在编辑中幸存；删除走 removeProviderProfile（先删凭据后 unset profile，两步幂等可重试）。DeepSeek 与 pi-ai 两族共用同一套行布局，DeepSeek 写 inputModalities、pi-ai 写 input，取消 Image 会连带删 imagePixelBudget/imageMaxBytes。",
+    "boundary": "归它管：provider 行的增删改、密钥的存取与状态点、模型目录逐行编辑、端点探询（discoverModels）、首轮两步引导。明确不管：选哪个模型发起对话（composer/ui-model-selection 负责选模型，那边才有 provider+model+effort 三元组开关）；路由的注册本身（llm adapter 的路由是组合事实，页面只写配置）；profile headers 等部署配置（留在 cordis.patch.yml，页面无编辑器）；retrieval effort 不设控件是刻意的——它是 per-model 能力，provider 级控件只会设出某些模型拒绝的值（ProviderEditor 头注释与 CustomProviderCard 注释都写明）。划线依据：页面只持有 REDACTED 描述符，每笔编辑都是对存储 section 的 path op，不做整段重建，因此凡页面无法寻址的字段一概不碰。",
+    "tour": [
+      { "file": "packages/client/ui-settings-models/src/client/store.ts", "line": 42, "sym": "joinProviderDirectory", "note": "三源联接的骨架：活跃路由×声明目录并集，deepseek-account/official 置顶；未声明的活路由在本页无行（Known Limitations 的机制根源）。" },
+      { "file": "packages/client/ui-settings-models/src/client/store.ts", "line": 310, "sym": "onboardingReadiness", "note": "引导决策只从共享 Models join 投影、不设平行事实源：任一可用 provider 即结束，adapter 缺失/只读等每种不可用都有具名原因。" },
+      { "file": "packages/client/ui-settings-models/src/client/ProviderEditor.tsx", "line": 121, "sym": "pathOps", "note": "path 寻址编辑的核心：只对卡片观察过的字段出 set/unset，未展示字段（retry policy 等）因此天然幸存。" },
+      { "file": "packages/client/ui-settings-models/src/client/index.ts", "line": 138, "sym": "slots.inject('settings.section' id 'models')", "note": "页面挂进壳的方式：order 10、label 跟随 locale 的 thunk，children 声明 provider-card/footer 两个外部插件座位。" },
+      { "file": "packages/client/ui-settings-models/src/client/operations.ts", "line": 82, "sym": "createModelsOperations", "note": "卡片与 Host 的唯一通道：五个回调封住 Remote 命名空间与错误码翻译（settings/conflict→conflict），apply 世界与组件世界在此分界。" }
+    ],
+    "gotchas": "只有 pi-ai 路由可以手工声明（自定义 API 表单写 llm-ai，llm-deepseek 的路由是组合事实，页面造不出）；目录下拉显示的是路由标识符本身（moonshotai、zai），无产品名无搜索。API key 输入恒空起步、autocomplete=new-password，粘贴 NAME=value 环境变量行会被按格式错误拒收。每笔 settings 写携带卡片当前 revision，另一标签页或外部 cordis.patch.yml 改动会以 settings/conflict 拒绝。删除行的凭据清理刻意很窄：只删引用恰为本页派生的 <ROUTE>_API_KEY 且可写的凭据。端点探询只覆盖 OpenAI 兼容与 Anthropic Messages 两类，其余协议要手填模型。非回环浏览器上欢迎公告确认是进程内的，刷新后公告重现。",
+    "analogy": "它是系统里所有「能跟谁聊天」的门禁登记处：每家运营商（provider）一个柜台卡片，你要么出示一把钥匙（API key，进了保险柜就不回显），要么登记一家新运营商（自定义路由，声明门牌和协议）。前台同时盯着三本账——营业中的线路、可登记的运营商目录、以及存档的配置——三本对齐了才显示状态灯。首次来访的客人会被两步引导接待：先看公告，再被问要不要直接配官方 DeepSeek 的钥匙。"
+  },
+  {
+    "group": "client",
+    "dir": "ui-settings-plugins",
+    "short": "ui-settings-plugins",
+    "oneLiner": "Settings 里「Built-in plugins」节的壳：拥有导航入口和 tab 行，自己一个 tab 页都没有",
+    "why": "删掉它，Settings 里就没有「内置插件」这一节：navigation 少一行，其他插件（如只读清单 tab）注册进 settings.plugins.tab 时会因为没有声明者而挂不上——slot 注册要等声明出现在账本上。它存在的意义是把「节的位置」与「节的内容」拆开：本包只拥有导航行、标题文案和 tab 排布逻辑；每个 tab 页由各自的功能包注册（清单 tab 来自 ui-settings-plugin-inventory），于是加一个 tab 不需要改壳、壳也不需要知道任何 tab 的存在。Host 半包是刻意的空 apply：唯一目的是让包在 Loader 里占一行，浏览器模块系统才会为它投递 ./client 半包。",
+    "position": "上游：壳（ui-settings-general）从 settings.section 账本投影导航，本包注册 id 'plugins'、order 15 的一个 section；inject ['slots','locale']，依赖 ui-settings 只是为了 slot 类型（type-only import）。下游：settings.plugins.tab 是它声明的 list slot，注册者（当前只有 ui-settings-plugin-inventory）通过 ctx.slots.inject 挂进来，互不 import。数据流：tab 贡献进账本 → sectionInjected 的 hooks.tabs 在（账本 version, locale revision）变化时重投影为有序行 → PluginsSettingsSection 渲染 tab 行与面板。每个 tab 自带 locale 字典，壳只渲染各贡献者自己的 label。",
+    "inside": "只有两个实件。其一 client/index.ts 的 apply：先注册 settings.plugins 字典（zh/en），然后 slots.inject('settings.section', ...) 注册 section，children 里声明 'settings.plugins.tab': { kind: 'list', scope: 'root' }；sectionInjected 提供的 hooks.tabs 是一个手动缓存的 observable——getSnapshot 先比对 ctx.slots.getVersion 与 ctx.locale.getSnapshot().revision，任一移动才重取 entries、解析 label（resolveSlotLabel 处理 locale thunk）、按 order 排序，subscribe 则同时订阅账本与 locale 两个源。其二 PluginsSettingsSection.tsx：三个渲染形态——零贡献显示空行文案；恰好一个贡献时该 tab 直接整页渲染（不出 tab 行）；多个贡献时渲染 role=tablist 的按钮行（ArrowLeft/Right/Home/End 键盘导航），面板用 visitedIds 集合实现「首次选中才挂载、之后保持挂载仅隐藏」，这样 tab 间的搜索词、展开状态和清单快照不会因切换丢失。",
+    "boundary": "归它管：Plugins 这一节的导航存在性、节标题与介绍文案、tab 行与挂载策略。明确不管：任何 tab 的内容（清单在 ui-settings-plugin-inventory）；内置插件的实际配置页（那在侧边栏的 Plugins 页，由各官方插件的 companion 包注册，本包 README 明说）；也不注册任何 settings 命名空间（node 半包注释：本页编辑的每个 section 都归注册它的 Host 插件所有）。划线依据：它是纯投影壳——运行时不变式写明它只拥有自己投影的 slot 账本、不发 cordis 事件；壳不填内容是已知限制（Known Limitations 第一条），因为没有贡献者时它只能渲染空行。",
+    "tour": [
+      { "file": "packages/client/ui-settings-plugins/src/client/index.ts", "line": 76, "sym": "slots.inject('settings.section' id 'plugins')", "note": "整包的产出：一行导航加一个 settings.plugins.tab list 子槽；自身不注册任何设置命名空间。" },
+      { "file": "packages/client/ui-settings-plugins/src/client/index.ts", "line": 45, "sym": "hooks.tabs.getSnapshot", "note": "账本→有序行的投影：缓存键同时含账本 version 与 locale revision，tab 文案换语言时随之重排。" },
+      { "file": "packages/client/ui-settings-plugins/src/client/PluginsSettingsSection.tsx", "line": 45, "sym": "visitedIds 保持挂载", "note": "tab 首选即挂、之后仅隐藏——清单搜索和快照跨 tab 切换存活的原因。" },
+      { "file": "packages/client/ui-settings-plugins/src/client/PluginsSettingsSection.tsx", "line": 57, "sym": "single 渲染分支", "note": "唯一贡献时 tab 直接作为整页渲染，不出 tab 行；第二个贡献出现才变成真正的 tabs。" },
+      { "file": "packages/client/ui-settings-plugins/src/index.ts", "line": 11, "sym": "空 apply", "note": "Host 半包刻意为空：只为在 Loader 占一行，让浏览器模块系统投递 ./client 半包。" }
+    ],
+    "gotchas": "本节没有任何自带的 tab：组合里没有贡献者时只显示一行空文案（t('empty')），壳无法独自填满这一节。tab 的 label 由注册者各自本地化并在 locale 变化时重注册，壳自己不订阅 locale 内容、只订阅 revision——若注册者忘了跟 locale，壳不会替它刷新。tab 行只在贡献数 ≥2 时出现，测试和截图时注意单 tab 形态没有 tablist。对内置插件的启用/禁用等可操作管理不在这里：那是侧边栏 Plugins 页（ui-plugin-manager）的事，本节连 settings 写路径都没有。",
+    "analogy": "它像商场里一面带插槽的指引牌：「内置插件」这层楼的楼层牌和指示灯箱是它装的，但每个铺位（tab）的招牌内容由租户自己挂。只有一个租户时灯箱直接显示那家店的门面，看不出是灯箱；租户多了才露出灯箱本身的分格结构。"
+  },
+  {
+    "group": "client",
+    "dir": "ui-settings-general",
+    "short": "ui-settings-general",
+    "oneLiner": "设置壳本体：侧边栏触发、760×500 面板、section 导航、onboarding 舞台、连接恢复指示与 General 节",
+    "why": "删掉它，Settings 面板整个消失：sidebar.settings 这个侧边栏座位没人占据，settings.* 各 slot 虽在 ui-settings 里有类型却无人声明和渲染，models/plugins/theme/locale 注册的 section 全部悬空——它们 slots.inject 等的声明者正是这个包。用户还会失去：Mod+, 快捷键打开设置、断线后的重连指示（黄 Disconnect→Reconnecting→绿 Connected 的完整状态机）、回环页打开本地配置文件的动作、桌面更新的侧边栏角标与指示行、以及按序单步挂载的 onboarding 舞台（welcome 公告和 DeepSeek 引导借道它出现在首启）。它是「无主文案」的归属地：触发图标、面板标题、关闭按钮的无障碍名这些不属于任何功能的 chrome，全部由本包供给，壳自己零文案的原则由 contract/slots.ts 注释明文规定。",
+    "position": "上游：ui-sidebar 声明 sidebar.settings 座位，本包是它的占据者；ui-settings 提供类型与 configForms。下游：inject 七个服务——slots、locale、connection（直连拿 ctx.connection.state 与 reconnect，而非往 ctx.remote 挂生命周期）、remote.settings（仅回环页判断 hasDocument）、configForms、shortcuts；另从 globalThis.dshDesktop 读桌面更新桥。数据流：向内，它把 settings.section/settings.onboarding 两个账本投影成导航行与步骤（缓存键含账本 version 与 locale revision）；向外，它声明 settings.launcher/trigger/header/action/close 七个 slot 供他人贡献 chrome；连接状态经 useConnectionState 流入 ConnectionIndicator；General 节的行（settings.general.item）由它和各功能包分别注册。",
+    "inside": "① 座位声明与快捷键（client/index.ts 后半）：slots.inject('sidebar.settings') 内一次性声明全部 settings.* 子槽，注册 settings.open 命令（各平台 Mod+,，regions 含 page/editable/terminal，其它模态在前时 blocked）；② General 节：注册 id 'general' order 0 的 section 及其 settings.general.item 子槽，自己贡献两行——developer-tools（order 15，接 ctx.configForms.developerTools）与 current-version（order 100，压轴），Appearance、Language、Enter 等行来自 theme/locale/conversation 各包；③ 桌面更新：DesktopUpdateSource 封装 preload 桥的状态 store，同时喂 DesktopUpdateIndicator（Account 行）和 DesktopUpdateBadge（sidebar.toggle.badge），两者共享一份订阅；④ 文档动作：回环页才建 SettingsDocumentStore，经 settings/describe 的 hasDocument 决定是否渲染 Open configuration file；⑤ SettingsRoot.tsx（267 行，最大的组件）：portal 到 #root 旁的面板、导航投影、一次恰挂一个 onboarding 步骤（活动步骤会关闭面板并让 #root inert）、连接恢复的 800ms 最短可见与 2 秒 Connected 保持时序也在这里。",
+    "boundary": "归它管：面板 chrome 与几何、section 导航投影、onboarding 舞台的排程（谁上场的顺序与互斥）、连接恢复呈现、桌面更新呈现、General 节的自有两行、settings 全家桶字典（NS='settings'）。明确不管：各 section 的内容（models 页归 ui-settings-models，内置插件节归 ui-settings-plugins）；General 里的功能行（每个注册者拥有自己的文案与写入路径，壳只叠行）；onboarding 步骤的完成标记（welcomeNoticeVersion 的 Host 侧 Config 在本包，但读写在 ui-settings-models 的欢迎步骤里，壳本身 policy-free）；键盘方案与命令目录归 client-shortcuts。划线依据：README 的所有权原则——feature 贡献行与步骤并拥有其文案，壳供给共享呈现，因此「加一个设置」永远不需要改壳。",
+    "tour": [
+      { "file": "packages/client/ui-settings-general/src/client/index.ts", "line": 175, "sym": "slots.inject('sidebar.settings')", "note": "壳的诞生点：占据侧边栏座位并声明 settings.launcher 到 settings.onboarding 全部子槽，其余包的注册都在等这批声明。" },
+      { "file": "packages/client/ui-settings-general/src/client/index.ts", "line": 179, "sym": "shortcuts.register settings.open", "note": "Mod+, 快捷键的注册：模态冲突判定（其它模态在前则 blocked）展示了壳与 shortcuts 服务的协作。" },
+      { "file": "packages/client/ui-settings-general/src/client/index.ts", "line": 130, "sym": "sections.getSnapshot", "note": "导航投影的缓存键同时含 settings.section 账本 version 与 locale revision，与 plugins 包同款手写 uSES 模式。" },
+      { "file": "packages/client/ui-settings-general/src/client/SettingsRoot.tsx", "line": 112, "sym": "SettingsRoot", "note": "面板主组件：onboarding 单步挂载、#root inert 生命周期、连接恢复 800ms/2s 时序都从此读。" },
+      { "file": "packages/client/ui-settings-general/src/index.ts", "line": 22, "sym": "Host apply（welcomeNoticeVersion）", "note": "Host 半包唯一实质：把欢迎公告确认版本声明为 ui-settings-general entry 的 volatile 字段，壳自己不读不写它。" }
+    ],
+    "gotchas": "非回环页没有 Open configuration file 动作——SettingsDocumentStore 干脆不创建，也不发那条特权读。onboarding 步骤只挂一个：新步骤出现时会强制关闭打开中的设置面板（面板 portal 在 #root 旁以避开 inert 标记）。Windows 下折叠侧边栏的 DesktopUpdateBadge 气泡是侧开方向，可能被桌面菜单文字盖住（issue #4688 记录的已知问题）。连接恢复期间若桌面 shell 正在安装更新，预期的后端断连不会顶掉更新状态（更新优先），其余场景连接反馈优先。部分构建缺 DSH_CLIENT_VERSION 元数据时 General 底部的版本行直接省略。",
+    "analogy": "它是整个设置中心的「前台与楼面」：大门触发按钮、指示各楼层（section）的大厅导览牌、新客接待流程（onboarding 一次只带一位）、墙上的网络故障指示灯和重修按钮（连接恢复），以及一楼综合服务台（General）。各楼层的办公室（models、plugins 等）是租户自己装修的，前台只管把人送到门口。"
+  },
+  {
+    "group": "client",
+    "dir": "ui-settings-plugin-inventory",
+    "short": "ui-settings-plugin-inventory",
+    "oneLiner": "「Plugin list」只读清单 tab：Host Loader 插件库存的投影，看得到、改不了",
+    "why": "删掉它，ui-settings-plugins 声明的 settings.plugins.tab 里就没有任何贡献者，「Built-in plugins」节退化成一行空文案——Web 用户将没有任何途径在界面里回答「这套部署到底装了哪些插件、各自启没启用、为什么失败」。Host 侧的 plugin-inventory 包（host/plugin-inventory）已把 Cordis Loader 的库存投影成只读快照，本包是它在浏览器里的呈现半边：agent 预置组合在前默认展开、全局平面折叠在 disclosure 后、搜索贯通两组、失败态带重试，还把 pnpm 构建权限被拒时的「Allow these scripts and retry」一键批准流程接进来。没有它，诊断「某个插件为什么没生效」只能去翻 cordis.yml 和日志。",
+    "position": "上游：ui-settings-plugins 的节壳渲染 settings.plugins.tab 贡献为 tab，本包注册 id 'all'、order 10 的唯一初始 tab。下游：inject 五个——remote.pluginInventory（快照唯一来源，api-remotes 的 Remote 面）、modules（当前页客户端图同步失败的状态与重试）、locale、slots、ui-agent-preset 的字典（经 presetDisplayText 解析预置显示名）。数据流：激活期零 Remote 读；组件首次被选中挂载时才调 ctx.remote.pluginInventory.list()，失败显示共享错误标记、重试重跑同一次调用；每次选中或重试得到一个快照，之后不订阅 Loader 变化也不自动刷新——重开 Settings 才有新快照。",
+    "inside": "① 注册（client/index.ts）：locales 注册后，把 ctx.remote.pluginInventory.list 包成 list 回调（错误码翻成 throw），presetName 走 ctx.locale.bind('settings.agentPreset') + presetDisplayText——随语言切换重解析、用户自著元数据原样透传；然后 slots.inject('settings.plugins.tab', id 'all') 注册 PluginInventorySettingsTab。② 渲染（PluginInventorySettingsTab.tsx，603 行）：行键带 scope 前缀（global: 与 preset:<id>:<index>），同一模块出现在两个 scope 时各自保留展开状态；每个卡片显示本地化标题/描述（缺失时用去 npm scope、去 cordis:/dsh- 前缀的压缩包名）、启用态 Tag（仅 disabled/conditional/preset/failed 四种非常态有 tag）、fiber phase 圆点（pending→idle、loading/unloading→进行中、active/failed 无点）、展开后的 entry id 芯片与完整 module specifier；「preset 提供」标记是客户端推导——全局条目被禁但同模块至少被一个预置真正启用时才标注，防止把全部预置都关掉的模块过度声称。③ 状态机：loading 骨架卡、error+retry、搜索同时展开两组并统计其它预置的命中数。",
+    "boundary": "归它管：库存快照的读取时机与呈现、预置切换器（只改列表显示，不写任何设置）、搜索、失败重试、pnpm 权限批准流。明确不管：任何启用/禁用写操作——README 明说 read-only in both planes，写自定义预置组合文件是后续工作；Host 侧库存数据的生成（host/plugin-inventory 的 Loader 投影）；与本包并列的插件配置页（那些在侧边栏 Plugins 页）。与 ui-settings-plugins 的划线：那边拥有节和 tab 排布（壳），这边只是往 tab 槽里注册一个具体页（内容）；两者通过 slot 类型（类型住在 ui-settings 的 contract）协作，互不 import。",
+    "tour": [
+      { "file": "packages/client/ui-settings-plugin-inventory/src/client/index.ts", "line": 56, "sym": "slots.inject('settings.plugins.tab' id 'all')", "note": "清单作为 tab 贡献挂进 plugins 节：不 import 节的主人，靠 slots 账本协作。" },
+      { "file": "packages/client/ui-settings-plugin-inventory/src/client/index.ts", "line": 37, "sym": "list 回调", "note": "快照唯一来源：惰性封装 ctx.remote.pluginInventory.list，失败把错误码翻成异常交给组件状态机。" },
+      { "file": "packages/client/ui-settings-plugin-inventory/src/client/PluginInventorySettingsTab.tsx", "line": 252, "sym": "PluginInventorySettingsTab", "note": "组件本体：本地 state 承载快照/搜索/展开，useEffect 首次挂载才发 list()（激活期零 Remote 读）。" },
+      { "file": "packages/client/ui-settings-plugin-inventory/src/client/PluginInventorySettingsTab.tsx", "line": 282, "sym": "enabledIn 推导", "note": "「preset 提供」标记的客户端推导：全局禁用但某预置真启用才标，防过度声称。" },
+      { "file": "packages/client/ui-settings-plugin-inventory/src/index.ts", "line": 4, "sym": "空 apply", "note": "与其它 UI 包同款：Host 半包空体只为 Loader 行，浏览器实现走 exports./client。" }
+    ],
+    "gotchas": "一次挂载/重试只有一份快照：不订阅 Loader 变化、重连后不自动重取，切换 tab 保留旧快照，重开 Settings 才刷新——排障时先重开面板。完全没有写路径：预置切换器连 settings 都不写，换个预置只是换视角；破损预置显示 discovery 报告的原因而非空行。清单命名压缩（去 scope/前缀）只在本 tab 生效，侧边栏 Plugins 页不压缩。当前页客户端图同步失败有独立的 retry，重试语义是重放最新客户端图，不动 Host 启用态也不刷新页面。",
+    "analogy": "它是机房门口的机柜清单屏：一眼看到每台设备（插件）的编号、状态灯和故障原因，能切换几套布线方案（预置）看不同视角、能搜索，但屏幕只读——想拔插设备得去侧边栏那边的操作台（Plugins 页），这里连根网线都碰不了。"
+  },
+  {
+    "group": "client",
+    "dir": "ui-theme",
+    "short": "ui-theme",
+    "oneLiner": "主题与内容字号：--dsw-* token 样式表、DOM-free 的 ThemeRuntime、General 的 Appearance 行与首帧前配色引导",
+    "why": "删掉它，Web 客户端失去唯一的颜色权威：--dsw-* token 八张样式表（base、design-platform、scrollbar、focus、shiki 等）随包卸载，所有组件的颜色、圆角、焦点环、阴影、滚动条全部失去定义；亮暗切换和 12–17px 内容字号没了入口与持久化；更隐蔽的是首帧白闪回归——Host 半包向每个 index 响应注入的 boot CSS/脚本负责在插件加载前就给 body 上色（含 prefers-color-scheme 的 system 分支），没有它深色用户每次打开都先白一下。ctx.theme 这个第三方主题注册点（alias-token 覆盖层）也随之消失。",
+    "position": "上游：设置壳把本包注册的 Appearance（order 10）与 FontSize（order 11）两行渲染进 General 节；ui-layout 是快照的应用者——ThemeSnapshot 由 presenter 涂到 document 上。下游：inject ['slots','locale','remote','configForms']，偏好的读写经 ui-settings 的 configForms 落在 ui-theme 命名空间（回环页持久到 $DSH_HOME/cordis.patch.yml，非回环因 memory 模式进程内有效）。数据流：用户点行 → store 动作 → theme.setTheme/setFontSize → 写 ConfigForm + publish()：revision+1、重建不可变 ThemeSnapshot（composeActive 把 override 层按 seq 序折进活跃主题）、同步 emit 'theme/change'； Host 侧则相反——每次 index 响应把当前持久偏好（或 schema 默认值）嵌进 boot 注入，{ prepend: true } 保证排在其它注入之前。",
+    "inside": "① ThemeRuntime（client/index.ts，159 行起）：核心服务，持有一份 ConfigForm<ThemeSettings> 作为持久偏好、themes 注册表（内建 light/dark）、overrides 分层 Map、以及 system 档的 matchMedia 监听；setTheme/setFontSize 是仅有的两个写入口（越界/未知 id 直接 throw），adopt 只读回写不落笔，register 允许第三方主题注册但 'system' 是偏好不是主题 id、重复 id 抛错，注销活跃主题会把偏好重置回默认，overrideTokens 按 source 键一层一叠（后层逐 token 胜出，同 source 重调即替换并重排到顶），快照全部 Object.freeze。② 样式安装：installThemeStyles 按 order 动态 import 八张样式表，作为插件拥有的全局样式注入，卸载与 HMR 随包一起走。③ boot-theme.ts：bootThemeInjections 产出一行 head CSS（light/dark 或 system 的 media query 分支，锁画布底色与 color-scheme）加一段 body 脚本（置 data-ds-dark-theme 与 --dsh-content-font-size），都在 shell 挂载与模块脚本之前执行。④ 两个 General 行组件：AppearanceRow（light/dark/system）与 FontSizeRow（12–17 整数步进），store 由 theme/change 事件同步并带 revision 防 stale。",
+    "boundary": "归它管：颜色与字号的全部 token、主题状态机与持久化、第三主题注册与 override 层、boot 引导、Appearance/FontSize 两行。明确不管：把快照涂上 document 的动作（ui-layout 是 presenter）；组件自己的焦点环几何宽度之外的偏移（组件自留）；菜单毛玻璃等平台呈现规则虽在 token 表里但消费规则归 web-styling 文档约束各包遵守；字体（普通 UI 用系统字栈，品牌字体 CSS 虽随包发布但只服务品牌文本）。划线依据：README 明说 token sheets 是唯一颜色权威——语义 token 缺值时宁可取最近语义 token 也不临时加值，新增需设计审批；主题状态归一个 DOM-free 服务，注册表与持久层由同一包持有以保证 emit 与写序一致。",
+    "tour": [
+      { "file": "packages/client/ui-theme/src/client/index.ts", "line": 159, "sym": "ThemeRuntime", "note": "DOM-free 主题状态机：偏好/字号/注册表/override 层全在一个类里，快照不可变、以 theme/change 同步广播。" },
+      { "file": "packages/client/ui-theme/src/client/index.ts", "line": 309, "sym": "overrideTokens", "note": "第三方主题的扩展面：按 source 分层、seq 序逐 token 胜出、可整体替换与摘除——token 层的 slot shading。" },
+      { "file": "packages/client/ui-theme/src/client/index.ts", "line": 429, "sym": "client apply", "note": "装配点：装样式表、建 ThemeRuntime 注册为 ctx.theme、再把 Appearance/FontSize 两行挂进 settings.general.item。" },
+      { "file": "packages/client/ui-theme/src/index.ts", "line": 39, "sym": "Host apply（index-inject prepend）", "note": "首帧前配色的来源：把 bootThemeInjections 以 prepend 塞进每个 index 响应，先于一切脚本。" },
+      { "file": "packages/client/ui-theme/src/boot-theme.ts", "line": 45, "sym": "bootThemeInjections", "note": "两行引导的具体生成：head CSS 锁画布（system 用 media query 分支），body 脚本置 data-ds-dark-theme 与字号变量。" }
+    ],
+    "gotchas": "第三方主题只是扩展点不是产品：注册即覆盖同名 alias 变量，没有任何校验保证覆盖集完整，漏了就漏色。'system' 不可注册为主题 id（它是偏好）；注销用户正选中的第三方主题会把偏好静默重置为默认。字号必须 12–17 的整数，小数或越界 throw。override 的值必须 { light, dark } 对，裸字符串会得到教学错误——因为 model 作者可能从未类型化语言来到这个边界。token 表是唯一颜色权威：设计系统里没有的值不会被顺手追加。非回环页面偏好进程内有效，刷新即回默认（依赖 configForms 的 memory 模式）。",
+    "analogy": "它是整栋 Web 界面的调色中心：开工前（插件加载前）先往墙上刷好底色（boot 注入），然后挂出一块全局色卡（--dsw-* token），所有装修工（组件）只认色卡不认具体颜色。你在服务台（General 的两行）选亮暗和字号，选完它广播一条变更让全楼换装；外来品牌想改色，也只能申请一块同名校色膜叠在色卡上，不许直接刷墙。"
+  },
+  {
+    "group": "client",
+    "dir": "locale",
+    "short": "locale",
+    "oneLiner": "多语言底座：zh/en 内建字典、可扩展语言目录、Host 持久偏好与框架 t 座位的 LocaleFace 实现",
+    "why": "删掉它，界面文案系统整体失效：框架渲染机制注入给每个 slot 组件的 t 座位，正是本包把 LocaleRuntime 自身经 ctx.slots.installLocale 装上去的（getSnapshot/subscribe 即 LocaleFace）——没有它渲染机制没有翻译来源，所有包的 locale.register 都无处落地，Settings General 里的 Language 行消失，语言偏好无处持久。更实际的两塌：一是回环页的语言选择不再写入 $DSH_HOME/cordis.patch.yml，换浏览器/换终端就丢；二是 package-manifest 的 LocalizedText（已装插件的标题描述）没有 resolveText 的回退链遍历，多语言插件的展示名会随机取一种语言。",
+    "position": "上游：所有需要文案的 client 包（settings 全家、plugins、inventory、theme……）通过 ctx.locale.register 提交字典、通过 ctx.locale.bind(ns) 或框架 t 座位取译文；桌面/原生 shell 经 globalThis.__DSH_LOCALE__ 桥（read/onChange）接入系统语言序与偏好回写。下游：其 client apply 声明的外部依赖中，关键两项是 configForms（locale.preference 命名空间的持久化面）与 slots（installLocale 挂 t 座位、settings.general.item 挂 Language 行），另需 connection 与 remote 供激活期读取。数据流：激活时先读桥的偏好与系统语言（异步 read）作 bootstrap，浏览器无桥时从 navigator 按全 tag→主子 tag 匹配出 provisional locale；Host 侧 settings read 在插件激活后返回，accept 后活值现场替换 provisional；setLocale 写 locale.preference（即使 id 相同也写，因为活值可能是临时的）并 emit locale/change；字典注册只 bump revision 不发事件（防注册风暴反复触发 slot 重注册）。",
+    "inside": "核心是一个 624 行 client/index.ts 里的 LocaleRuntime：① 目录与回退——内建 zh/en（zh 声明 fallback en，链必须终止于 en，未知目标/重复 id/环在注册期即抛错），addLanguage 扩展目录，fallbackChain 预展开成链表；② 查找——translate 对每个 key 先走活跃语言的回退链遍历请求命名空间，再对 common 命名空间重复一遍，最后显示 key 本身；bind 返回按 ns 缓存的稳定引用（同 ns 重复 bind 同一函数， riding inject 面不破坏 memoization）；③ 文本解析——resolveText 处理 LocalizedText 映射（小写语言 id、必含 en 兜底），字面量原样返回，与命名空间字典互不干涉；④ 呈现同步——syncDocumentLanguage 只在值变化时写 <html lang>（zh 映射 zh-CN），订阅回调逐个 try/catch 防一个崩溃订户卡死整批；⑤ Host 半包（src/index.ts）只声明 locale 设置命名空间的 Config（preference volatile）并 configure({auto:false})，消费走配置表单投影；⑥ LanguageRow（order 0，General 第一行）让用户在注册语言间切换。",
+    "boundary": "归它管：语言目录与选择、偏好持久、浏览器探测、回退查找、<html lang>、common 命名空间、LocalizedText 解析、t 座位的安装。明确不管：各包自己的字典内容（包自带 locales.ts，本包只做注册表）；复数规则与双向排版（语言包自理，README 明说）；命令注册表等「注册时取文本」的地方不在 slot 渲染路径上，取一次就定死（Known Limitations 第一条）；翻译质量与语言特定行为归语言包作者。划线依据：locale 只拥有「查找与切换机制」，文案所有权在写它的包——verify-client-ui-i18n 从源码层面强制产品 UI 文案必须经这些类型化字典进入。",
+    "tour": [
+      { "file": "packages/client/locale/src/client/index.ts", "line": 165, "sym": "LocaleRuntime", "note": "字典注册表+偏好一体：类自身就是 LocaleFace，getSnapshot/subscribe 直接喂框架 t 座位。" },
+      { "file": "packages/client/locale/src/client/index.ts", "line": 563, "sym": "client apply", "note": "装配全貌：读 __DSH_LOCALE__ 桥、建 Runtime、注册 common/settings 字典、provide('locale')、installLocale 挂 t 座位、挂 Language 行。" },
+      { "file": "packages/client/locale/src/client/index.ts", "line": 448, "sym": "bind", "note": "翻译函数按 ns 缓存为稳定引用：能在 inject 面上传递而不破坏 memoization 的关键细节。" },
+      { "file": "packages/client/locale/src/client/index.ts", "line": 214, "sym": "resolveText", "note": "LocalizedText 的解析：沿活跃回退链 reduceRight、en 兜底，服务已装插件的标题/描述展示。" },
+      { "file": "packages/client/locale/src/index.ts", "line": 30, "sym": "Host apply", "note": "Host 半包：声明 locale 命名空间偏好（volatile）并 configure({auto:false})，持久细节全交给 settings 服务。" }
+    ],
+    "gotchas": "注册时取的文本不随切换更新：如命令注册表里的描述在注册语言下定死，直到重注册——只有 slot 渲染路径上的文案跟切换活更新。外部语言 id 等待定义注册期间不生效（存了一个未注册的偏好不会乱切）；非回环页偏好进程内有效，刷新即回浏览器探测值。回退链必须终止于 en，注册期强制。字典注册只 bump revision 不发 locale/change 事件（刻意防启动期注册风暴），依赖事件的监听者要同时订阅 snapshot。桥模式下每次页面加载重新 read，防 preload 偏好过期。",
+    "analogy": "它是全楼的翻译室：各商户（插件）把自己的双语价目表送来登记，客人无论点哪家，翻译室都按当前语言——查不到就顺着该语言声明的备用语言一路问，最后到公共用语册（common），再不行就把菜单编号原样端出来。你在大堂选了语言，翻译室立即换频道并记进档案（Host 偏好）；自带翻译的来访者（原生 shell）还能先递纸条告诉它客人的母语和偏好。"
+  },
+  {
+    "group": "client",
+    "dir": "resources",
+    "short": "resources",
+    "oneLiner": "统一资源模型：dsh-resource:// 协议注册表把 URL 地址变成活值，useResource 全局钩子消费",
+    "why": "删掉它，跨包的数据共享只剩两条路：要么组件直接 import 数据拥有包（被 client bundle 纯度门禁止），要么各包自己发明一套「按地址取数」协议。本包把这件事标准化成一个协议：组件只知道一个 dsh-resource://<type>/... 地址（标签页记录、链接、mention），数据拥有包注册一个 provider（async generator 逐帧 yield 当前值与后续变更），useResource 钩子给出统一的 none/loading/live/failed 四态。右侧栏 pin 每个打开标签页的地址这件事也依赖它——切换标签卸载正文而不关流、切回来立即读到最新值，这种「无订阅保活」没有共享注册表就无处实现。",
+    "position": "上游：所有 slot 组件——本包经 ctx.slots.provideRoot 贡献 resource keyed hook，渲染机制把它作为 useResource 注入每个 slot 组件的 props，无论组件属于哪个包、什么 scope。下游：协议提供方（拥有数据的 client 包，如侧边栏 tab 的 note 类型）inject 'resources' 后调 ctx.resources.register。数据流：组件 useResource(address) 或 pin(address) → registry 命中/创建 per-address 记录 → holders 计数 0→1 时启动 provider 的 async generator（AbortController 挂 signal）→ 每帧 { ok, value|error } 写进该地址的 snapshot store → 订阅者经 useSyncExternalStore 感知；最后一个 holder 释放时 abort 流、快照回 idle。provider 注册/注销则反向作用：注册时所有已持有地址立即开流，注销时全部 detach 回 none。",
+    "inside": "一个类扛全部：ResourceRegistry（resources.ts，212 行，唯一的运行时文件）。① 寻址——protocolOf 用 URL 解析器取 dsh-resource:// 的 hostname 作协议键（小写），解析失败或非该 scheme（如 sidebar://guide）一律视为无协议→状态 none；② 记录——records Map 每地址一条：snapshot store、holders 计数、AbortController、以及一个 source observable（subscribe 包装器在订阅时 hold、退订时 release，专为 React 的 render-then-subscribe 窗口和 StrictMode 双挂载设计——记录永不删除，source 引用稳定）；③ 生命周期——hold/release 维护计数，首个 holder start（开流、置 loading），末个 release stop（abort、按 provider 存在与否回 loading 或 none）；④ 消费——consume for-await 逐帧写入：ok 帧置 live，!ok 帧置 failed 并保留上一个值（失败是帧不是抛出，provider 内 throw 被视为编程错误不接住），abort 后到达的帧被丢弃并结束循环（顺便 return 迭代器）；⑤ 注册——register 每协议恰好一个 provider，重复注册 throw；实现包在 ctx.effect 里注册，随包卸载自动 detach。",
+    "boundary": "归它管：地址解析、协议注册表、per-address 状态与流生命周期、pin 保活、useResource 的四态语义。明确不管：任何具体协议的值类型与内容（note/tab 等协议由各自拥有包声明 ResourceProtocolMap 并提供 provider）；地址的分配约定（写在各协议拥有包的文档里）；导航类 scheme（sidebar://）的语义归 sidebar。划线依据：本包是「搬运层」——README 明说它在浏览器插件之间移动值、不注册任何 model 面向的东西；类型擦除只在 registry 内部发生，对外经 ResourceProtocolMap 的 declare module 保持全链路类型安全。",
+    "tour": [
+      { "file": "packages/client/resources/src/client/resources.ts", "line": 75, "sym": "ResourceRegistry", "note": "ctx.resources 本体：providers 与 records 两张 Map，注册/寻址/生命周期全在一个类里。" },
+      { "file": "packages/client/resources/src/client/index.ts", "line": 30, "sym": "client apply", "note": "装配点：apply 顶层建 registry（不能在 effect 内，别的包要在自己 apply 里 register）、provide 服务、provideRoot 注入 resource 钩子。" },
+      { "file": "packages/client/resources/src/client/resources.ts", "line": 56, "sym": "protocolOf", "note": "寻址规则：URL 解析取 dsh-resource:// 的 hostname 为协议键，其它 scheme 与解析失败一律 none。" },
+      { "file": "packages/client/resources/src/client/resources.ts", "line": 200, "sym": "consume", "note": "失败是帧不是抛出：!ok 帧置 failed 且保留旧值，abort 后的帧丢弃并 return 迭代器。" },
+      { "file": "packages/client/resources/src/client/resources.ts", "line": 99, "sym": "pin", "note": "无订阅保活：signal abort 时 release——侧边栏靠它让切走的标签页流不断、切回即得最新值。" }
+    ],
+    "gotchas": "记录按页面生命周期存活：地址读过后记录永不删（只丢状态），内存随「曾读过的不同地址数」增长而非随读取次数。provider 必须遵守 signal：registry 会丢弃已释放流迟到帧，但无视 signal 的 provider 会继续跑到下一帧才停。provider 内 throw 不被捕获——那是编程错误。快照 store 引用稳定依赖记录常驻：React StrictMode 的卸载重挂不会重启流。卸载 provider 会让其协议的所有地址回 none 而非报错，组件侧表现为静默失值。",
+    "analogy": "它像一套全楼通用的传菜系统：每家后厨（数据拥有包）注册一条自己的传菜线（协议），前厅任何座位（slot 组件）只要报出菜品的门牌号（dsh-resource:// 地址）就能让传菜口把这道菜连汤带更新一路端上来；没人点菜了传菜线自动停火，但门牌登记簿留着——客人回来立刻续上，而且多点几个人同看一份菜不会多开几条线。"
+  },
+  {
+    "group": "client",
+    "dir": "ui-brand-official",
+    "short": "ui-brand-official",
+    "oneLiner": "官方构建的品牌占据者：向 sidebar 的两个 brand slot 注册 DeepSeek 标记与字标，仅 official profile 生效",
+    "why": "删掉它，official 构建的侧边栏左上角退回壳的兜底：通用鱼标加 local-build 标签——对以 DeepSeek Harness 身份发布的部署来说，产品标识就错了。它存在的意义是把「品牌」做成组合事实而非配置项：没有品牌设置面、没有品牌 API，换品牌=换一个占据相同 slot 的包。这是 dsh 组合模型在小包上的完整示范：52 行源码、两个组件、一次 profile 门控的双 slot 注册，却把白标部署的路径完全让了出来。",
+    "position": "上游：ui-sidebar 声明 sidebar.brand.mark 与 sidebar.brand.name 两个 slot（并有兜底渲染），本包是 official 构建下的占据者；ui-conversation 的 conversation.hero.brand.mark 不动——hero 的兜底本来就是官方动画鱼，官方构建无需注册。下游：inject ['slots']，仅此一个运行时依赖（另 type-only 依赖 ui-renderer 与 ui-sidebar 的类型面）。数据流是单向的一次性注册：apply 检查构建期常量 DSH_CLIENT_BUILD_PROFILE==='official'，非官方直接 return（包照常加载与校验，只是不注册）；官方则嵌套 slots.inject 等 mark 声明就位后，一个生成器里成对注册 mark 与 name 两个 occupant，声明撤销时两个一并退出。",
+    "inside": "三个文件。① src/client/index.ts（24 行）：全部逻辑——profile 门控 + 嵌套 slots.inject 的成对注册；嵌套写法让两个 occupant 成为一个「声明感知」的注册集：无论本包先于还是晚于声明者激活、HMR 中途如何，都不会出现只剩 mark 没有 name 的半品牌状态（README internals 明说这一事务性）。② Brand.tsx（20 行）：OfficialBrandMark 接 SidebarBrandMarkOwnerProps 的 size 渲染 FishLogo（来自 ui-primitives），OfficialBrandName 渲染 BrandWordmark 且 includeMark=false（mark 已是独立 slot，字标不重复画鱼）；两者无任何状态。③ src/index.ts（8 行）：空 apply 的 Loader 座位，浏览器实现走 exports./client。浏览器标签页标题不归 slot 管——那是 DSH_CLIENT_TITLE 的构建期事项。",
+    "boundary": "归它管：侧边栏 brand.mark 与 brand.name 两个座位的官方内容（仅此）。明确不管：会话页 hero 的品牌（留在 ui-conversation 的动画鱼兜底）；浏览器标题（DSH_CLIENT_TITLE，构建期）；其它任何品牌位；品牌配置面（根本不存在，README 明说 occupying a slot 是唯一路线）。划线依据：一个 occupant set 的原则——备选呈现应做成另一个占据相同 slot 的 Cordis 包，而不是给本包加开关；profile 门控放在注册前而非加载后，让非官方构建的加载成本只有一次常量比较。",
+    "tour": [
+      { "file": "packages/client/ui-brand-official/src/client/index.ts", "line": 17, "sym": "apply（profile 门控）", "note": "DSH_CLIENT_BUILD_PROFILE!=='official' 直接 return：包照常加载，仅注册被门控，非官方构建零成本。" },
+      { "file": "packages/client/ui-brand-official/src/client/index.ts", "line": 18, "sym": "嵌套 slots.inject 成对注册", "note": "mark/name 两 occupant 结成一个声明感知的注册集：等声明、一起上、一起撤，HMR 不出半品牌。" },
+      { "file": "packages/client/ui-brand-official/src/client/Brand.tsx", "line": 9, "sym": "OfficialBrandMark", "note": "官方标记即 ui-primitives 的 FishLogo，尺寸由宿主面的 owner props 传入。" },
+      { "file": "packages/client/ui-brand-official/src/client/Brand.tsx", "line": 17, "sym": "OfficialBrandName", "note": "字标 includeMark=false：mark 已是独立 slot，两个座位各画各的，不重复。" },
+      { "file": "packages/client/ui-brand-official/src/index.ts", "line": 7, "sym": "空 apply", "note": "Loader 座位：node 半包空体，让浏览器模块系统投递 ./client 实现。" }
+    ],
+    "gotchas": "构建 profile 决定一切：非 official 构建里本包「活着但不注册」，排障时先查 DSH_CLIENT_BUILD_PROFILE 而不是怀疑 slot 注册。hero 永远是动画鱼（官方兜底即官方标），本包即使 official 也不注册 hero。浏览器窗口标题独立于 slot 体系，由 DSH_CLIENT_TITLE 在构建期选择——想让标题也随品牌走是另一条管线的事。整个包没有任何运行时状态与品牌配置面：改文案/换标只能改这个包或写一个竞争包。",
+    "analogy": "它是大楼正门logo的一次性安装：施工许可（构建 profile）写着 official 才动手装，装的时候门牌和字号两件套一起上墙、拆的时候一起下；别的大堂喷绘（hero）和楼顶霓虹字（窗口标题）都另有承包商。别的公司想入驻，不是找它改标，而是换一家承包商去占同样的两个墙面插槽。"
+  }
+]

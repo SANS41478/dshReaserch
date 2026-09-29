@@ -1,5 +1,7 @@
 // Verify the source browser: tree, file view, traceability, and click-through.
-import { chromium } from 'playwright'
+import { createRequire } from 'node:module'
+const require = createRequire(import.meta.url)
+const { chromium } = require('C:/Users/admin/.workbuddy/binaries/node/workspace/node_modules/playwright/index.js')
 
 const BASE = 'http://127.0.0.1:5319/'
 const OUT = 'D:/临时/dsh研究/.shots'

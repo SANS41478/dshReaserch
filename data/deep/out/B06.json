@@ -1,0 +1,272 @@
+[
+  {
+    "group": "session",
+    "dir": "session-format",
+    "short": "session-format",
+    "oneLiner": "会话日志版本迁移的纯机制内核：相邻迁移链编排与物理编解码派发，不碰文件不挂插件。",
+    "why": "会话日志是 dsh 唯一的用户资产：今天写的 session.jsonl，必须在换过若干版本后仍能打开重放。对策是给日志打整数版本号，并要求每个相邻版本对配一台独立转换器。本包是那条流水线的机器本体：判断「盘上这份是 v2、当前 writer 是 v4，故要依次过 v2→v3、v3→v4」，并在流式读取时把转换器串成不落地的管道。删掉它，catalog 编译不过、persistence 读不出当前版本日志——不是老会话打不开，而是会话系统整体起不来：ctx.sessions 无历史，恢复、续跑、回放、会话列表全空。它不注册 Cordis 服务，也不碰文件系统。",
+    "position": "上游只有两类调用者：dsh-session-format-catalog（唯一调用 createSessionFormatCatalog 的装配方）与直接测编排行为的 test-support。生产链路是 session-persistence-jsonl 调 readHeader()/createRestore()/encodeCurrentHeader()/encodeCurrentEvent()，webworker-packer 的 fixture 也走同一入口。下游只有 dsh-util-values（snapshotJsonValue/deepFreeze）和一个纯 peer 的 cordis——本包不注册服务、不在任何 profile mount 表里。数据单向：persistence 把物理行逐行喂给 restore.decodeRow()，codec 解成 SessionFormatEvent 或 compact run，依次穿过若干 SessionFormatMigrationStage，落进 SessionFormatEventCollector 成为当前事件数组；finish() 返回后是否写成新 generation 文件，由 persistence 决定。",
+    "inside": "分四层。契约层 src/types.ts 定义 SessionFormatCodec、SessionFormatArtifactDecoder、SessionFormatMigration（migrateHeader/createStage/validateTargetHeader）、SessionFormatMigrationStage（transformEvent/transformRun/finish）、SessionFormatRestore，各迁移包只对着这套接口编程、彼此不认识。链编排层 src/chain.ts：defineSessionFormatMigration 强制 toVersion === fromVersion + 1；CompiledSessionFormatChain 构造期按 0..currentVersion-1 逐个取迁移器，缺、重、重名、越界一律抛错；createStream() 为每次 restore 建新链，用 entries.toReversed() 把 stage 从下游往上游包成 ChainedMigrationContext，使 emitEvent/emitRun 同步串联；stage 若预声明 headerInheritedEventCount，finish() 必须与实算切分一致。派发层 src/catalog.ts：createSessionFormatCatalog 校验每版本恰好一个 codec，readHeader() 只解头、返回 current/migration-required/unsupported/malformed 四态，createRestore() 对当前版本走 CurrentSessionFormatRestore 直通，否则建 MigratingSessionFormatRestore，按 validation 是 current 还是 transformed 决定是否跑已安装的完整语义校验。工具层：context.ts 的 SessionFormatEventCollector 展开 compact run，json.ts 的 snapshotSessionFormatJson/sessionFormatCount/inspectSessionFormatVersion 保证边界 JSON 无损且冻结（连 -0 都拒），filename.ts 定下 session[.vN].jsonl 这个被 persistence、导出、fixture 共用的文件名。错误只分 SessionFormatError（损坏）与 SessionFormatUnsupportedMigrationError（拒绝迁移）两类。",
+    "boundary": "归它管：版本识别与派发、相邻链构造与流式串联、跨 stage 同步传递、JSON 快照冻结、日志文件名规范、损坏与拒绝迁移的分类。不归它管：具体格式的转换规则（各 v*-to-v* 包）、磁盘 IO 与压缩、generation 命名与独占发布（session-persistence-jsonl）、当前版本事件词汇与语义校验（dsh-session，由 catalog 以 peer 注入）、Cordis 生命周期。划线依据是纯度：本包刻意不用 cordis 运行时能力、也没有 apply()，因为迁移链一旦依赖插件挂载顺序，历史可读性就会随 profile 裁减而漂移；谁调用、要不要发布全部外推——README 那句 only the caller decides whether and how to publish 就是这条线。",
+    "tour": [
+      {
+        "file": "packages/session/session-format/src/chain.ts",
+        "line": 65,
+        "sym": "CompiledSessionFormatChain 的缺口检查循环",
+        "note": "从 0 逐个版本取迁移器，缺一条就抛错——「迁移必须相邻且无缺口」这条不变量就落在这里。"
+      },
+      {
+        "file": "packages/session/session-format/src/chain.ts",
+        "line": 220,
+        "sym": "CompiledSessionFormatMigrationStream 的反向串联",
+        "note": "entries.toReversed() 把多个 stage 从下游往上游包起来，一次 decodeRow 同步穿过整条链，不落中间数组。"
+      },
+      {
+        "file": "packages/session/session-format/src/catalog.ts",
+        "line": 124,
+        "sym": "createSessionFormatCatalog.createRestore",
+        "note": "当前版本直通、历史版本才建迁移 restore，并按 recovery/validation 选策略——物理派发与迁移编排的交汇点。"
+      },
+      {
+        "file": "packages/session/session-format/src/catalog.ts",
+        "line": 45,
+        "sym": "readHeader",
+        "note": "只解头不读事件体就给出四种分类，让会话列表这类场景不必付出读全量事件的代价。"
+      },
+      {
+        "file": "packages/session/session-format/src/filename.ts",
+        "line": 5,
+        "sym": "CANONICAL_LOG_FILENAME",
+        "note": "session[.vN].jsonl 的唯一正则；generation 命名权放这里而不是 persistence，两边才不会各写一套。"
+      }
+    ],
+    "gotchas": "流式只省掉中间产物：返回的当前事件数组与 old→new 序号映射仍是 O(事件数)。只支持相邻整数版本，无跨版本直通、无稳定事件身份、无通用引用重写代数——v0 到 v4 必须逐级过。recoverable 下 codec 可丢弃一个坏行及其未提交后缀，但后续解出 turn/end 证明那段已提交时，先前问题立刻升级为致命错误。解码器与 stage 状态属于单次未完成的 restore，不可跨 restore 共享。validation 为 transformed 时，对本就是当前格式的输入只做 codec 物理校验。",
+    "analogy": "旧版软件写的文件要在最新版里打开，dsh 不让谁一步翻成新版，而是安排一排只懂相邻两版的译员站成流水线：文件拆成一页页递进去，第一人改完立刻递给第二人，谁都不准把整份稿件摊在桌上。译员的排班表、谁接谁、页码连不连续，是这个包在管；每个译员脑子里具体的翻译规则，不属于它。"
+  },
+  {
+    "group": "session",
+    "dir": "session-format-catalog",
+    "short": "session-format-catalog",
+    "oneLiner": "把第一方 codec 与相邻迁移器固化成构建期静态清单，供 persistence 免插件读历史会话。",
+    "why": "若迁移器在运行时装配，「这份 v1 日志能否打开」就取决于今天挂载了哪些插件：用户裁一个 profile、卸载一个实验特性，历史会话就可能集体读不出来。本包把 v0–v4 五个 codec 与四条相邻边在模块初始化时钉死，并在构造期拒绝重复、缺口与越界，让「能不能读历史」成为构建期即可回答的问题。没有它，session-persistence-jsonl 拿不到 sessionFormatCatalog，prepareStoredMigration 无从下手，任何非当前版本的 session.vN.jsonl 只能报 unsupported——老会话不是降级，而是直接打不开。",
+    "position": "上游即消费者：session-persistence-jsonl（createRestore/encodeCurrentHeader/encodeCurrentEvent/readHeader）、test-support/llm-replay、experimental/webworker-packer 的 preview 与 fixture 校验。下游是三类被装配的部件：dsh-session-format 提供 createSessionFormatCatalog 机制；四个 session-format-v*-to-v* 包提供 codec 与迁移器；dsh-session 以 peer 提供 KNOWN_SESSION_EVENT_TYPES 与 Session.fromRestore 做「已安装语义」校验；dsh-compaction-image-offload 提供 message projection。数据是装配式的：磁盘字节由 persistence 递给它造出的 restore，它只负责把正确的 codec 与 stage 链递回去，自身不持任何会话状态。",
+    "inside": "核心是 src/generated.ts，由 scripts/gen-session-format-catalog.ts 生成、禁止手改：导出 sessionFormatCatalogOptions（currentVersion: 4，codecs 为 v0..v4 五个冻结 codec，migrations 为四条相邻边，currentEncoder 用 v4 codec，另有 restoreCurrent/restoreTransformedCurrent/restoreCurrentHeader 三个回调）与 sessionFormatCatalog 实例。src/current.ts 接入已安装的当前语义：validateInstalledCurrentSessionHeader 与 validateInstalledCurrentSessionArtifact 都用 Session.fromRestore(..., 'detached', currentSessionMessageProjections) 复跑一遍当前校验——历史边冻结，当前格式则跟着安装的 dsh-session 走。src/historical.ts 另建一个停在 v3 的 historicalSessionFormatCatalog，用固定 RELEASED_V3_EVENT_TYPES 恢复 V0–V3，只为收集子会话证据而不递归完成父 catalog。src/children.ts 的 createSessionFormatCatalogWithChildren 把父会话收集到的子事实注入 V3→V4 边。src/message-projections.ts 只导出 currentSessionMessageProjections（当前仅 imageOffloadProjection），经 ./message-projections 供浏览器侧使用。注册机制不在代码而在包元数据：每个迁移包在 package.json 声明 dsh.sessionFormatMigration（from/to/export/migration/sourceCodec/targetCodec/targetHeaderValidator/targetRestorer），生成脚本 glob 这些 manifest，校验相邻性、目录名一致、后一条 sourceCodec 必须等于前一条 targetCodec、后包必须依赖前包，再渲染 import；--check 防陈旧。",
+    "boundary": "归它管：第一方 codec 与迁移边的清单、顺序、完整性，以及已安装当前语义校验的接线。不归它管：迁移规则本身（各 v*-to-v* 包）、磁盘读写与 generation 发布（session-persistence-jsonl）、运行时插件注册——profile 无法通过挂载插件增删或重排任何一条边。划线依据是 generated.ts 顶上那句 direct imports make historical readability independent of mounted plugins：历史可读性必须与运行时组合解耦；但当前格式语义又必须随安装的 dsh-session 变化，所以它只能做 peer + dev 依赖（生成脚本写死成 dependency 就报错）。",
+    "tour": [
+      {
+        "file": "packages/session/session-format-catalog/src/generated.ts",
+        "line": 16,
+        "sym": "sessionFormatCatalogOptions",
+        "note": "currentVersion、五个 codec、四条边的唯一装配点；机器生成，所以顺序与完整性是构建期事实而非运行时约定。"
+      },
+      {
+        "file": "packages/session/session-format-catalog/src/current.ts",
+        "line": 38,
+        "sym": "validateInstalledCurrentSessionArtifact",
+        "note": "用 Session.fromRestore 复跑当前语义校验——历史边冻结、当前格式跟随安装版本，这条边界就落在这一行。"
+      },
+      {
+        "file": "packages/session/session-format-catalog/src/historical.ts",
+        "line": 10,
+        "sym": "historicalSessionFormatCatalog",
+        "note": "停在 v3 的第二份清单，只为收集子会话证据，避免父 catalog 递归依赖自己。"
+      },
+      {
+        "file": "packages/session/session-format-catalog/src/children.ts",
+        "line": 13,
+        "sym": "createSessionFormatCatalogWithChildren",
+        "note": "把子会话事实绑进 V3→V4 边，说明静态清单里唯一允许被外部输入影响的就是这一条边。"
+      },
+      {
+        "file": "scripts/gen-session-format-catalog.ts",
+        "line": 87,
+        "sym": "collectSessionFormatMigrations 的 glob",
+        "note": "扫 package.json 的 dsh.sessionFormatMigration 来发现迁移器——注册机制是包元数据加代码生成，不是运行时注册表。"
+      }
+    ],
+    "gotchas": "清单第一方且封闭：不支持外部迁移器，运行时插件补不上缺失的历史边。子会话事实必须一次给全并在 catalog 生命周期内不变，否则 V3→V4 拒绝；隔离的 transcript replay 要显式传空数组。静态 sessionFormatCatalog 只支撑 header 读与原生当前格式读，历史 body 读必须改用 child-bound catalog。message-projections 是纯解释器，不挂载 recovery listener；每个 restore 各自持有独立 stage 状态。",
+    "analogy": "像开馆前就印好的馆藏总目录卡片盒：读者（persistence）不必问今天哪位管理员上班，就能查到每卷旧档在几号架、要经哪几道修复工序。但卡片盒只登记本馆藏书，外面捐赠的书进不来；而「新版分类规则」那本活页册（dsh-session）是外借的、随时换版，目录盒每次都借最新的来对照。"
+  },
+  {
+    "group": "session",
+    "dir": "session-format-v0-to-v1",
+    "short": "session-format-v0-to-v1",
+    "oneLiner": "冻结的 v0 物理解码器与身份迁移：把 alpha 期遗留日志规整成 v1 共享布局。",
+    "why": "最早一批用户留下的是 v0 的 session.jsonl：那时没有统一消息包装、没有 compaction 命名、没有 retryId。本包是迁移链的第一级踏板。少了它，createSessionFormatChain 构造期就抛 v0->v1 is missing，catalog 编译失败——后果比「老会话读不了」重得多：整个 sessionFormatCatalog 建不起来，当前版本会话也写不进去，会话功能直接起不来。它还持有 v1 物理 codec，v1-to-v2 必须复用 releasedV1SessionFormatCodec，因此它不是可有可无的兼容层，而是被后续两级共同依赖的地基。",
+    "position": "上游只有 dsh-session-format-catalog，经 generated.ts 直接 import releasedV0SessionFormatCodec、releasedV1SessionFormatCodec 与 sessionFormatV0ToV1；生产环境没有任何插件挂载它。下游是 dsh-session-format（defineSessionFormatMigration、SessionFormatError、sessionFormatCount 等基础设施）与 dsh-util-values。它的 targetCodec 又被 v1-to-v2 当 sourceCodec 复用——生成脚本强制校验这条衔接并要求后者依赖本包。数据方向：盘上 v0 行 → codec 解包 → 事件或 compact run → ReleasedV0ToV1Stage 规整 → v1 事件 → 链上下一级；事件数与序号不变，只有内容与头部版本号变。",
+    "inside": "src/codec.ts 用 createReleasedCodec(0) 与 createReleasedCodec(1) 造两个 codec，说明 v0/v1 共享物理布局：头字段含 v0 独有的 seedLength；PACKED_TAGS（text-chunks/reasoning-chunks/tool-call-chunks）把整段助手流式行解成 ReleasedAssistantChunkRun 这个 compact run（带 turn/step/lastSeq/lastTime/stream），供 v1-to-v2 直接吞下而不展开；scanRows 做 seq 连续性校验与 recoverable 截断（后续遇 turn/end 则把先前问题升级为致命）。src/dispositions.ts 的 RELEASED_V0_EVENT_DISPOSITIONS 冻结每种事件的 required/optional/opaque 成员，tool/result 的 meta 与 tool/code-dispatch 的 arguments 被列为 opaque——保留但不作会话序号解释。src/payload-validation.ts 的 assertReleasedPayloadSemantics 冻结嵌套负载语义，src/relationships.ts 的 assertReleasedArtifactRelationships 冻结 turn/step、tool start-result、retry、compaction、title 的跨事件配对。src/validation.ts 的 assertReleasedV1Header 与 restoreReleasedV1Artifact 正是 package.json 登记的 targetHeaderValidator 与 targetRestorer。迁移本体在 src/migration.ts：migrateHeader 只把 version 0 改 1，createStage 返回 ReleasedV0ToV1Stage；每个事件经 normalizeReleasedV0Event 串起一串有界规整器——normalizeLegacyCompactionType（compact/* 改 compaction/*）、normalizeLegacyTurnStart（删 trigger）、normalizeLegacyTurnEnd（disposed 转 aborted/disposed、补全 error reason）、normalizeLegacyRequestHeader（删重复的 header.messagePrefix）、normalizeLegacySteering（steering/message 变 user/message 并补 id/role）、normalizeLegacyRetry（按 turn/step/provider/policyKey 补 retryId）、normalizeLegacyCompaction（补 legacy-compaction:<id>:<seq>）、normalizeLegacyMessage（补 message 包装、legacy-message:<id>:<seq> 形式的 id、role 与 source）。assertSupportedLegacyType 拒绝 request/header-delta、mode/set 与 fallback reason。",
+    "boundary": "归它管：v0 物理语言的精确解码、v0→v1 这一个相邻跳，以及 v1 物理 codec（因两代共享布局，两个 codec 都放这里）。不归它管：发布（persistence 独占）、后续迁移的选择、外部插件事件——alpha 策略是未知事件类型一律拒绝迁移，连标了 ignorable: true 的也不例外。划线依据是冻结：一个 codec 必须永远对应当年发布时的字节格式，后续包不得重写 v1 布局，只能依赖复用同一个 releasedV1SessionFormatCodec（生成脚本把这条写成硬校验）。",
+    "tour": [
+      {
+        "file": "packages/session/session-format-v0-to-v1/src/migration.ts",
+        "line": 27,
+        "sym": "sessionFormatV0ToV1",
+        "note": "一条边的完整声明：name/fromVersion/toVersion/migrateHeader/validateTargetHeader/createStage，这就是 catalog 登记的最小单元。"
+      },
+      {
+        "file": "packages/session/session-format-v0-to-v1/src/migration.ts",
+        "line": 105,
+        "sym": "normalizeLegacyCompactionType",
+        "note": "compact/* 改名 compaction/*——最直观的演进史证据：子系统改名要顺着迁移链一路改到老日志里。"
+      },
+      {
+        "file": "packages/session/session-format-v0-to-v1/src/migration.ts",
+        "line": 224,
+        "sym": "assertSupportedLegacyType",
+        "note": "主动拒绝 request/header-delta、mode/set 与 fallback reason：宁可让老会话读不了，也不猜一个语义。"
+      },
+      {
+        "file": "packages/session/session-format-v0-to-v1/src/codec.ts",
+        "line": 45,
+        "sym": "releasedV0SessionFormatCodec",
+        "note": "同一工厂造出 v0/v1 两个 codec，证明这两代物理布局相同，也解释了 v1 codec 为何留在这一包。"
+      },
+      {
+        "file": "packages/session/session-format-v0-to-v1/src/dispositions.ts",
+        "line": 37,
+        "sym": "RELEASED_V0_EVENT_DISPOSITIONS",
+        "note": "逐事件类型的 required/optional/opaque 清单；opaque 一列划出「保留但不解释」的边界，后来重排不会碰它们。"
+      }
+    ],
+    "gotchas": "名为身份迁移，实际并不字节等价：它会补 message 包装、role 与 legacy-message:<id>:<seq> 形式的 id，补 retry 与 compaction 的 id，还会改名事件类型。打包的助手流式行必须原样透传给 v1-to-v2（transformRun 对 ReleasedAssistantChunkRun 直接 emitRun），提前展开会破坏后续按 run 合并的假设。清单封闭：未知事件类型乃至未知负载成员都会让整份日志拒绝迁移。recoverable 会丢弃坏行之后的后缀，且继承切分必须与头部声明一致。",
+    "analogy": "像档案馆对最早那批手写卡片做一次统一誊抄：顺序与编号一格不动，只把当年简写的栏目名改成规范名、给缺编号的补编号、把已废止的栏目直接判为无法誊抄退回。誊完之后，后面所有工序只认这套规范卡片，不必再认识手写体。"
+  },
+  {
+    "group": "session",
+    "dir": "session-format-v1-to-v2",
+    "short": "session-format-v1-to-v2",
+    "oneLiner": "v1→v2：把散落的 assistant/chunk 流嵌进消息内部，并重排全量密集序号引用。",
+    "why": "v1 把助手每次输出切成成百上千个顶层 assistant/chunk 事件，既撑爆日志体积，又让「这条消息怎么生成的」散落各处。v2 把整条流折进 assistant/message 的 data.stream，未落地的尝试折成 log-only 的 assistant/attempt。没有本包，链在 v1→v2 处断裂，v1 会话进不了当前格式；更关键的是这次转换改变事件条数，所有「引用第 N 条事件」的字段——sourceEventSeqs、surface 替换端点、compaction 的 shadowed 区间、title 的 messageSeqs——都会失效。强行升版本号而不重排，surface 折叠、压缩与标题生成会集体错乱。",
+    "position": "上游是 dsh-session-format-catalog（generated.ts import sessionFormatV1ToV2 与 releasedV2SessionFormatCodec），生产上由 session-persistence-jsonl 触发。下游是 dsh-session-format（机制）、dsh-session-format-v0-to-v1（复用 releasedV1SessionFormatCodec、RELEASED_V0_EVENT_DISPOSITIONS、isReleasedAssistantChunkRun），以及 dsh-llm 的 AssistantStreamAccumulator——它把零散 chunk 重累积成 AssistantStreamRecord。数据方向：v1 事件或 v0-to-v1 已规整的输出逐条进 stage，未结算的助手尝试暂存于 AttemptGroup，结算后连同重排过的引用吐给下一级 v2→v3；全程不保留完整 v1 事件数组。",
+    "inside": "src/migration.ts 是主体。sessionFormatV1ToV2 声明 1→2，migrateHeader 断言 v1 头后仅改版本号；createStage 按 input.sourceKind 分派：decoded 走 DecodedReleasedV1ToV2Stage 多跑一次 assertReleasedEventPayload 源校验，transformed（上游已是 v0-to-v1 输出）走 TransformedReleasedV1ToV2Stage 跳过——这条分支就是「链上只有第一级看物理」的体现。状态机围绕 StreamingAttempt：transformChunk 把 chunk 推进 AssistantStreamAccumulator，transformReleasedRun 直接吞下 ReleasedAssistantChunkRun，appendStreamRecord 把同类连续记录按 dt/texts/args 合并压缩（不跨 token 边界拼文本）；closesAttempt 定义 turn/end、step/end、llm/retry、llm/retry-started 为结算点。transformMessage 要求 assistant/message 的 sourceEventSeqs 完整有序地覆盖它引用的那次尝试（matchesChunkSources），通过就由 messageEvent 把 stream 挂到 data.stream 并删掉 chunk 引用；无人认领的尝试在最后一个 chunk 位置落成 attemptEvent，即 log-only 的 assistant/attempt，只留诊断、不进 deriveMessages()。密集重排由 state.mapping 承担，remapReferences 重写 sourceEventSeqs、surfaceOp 的 replace 端点、command/done 的 sourceEventSeq、compaction 的 shadowedRange/shadowedSeqs、title 的 messageSeqs，mapOne 找不到映射就拒绝而非重定向。切分上 ensureTargetCut 在跨过 sourceCut 时补发 session/end-seed { inherited: true }，assertAttemptCut 拒绝把一次尝试劈成两半。另收两个遗留模式：legacyInterruptedTurn（next-turn 插入后直接 turn/start 而无 turn/end）与 splitLegacyGoalChange（round-zero 的 goal 变更拆成 goal/change 加一条普通归因的 user/message）。src/codec.ts 的 releasedV2SessionFormatCodec 改一行一事件、头必带 isSeeded 且不再存数字 cut，cut 由最后的 end-seed 标记推导。",
+    "boundary": "归它管：v1 到 v2 的这一次语义重构——助手流归位、事件条数变化后的全量引用重排、两类遗留模式收尾，以及 v2 物理 codec。不归它管：流累积算法本身（dsh-llm 的 AssistantStreamAccumulator）、发布与降级（persistence 独占，保留的 v1 generation 不是自动降级输入）、后续迁移。划线依据是「冻结的源清单」：它只用 RELEASED_V0_EVENT_DISPOSITIONS 判断事件是否认识，未知类型一律拒绝，保证每代转换面对的都是当年发布时的封闭词汇，而不是当前安装的活词汇。",
+    "tour": [
+      {
+        "file": "packages/session/session-format-v1-to-v2/src/migration.ts",
+        "line": 43,
+        "sym": "sessionFormatV1ToV2",
+        "note": "createStage 按 sourceKind 分派两种 stage——链上第一级做源端物理校验、后续级不重复，这条设计一眼可见。"
+      },
+      {
+        "file": "packages/session/session-format-v1-to-v2/src/migration.ts",
+        "line": 548,
+        "sym": "messageEvent",
+        "note": "把整条 stream 挂进 assistant/message 的 data，v2 最核心的一次结构变化就发生在这一行。"
+      },
+      {
+        "file": "packages/session/session-format-v1-to-v2/src/migration.ts",
+        "line": 557,
+        "sym": "attemptEvent",
+        "note": "无人认领的尝试落成 log-only 的 assistant/attempt：失败尝试要留作诊断，但不能进入模型可见历史。"
+      },
+      {
+        "file": "packages/session/session-format-v1-to-v2/src/migration.ts",
+        "line": 566,
+        "sym": "remapReferences",
+        "note": "事件条数一变，所有「引用第 N 条」都要重算；找不到映射就拒绝而非重定向，是这次迁移最硬的一条规则。"
+      },
+      {
+        "file": "packages/session/session-format-v1-to-v2/src/migration.ts",
+        "line": 351,
+        "sym": "ensureTargetCut",
+        "note": "跨越继承切分时补发 session/end-seed { inherited: true }：v2 起 cut 不再写在头里，改由标记推导。"
+      }
+    ],
+    "gotchas": "这是链上第一个改变事件条数的迁移，老→新序号映射表无法避免，内存仍是 O(事件数)。未知 v1 事件（含标了 ignorable 的）一律拒绝，没有尽力而为模式。session/title-llm-request 里的提示词文本被刻意保持字节一致，因为那些文本嵌着老序号，重排会被目标校验误读。断裂留下的未结算尝试会被补成 assistant/attempt，但不进 deriveMessages()，模型看不到。保留的 v1 generation 不是自动降级或恢复输入。",
+    "analogy": "一次会议记录大改版：以前助手每吐一个词就单独占一张便签，现在要把整摞便签钉进它所属的那份纪要，没被认领的废稿单独装订成附件。便签收走后纪要重新编号，于是所有写着「见第 N 张便签」的交叉引用都得按新编号整体改一遍。"
+  },
+  {
+    "group": "session",
+    "dir": "session-format-v2-to-v3",
+    "short": "session-format-v2-to-v3",
+    "oneLiner": "v2→v3：把系统提示词升格为受保护 system/message 节点，统一 PTC 命名与规范信封。",
+    "why": "v2 把系统提示词塞在 request/header.data.header.system 里，既不参与 surface 折叠，也无法被压缩、替换或审计，等于一块游离在消息历史之外的隐形上下文。v3 把它升格为正式的 system/message 表面节点，并在首个 step 后建一个受保护 head，后续变更以替换 head 表达。没有本包，v2 会话进不了当前格式；而插入系统消息再次改变事件条数，局部序号与引用会整体位移。它还承担一次产品改名收敛：code 预设改 ptc、tool/code-dispatch* 改 tool/ptc-dispatch*，否则同一件事在老日志与新代码里叫两个名字，归因与统计长期对不上。",
+    "position": "上游是 dsh-session-format-catalog（generated.ts import sessionFormatV2ToV3 与 releasedV3SessionFormatCodec），生产上由 session-persistence-jsonl 触发。下游是 dsh-session-format（机制）、dsh-session-format-v1-to-v2（复用 releasedV2SessionFormatCodec、assertReleasedV2Header、RELEASED_V2_EVENT_DISPOSITIONS）、dsh-session-format-v0-to-v1（复用 assertReleasedPayloadSemantics 与 assertReleasedSurfaceMetadata 做冻结的嵌套校验）。数据方向：v2 事件逐条进 ReleasedV2ToV3Stage，被审计、按需插入 system/message、重排引用、改 PTC 名、规范信封后吐出 v3 事件；v3 codec 复用 v2 物理帧，只在解码前后追加结构性准入检查。",
+    "inside": "src/migration.ts 的 sessionFormatV2ToV3 声明 2→3，migrateHeader 还把恰好等于 code 的 header.agentPreset 改成 ptc。ReleasedV2ToV3Stage 持有 mapping、originalIds/generatedIds、step/head/prompt。transformEvent 的顺序即策略骨架：assertEvent(event, 2) 源审计后 observeMessageIds 登记消息 id 防冲突；遇 request/header 取 data.header.system 与当前 prompt 逐字比较，变化则在其前插入 system/message，且无论是否插入都一律删掉 system 字段；出现表面事件却还没有 head 就拒绝——不能为补头改时序；遇 session/end-seed { inherited: true } 记切分；遇 delivery-accepted 时，v2 日志写着 sessionFormatVersion === 3 直接拒绝（不把旧代标记提升成新代水印），同代但 sessionId 不是自己的记下来，finish() 时若无 parentSession 或落在本地半区即报错；随后 remapEvent、renamePtcEvent、canonicalizeTransformedEvent 依次作用。emitSystem 的 id 是 v2-to-v3-system- 加 sha256(JSON.stringify(['session-format-v2-to-v3', sessionId, anchor.seq, anchor.type]))，首次建 head 时 content 为空数组、surfaceOp 为 append，之后每次变化以 replace 覆盖旧 head 并在 sourceEventSeqs 引用它。renamePtcEvent 把 tool/code-dispatch-start 与 tool/code-dispatch 改成 tool/ptc-dispatch*，并在三个归因槽（user/message、agent/inbox/spliced 的 inserted、title-llm-request 的 messages 各自的 source.plugin）把 tools-code-mode 换成 tools-ptc，但不碰 run_code 与它的 code 参数。src/references.ts 的 remapEvent 只改 sourceEventSeqs、surfaceOp 改名前的 start/end、command/done 的 sourceEventSeq、compaction 的 shadowedRange/shadowedSeqs、title 的 messageSeqs，注释明确 throughSeq、workflow seq、流块索引、turn/step、token 计数都不是会话序号。src/payload.ts 定义 SURFACE_TYPES 四类并做源审计（未知类型与未知 content kind 全拒，诊断带 payload 路径），canonicalizeTransformedEvent 把 replace 的 start/end 改成 startSeq/endSeq 并剔除空的 tools: [] 与 adapterDefaults: {}。src/validation.ts 的 restoreReleasedV3Artifact 校验受保护 head，并在交给冻结的旧关系校验前用 relationshipEvent 造私有视图（system 伪装成 user、PTC 名改回旧名、修复 id 改回 interrupted-tool-result-<callId>-<seq>），视图不外泄、返回仍是原 artifact。",
+    "boundary": "归它管：系统提示词升格与受保护 head 规则、v2→v3 的引用重排、PTC 与预设名收敛、信封规范化、源端审计与拒绝。不归它管：settings.yaml 与任何文件/设置迁移（README 明说）、generation 发布（persistence 独占，已存在的 v3 generation 不会重跑这一跳）、当前版本事件词汇扩展（dsh-session）、native V3 准入语义（那是 restoreReleasedV3Artifact 的另一半职责，不是历史转换）。划线依据是「迁移只做转换、不做修复」：矛盾的工具结果、缺失的 placement、不一致的切分一律拒绝，绝不补 isError 或删诊断来凑一个合法结果。",
+    "tour": [
+      {
+        "file": "packages/session/session-format-v2-to-v3/src/migration.ts",
+        "line": 12,
+        "sym": "sessionFormatV2ToV3",
+        "note": "migrateHeader 顺手把 agentPreset 的 code 改成 ptc——产品改名也是格式演进的一部分，一并在这条边里收敛。"
+      },
+      {
+        "file": "packages/session/session-format-v2-to-v3/src/migration.ts",
+        "line": 109,
+        "sym": "ReleasedV2ToV3Stage.emitSystem",
+        "note": "系统提示词升格的核心：确定性 sha256 id、首次 append 建 head、之后 replace 覆盖 head，受保护头机制在此成型。"
+      },
+      {
+        "file": "packages/session/session-format-v2-to-v3/src/migration.ts",
+        "line": 140,
+        "sym": "renamePtcEvent",
+        "note": "只改事件标签与三个归因槽的 plugin 名，明确不碰 run_code 和它的 code 参数——改名必须精确到槽位。"
+      },
+      {
+        "file": "packages/session/session-format-v2-to-v3/src/references.ts",
+        "line": 14,
+        "sym": "remapEvent",
+        "note": "注释直接列出哪些数字不是会话序号（throughSeq、workflow seq、块索引、token 计数），是拒绝通用数字重写的宣言。"
+      },
+      {
+        "file": "packages/session/session-format-v2-to-v3/src/payload.ts",
+        "line": 344,
+        "sym": "canonicalizeTransformedEvent",
+        "note": "把 replace 的 start/end 换成 startSeq/endSeq 并剔除空 tools/adapterDefaults，是 V3 规范信封的最后一道定型。"
+      },
+      {
+        "file": "packages/session/session-format-v2-to-v3/src/validation.ts",
+        "line": 90,
+        "sym": "relationshipEvent",
+        "note": "为冻结的旧关系校验造一个私有视图（system 伪装成 user、PTC 名改回旧名），视图不外泄、返回仍是原 artifact。"
+      }
+    ],
+    "gotchas": "这次迁移会插入事件，继承切分、局部引用与序号都整体位移；已存在的 v3 generation 不会重跑这一跳。源审计封闭：未知事件类型、未审计成员、未知 content kind 全部拒绝，连 ignorable 也不例外，诊断带事件类型、源序号与带索引的 payload 路径。标题请求里的提示词文本被刻意保持字节不变，因为里面嵌着老序号。历史上的 code 预设无法区分当年内置与用户自定义，重命名是宿主无关的近似。它不改 settings.yaml，也不做任何文件重写。",
+    "analogy": "像把纪要页眉里那行「本次会议须知」抽出来，正式编成纪要的第一条独立条目并编号，之后每次须知变更都要显式替换那一条。编号一变，全篇「参见第 N 条」都要重算；同时把产品代号 code 在老档案里统一改成 ptc，否则新旧档案对不上账。"
+  },
+  {
+    "group": "session",
+    "dir": "session-log-deepseek",
+    "short": "session-log-deepseek",
+    "oneLiner": "把会话日志以 dsh_session_log 字段增量回传官方 DeepSeek API，并用持久水印记录接受进度。",
+    "why": "官方 DeepSeek 端点需要看到一次会话的规范日志，dsh 不另开遥测通道，而是把当前 Session 的事件序列折叠进模型请求的一个兄弟字段随请求带走。不挂载它，ctx.deepseekLlmApiExtensions 里就没有 dsh_session_log 贡献，请求不带日志后缀，服务端拿不到会话级上下文；同时 delivery-accepted 事件不再产生，acceptedThrough 永远停在 -1，上传水位无从恢复。它是 function plugin 而非库：有 enabled 开关，profile 可用 overlay 关掉——「是否允许外发」这一决策因此被显式化、可审计。",
+    "position": "上游两方：Cordis 加载器按 profile 挂载它；dsh-llm-deepseek 的 adapter 在拿到 HTTP 2xx、尚未消费 SSE 体之前调用 contribution 的 accept()。下游是它 inject 的两个服务——ctx.deepseekLlmApiExtensions（register('dsh_session_log', ...)）与 ctx.sessions（get/snapshotEvents/append），外加 ./invariant 注册进 ctx.invariants。types.ts 的两个 declare module 还扩展了别人的类型：把 dsh_session_log 加进 DeepSeekLlmApiExtensionMap，把 delivery-accepted 加进 SessionEventMap。数据是闭环：Session 内存态 → wire 字段随 HTTP 外发 → 2xx → 回写一条事件到同一 Session → 由普通 checkpoint 策略落盘 → 下次请求据此定水位。",
+    "inside": "src/index.ts 是全部实现：name 为 session-log-deepseek，inject 为 ['deepseekLlmApiExtensions', 'sessions']，Config 只有 enabled（默认 true）与 maxBytes（默认 8 MiB）两项。acceptedThrough(session) 用 WeakMap<Session, AcceptanceFold> 记下已扫描偏移与最大 throughSeq，进程内每个事件只扫一次、之后增量续扫，重启与 HMR 从持久日志重建；只认 sessionId 等于本会话且 sessionFormatVersion 等于当前 header.version 的 delivery-accepted（子会话不继承父水印），取最大值以对抗乱序投递。prepare(request) 在无 sessionId 或 session 不存在时返回 undefined，即不发字段；否则用 wireHeader/wireEvent/wireSurfaceOp 把 branded 类型与 envelope 翻成原始数字（replace 端点写成 startSeq/endSeq，只有 system、user、tool 可带 sourceEventSeqs，助手元数据留在内嵌流里，log-only 事件两个字段都不带），再做字节预算循环：先算不含事件的 envelope 字节，再逐事件累加，候选超 maxBytes 就停在完整前缀上；若一个事件都塞不下则 logger.warn 并整体省略该字段，水位不动。accept() 只做一件事：append 一条 session-log-deepseek/delivery-accepted（sessionId、sessionFormatVersion、throughSeq），不做独立 I/O，落盘交给普通 checkpoint 策略，故崩溃窗口内最多重放、不会跳号。src/invariant.ts 是自带的 invariants 伴侣（name 为 session-log-deepseek-invariant）：validateDeliveryAccepted 校验 format version 是安全整数、非继承标记必须指向所在会话、throughSeq 必须指向更早事件；install 同时覆盖三类水印——ctx.sessions.list() 已恢复的、ctx.on('session/created') 新建的、ctx.on('internal/dispatch') 刚追加的。",
+    "boundary": "归它管：字段构造与字节预算、水位折叠、accept 回写、水印自身的不变量。不归它管：HTTP 发送、重试与非 2xx 处理（llm-deepseek adapter）、落盘时机（checkpoint policy）、日志格式与迁移（迁移链）、「是否允许外发」这一决策（由 enabled 配置与 profile overlay 决定）。划线依据很直接：它只通过 inject 的两个服务和一个 register 接口与世界对话，README 明写 performs no independent I/O——水印之所以写回会话日志而不是另开存储，就是让恢复逻辑与会话持久化共用同一条路径，不引入第二个可能漂移的状态。",
+    "tour": [
+      {
+        "file": "packages/session/session-log-deepseek/src/index.ts",
+        "line": 36,
+        "sym": "inject",
+        "note": "只依赖 deepseekLlmApiExtensions 与 sessions：一个出方向的请求扩展点、一个会话源，不多要任何东西。"
+      },
+      {
+        "file": "packages/session/session-log-deepseek/src/index.ts",
+        "line": 141,
+        "sym": "acceptedThrough",
+        "note": "折叠最大匹配 throughSeq：同会话、同格式代才算数，取最大值以对抗乱序投递——水位不回退就靠这一行。"
+      },
+      {
+        "file": "packages/session/session-log-deepseek/src/index.ts",
+        "line": 186,
+        "sym": "ctx.deepseekLlmApiExtensions.register('dsh_session_log', ...)",
+        "note": "整个插件的对外契约：注册一个字段贡献，prepare 求值、accept 回执，其余全交给 adapter 驱动。"
+      },
+      {
+        "file": "packages/session/session-log-deepseek/src/index.ts",
+        "line": 233,
+        "sym": "contribution.accept",
+        "note": "2xx 后把 throughSeq 追加成一条事件——水位存在会话日志里而不是另开存储，崩溃只会导致重放而非丢段。"
+      },
+      {
+        "file": "packages/session/session-log-deepseek/src/invariant.ts",
+        "line": 60,
+        "sym": "InvariantInstaller install",
+        "note": "同时覆盖已恢复、新建、刚追加三类水印，说明这个包把自己的数据正确性也交给 invariants 机制兜底。"
+      }
+    ],
+    "gotchas": "语义是 at-least-once：2xx 之后、水印落盘之前崩掉，重启后会重放已接受区间，宁可重复也不跳号。单个事件本身超过 maxBytes 时，该会话上传会永久停在那一条上，后面全部堵住，只能调大 maxBytes；连序列化都失败的事件怎么调都发不出去。无 live Session 的请求（直连或 stale session）不带该字段，显式缺失语义仍未定义。provider 若因这个字段拒请求，是整个模型请求失败，而不是截断日志重试。",
+    "analogy": "像给出版社按章快递书稿：每寄出一包，就在书稿末尾贴一张「已寄至第 N 页」的便签，下次从第 N+1 页接着寄。便签本身也是书稿的一部分、跟书稿一起归档，所以丢件时按最后一张便签重寄即可——重复几页没关系，绝不能漏页。"
+  }
+]

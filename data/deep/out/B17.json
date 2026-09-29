@@ -1,0 +1,210 @@
+[
+  {
+    "group": "interaction",
+    "dir": "user-approval",
+    "short": "user-approval",
+    "oneLiner": "ctx.approval 审批接缝：一次性权限裁决，缺答者即 fail-closed",
+    "why": "敏感工具动作（tools 管线的 ask 决策、沙箱 bash 的提权重试）需要一个「能不能做」的人工或机器裁决点。如果删掉这个包，所有把 ask 决策路由到 ctx.approval 的消费方直接塌：tools 管线和 sandboxed bash 对这条接缝是 fail-closed 设计，接缝缺席时敏感动作一律不可执行——系统不会退化成「无审批的自由模式」，而是僵成「什么都批不了」：沙箱提权、危险命令确认全部冻结。反过来，若没有统一接缝，每个工具各自弹审批 UI、各自记日志，权限决定进不了同一份 Session 审计流，回放与 invariant 校验都无从谈起；「answerer 缺席即 fail-closed」这个安全性质也只能在每个工具里重复实现一遍，实现不一致就是漏洞。",
+    "position": "上游消费方是 tools 管线与 sandboxed bash：它们在工具执行前调 ctx.approval.request(req)，递入 agent、toolName、可选 callId 与 reason，等一个 ApprovalOutcome。下游它挂三件事：① approval/request waterfall——真正的裁决者（Web UI、ACP 机器通道等 answerer）监听这条事件瀑布，服务本身从不弹 UI；② dsh-session——approval/asked、approval/decided、approval/policy 三个事件写进请求方 session 日志；③ dsh-system-prompt——构造器注册 approval:policy context，把当前策略告知模型。数据流双向：请求沿 waterfall 向下找答案，结果沿 session.append 落盘；setPolicy() 切换策略时既写 approval/policy 事件又经 agent.inject 注入一条变更通知给模型的下一步。UI answerer 只回答自己拥有的 agent 的请求。",
+    "inside": "主体是 ApprovalService（src/index.ts:150，Cordis Service，ctx key approval）。核心路径 request()（215）：先用 hasOpenTurn()（84）校验处于 open turn——注释写明 turn 是 durable log 的 commit/replay 边界，turn 之间的裸事件回放时无法与 crash tail 区分；然后 append approval/asked（225，带随机 id、toolName、可选 callId/reason），交给私有 decide()，最后 append approval/decided（232）闭环。decide()（267）有四道闸：signal 已中止返回 cancelled；effectivePolicy 为 never 直接 rejected——刻意放在 waterfall 分发之前（275），防止后挂的 prepend listener 绕过确定性拒绝；ctx.waterfall('approval/request', ...) 的 fallback 恒返 unavailable（283），没有 answerer 就 fail-closed；词汇表外的 rogue 返回值和抛异常的 answerer 都归一化为 unavailable，绝不把问题敞开成放行。有 signal 时用 addEventListener 竞速，中止先赢则晚到的答案被丢弃。策略侧：setApprovalPolicy()（100）是裸 append 的持久写路径（session 初始化用）；setPolicy()（184）面向活 agent，额外注入一条 changed by the user 消息；overrideOf()（252）逆序扫日志取最后一条 approval/policy。构造器向 systemPrompt 注册 approval:policy context（162），在 retained history 之后输出完整策略句，切换策略是追加新快照而非改写稳定前缀。src/invariant.ts 的 companion 校验 asked/decided 按 id 配对、都在 open turn 内、outcome 在封闭词汇表内。",
+    "boundary": "归它管：审批请求受理、策略裁决、审计落盘、策略对模型的可见性。不归它管：① 弹 UI——service 内没有 answerer，headless 部署不挂 answerer 就全是 unavailable；② 记住授权——结果词汇只有 allowed-once，没有 allow-always、规则库、撤销，Known Limitations 明说这是刻意砍掉；③ 「问用户该怎么做」走兄弟包 user-questions 的另一条接缝；④ 把 sandbox+approval 打包预设归 permission-presets，它只认 approval/policy 单个旋钮。划线依据：审批是安全面——必须 fail-closed、必须全量审计、失败语义是拒绝；提问是信息面——答不上来就 NO_PROVIDER 报错、不进审计。两种失败语义水火不容，合并成一条缝要么拖累安全要么污染信息流。",
+    "tour": [
+      { "file": "packages/interaction/user-approval/src/index.ts", "line": 215, "sym": "ApprovalService.request", "note": "审批入口：open-turn 前置校验后 append approval/asked，decide 后 append approval/decided，审计对成对落盘" },
+      { "file": "packages/interaction/user-approval/src/index.ts", "line": 275, "sym": "decide 内 never 短路", "note": "never 策略在 waterfall 之前确定性拒绝——只信自己的请求路径，不信后挂 listener 的注册顺序" },
+      { "file": "packages/interaction/user-approval/src/index.ts", "line": 283, "sym": "approval/request waterfall fallback", "note": "fallback 恒返 unavailable：没有 answerer 就 fail-closed，接缝永不放行未决请求" },
+      { "file": "packages/interaction/user-approval/src/index.ts", "line": 84, "sym": "hasOpenTurn", "note": "turn 是 durable log 的 commit/replay 边界，turn 外请求直接 throw，防 crash-tail 歧义" },
+      { "file": "packages/interaction/user-approval/src/invariant.ts", "line": 33, "sym": "validateApprovalEvent", "note": "companion 校验 asked/decided 按 id 配对且都在 open turn 内，词汇表外即 fail" }
+    ],
+    "gotchas": "只有一期授权（allowed-once），没有 allow-always/规则库/撤销；session 策略只有 ask/never 两档。请求必须落在 open turn 内，turn 间调用在审计前就 throw。请求不带工具参数——answerer 只看到 toolName、reason 和可选 callId，而 ACP 机器通道要求 callId，无 callId 的请求无法代理。没有内置 answerer，headless 或组装不全的部署一律 unavailable fail-closed。模型看不到审批 UI 与审计事件，只看到工具结果与 runtime-context 快照里的策略句；setPolicy 会注入一条 changed by the user 消息进下一步。",
+    "analogy": "像公司的一支「用印审批流」：业务员（工具）每盖一次章都要递申请单（request），单子先写进台账（approval/asked），再按流程找人签字——找不到签字人流程自动作废（unavailable），而不是默认通过；老总宣布「本周停批」（never）时，申请单递都不用递就被打回。台账永远两行一对：递单、批结。它不管你怎么改表格（那是提问接缝的事），也不管签字权怎么打包成套餐（那是 permission-presets 的事）。"
+  },
+  {
+    "group": "interaction",
+    "dir": "user-questions",
+    "short": "user-questions",
+    "oneLiner": "ctx.userQuestions 提问接缝：工具暂停等人回答的 answerer 瀑布",
+    "why": "模型执行中常需要问人：确认破坏性操作、在选项中挑一个、补充缺失信息。没有这个包，每个想问人的工具都得自己定义「问题长什么样、答案怎么传、谁来回、挂了算什么错」——Web UI、ACP、本地 answerer 各接各的，词汇表分裂成方言。它把「暂停等待人类决定」抽象成一条服务契约：ctx.userQuestions.ask(request) 挂起调用方，直到某个 answerer 接受请求并给出答案。删掉它，dsh-tool-ask-user 失去底座（execute 直接调 ask，工具注册都无意义），plan-mode 的 exit_plan_mode 评审也失去承载（那个评审就是一个 plan-review intent 的提问）——系统里所有「人机决策点」全部失声。",
+    "position": "上游消费方两类：模型工具 dsh-tool-ask-user（把模型参数翻译成 AskUserQuestionRequest）和产品级插件如 dsh-plan-mode（exit_plan_mode 直接调 ask 发起评审）。下游依赖极少：Cordis 的 waterfall 机制与 ctx.agents（身份校验）。请求带 agent 时经 scopeTarget(agent, agent) 把 user-questions/request 事件定向到该 agent 的 scope，不带则走全局瀑布；Web 客户端贡献的 Agent-scoped answerer 挂在同一事件上。数据流是一条直线：请求沿瀑布下发，某个 answerer 返回 AskUserQuestionAnswer，直接 resolve 回调用方。与 user-approval 不同，它没有独立审计流——答案直返调用者，不落 session 事件，也无 companion invariant。",
+    "inside": "两个文件约 250 行。UserQuestionService（src/index.ts:65，Cordis Service，ctx key userQuestions）只有一个方法 ask()（86），但把四层校验压在一处：① signal 已中止抛 ASK_ABORTED；② questions 为空抛 EMPTY_QUESTIONS；③ 带 agent 时身份两连查——agents.get(agent.id) !== agent 抛 CALLER_NOT_LIVE（96，要求注册表里的精确活实例，持久谱系不算数），!agents.roots().includes(agent) 抛 DELEGATED_CALLER（102，被别的活 agent 拥有的子代理没有人类 answerer，会永远阻塞，所以禁止它问人，必须把未决问题写进 final result）；④ intent 一致性（115-129）：approve 标签必须是该问题自己的 option 之一（118）、intent 必须有 detail 可评审（124），两个类型系统表达不了的断言在提问方就地拦下而不是散到每个 UI，抛 BAD_INTENT。然后 ctx.waterfall('user-questions/request', ...)（135-142），无 answerer 接受时 fallback 抛 NO_PROVIDER（130）。UserQuestionError 继承 HarnessError 统一错误码；restoreUserQuestionError（53）把瀑布对岸序列化回来的错误还原成语义完整的实例。类型在 src/types.ts：AskUserQuestionIntent 的 plan-review 是唯一内建呈现意图，只影响 UI 呈现不影响答案形状——不认识该标签的 UI 按通用选项流渲染，调用方读到同样的答案字段。",
+    "boundary": "归它管：提问词汇表（问题、选项、multiSelect、intent）、答案词汇表、answerer 瀑布的受理与身份门禁、错误码分类。不归它管：① 渲染与收集——包里没有任何 UI，也不定义 UI 怎么弹，那是各客户端 answerer 的事；② 「能不能做」的权限裁决归 user-approval 接缝——那条缝 fail-closed 且全量审计，这条缝答不上来就 NO_PROVIDER 报错，失败语义刻意不同，这是两条缝不能合并的根本原因；③ 把提问暴露成模型工具归 tool-ask-user；④ plan 评审的呈现意图虽定义在此，调用时机归 plan-mode。划线依据：权限是安全面、提问是信息面，审计成本只该花在权限上。",
+    "tour": [
+      { "file": "packages/interaction/user-questions/src/index.ts", "line": 86, "sym": "UserQuestionService.ask", "note": "唯一公开方法：四层校验后经 user-questions/request 瀑布等人作答，答案直返调用方" },
+      { "file": "packages/interaction/user-questions/src/index.ts", "line": 96, "sym": "CALLER_NOT_LIVE 校验", "note": "要求注册表精确活实例——持久谱系不构成提问权，防复活会话冒名提问" },
+      { "file": "packages/interaction/user-questions/src/index.ts", "line": 102, "sym": "DELEGATED_CALLER 拒绝", "note": "被其他活 agent 拥有的子代理禁止问人：它没有人类 answerer，会永远阻塞" },
+      { "file": "packages/interaction/user-questions/src/index.ts", "line": 118, "sym": "BAD_INTENT 校验", "note": "approve 标签必须是本问题 option、intent 必须有 detail——类型表达不了的断言在提问方拦下" },
+      { "file": "packages/interaction/user-questions/src/index.ts", "line": 137, "sym": "scopeTarget 定向瀑布", "note": "带 agent 的请求定向到该 agent scope，Web answerer 只收 Agent-scoped 请求" }
+    ],
+    "gotchas": "无 answerer 接受时报 NO_PROVIDER 而不是挂起。被拥有的活子代理（DELEGATED_CALLER）不能问人，必须把未决决策写进 final result；但持久谱系不算数——带谱系的 session 恢复为新 runtime root 后可以正常问。Remote Events 只路由 Agent-scoped 请求，无 agent 的程序化请求需要未 scope 的本地 waterfall listener，否则 NO_PROVIDER。词汇表只有「选项+可选自定义文本」的表单形状：文件选择器、diff 预览确认等更丰富的交互没有接缝词汇。无 companion invariant：问答不产生任何审计事件，答案按请求直返。",
+    "analogy": "像「向总台要人」的对讲机：任何部门（工具）都能按下按钮喊话「请决策」，总台把喊话转给在班的话务员（answerer），谁接了谁答，答案原样带回。一个字没喊清（空问题）、冒名顶替（不是注册表里的活 agent）、实习生越权直接找老板（被拥有子代理）都会被总台当场挡回。总台自己不回答任何问题，也从不留录音——它只负责把问题递出去、把答案带回来。"
+  },
+  {
+    "group": "interaction",
+    "dir": "permission-presets",
+    "short": "permission-presets",
+    "oneLiner": "权限预设：把 sandbox 模式与 approval 策略打包成一个选择器",
+    "why": "sandbox 模式和审批策略是两个独立机制旋钮（各自由 dsh-sandbox-policy 和 dsh-user-approval 拥有），但用户面对的应该是一个 Permissions 选择器，而不是两个需要理解机制语义的开关。没有这个包，用户要分别设置 sandbox 与 approval，容易配出「无沙箱却要求审批」这类拧巴组合；换模式也要两次操作、两次打扰。它把「一堆审批与沙箱决定」打包成命名预设——workspace-write 是可写+ask，danger-full-access 是全放开+never——一次选择、两个旋钮同时写透到各自的 canonical setter。删掉它，客户端失去 catalog 和 /permission 命令，新 session 失去 defaultPreset 钉入；但最后的旋钮值仍在生效——它只拥有选择，不拥有执行。",
+    "position": "上游：Web 客户端经 @Remote catalog() 读可选预设列表、经 Session projection 的 permissions 键读当前值；/permission 命令（commands 可选组合时注册）是写入口。下游依赖：dsh-sandbox-policy 的 setSandboxMode 与 dsh-user-approval 的 setApprovalPolicy 两个 canonical 旋钮 setter；ctx.sessionProjections 注册 permissions 投影单元；ctx.settings 的 permission 命名空间存 defaultPreset。数据流：选择 → append permission/preset（用户意图）→ 逐个对比旋钮、只写变化值（sandbox/mode、approval/policy 事件）→ 投影单元折叠三类旋钮事件加 session/end-seed → derive() 反推出当前预设名，匹配不上即 custom。会话创建时 session/created 触发 pinInitialPermission 钉入默认预设。",
+    "inside": "PermissionPresetService（src/index.ts:180，继承 TypertRemoteService，static inject ['shell','approval','sessions','sessionProjections']）。写路径在私有 apply()（403，set() at 398 是它的会话直写版）：先 resolve() 预设，Auto 先跑同步 admission；current() 与目标不同才 append permission/preset（416）——两个预设共享同一 bundle 时这次追加保住了用户意图；然后 updateKnobs() 只写与折叠值不同的旋钮，净零选择一个事件都不追加。读路径 derive()（348）：先看仍匹配的最后一次记录选择（记录过的 auto 选择也匹配 never 策略，因为被委派子代理会钉 never，355），否则第一个配置匹配（357），否则 CUSTOM_PRESET——custom 只能显示不能选。构造器三道闸：custom/auto 是保留名不能进配置表（213-218）；挂载要求 bash executor 报告 sandboxMode（219），配在无 confinement 执行器上直接报错；组合默认匹配不上预设时必须显式配 defaultPreset（224）。投影单元（237 注册）由 applyPermissionEvent（134）折叠 permission/preset、sandbox/mode、approval/policy、session/end-seed 四类事件，支撑 pinInitialPermission（428）的判定：真新会话钉 defaultPreset 加两个旋钮事实；种子或半初始化会话只补缺失事实；存储的 auto 身份要求活 Auto 注册且过 admission，否则发布失败而非静默降级。可选 child：/permission 命令（255）——裸调用报当前值与可选项，带参切换；registerAuto()（307）发布仅当前会话的固定 auto 预设并广播 payload-free 的 permission-presets/catalog-changed（459）。",
+    "boundary": "归它管：预设表与 defaultPreset、预设选择与推导、auto 项的发布与 admission、客户端 catalog。不归它管：执行——sandbox 和 approval 各自的 enforcement 服务保持自己的值，删除本包后最后的选择仍然生效；审批弹窗与提示词叙述的呈现归 user-approval 和 tool-bash；单个旋钮的语义归 sandbox-policy 与 user-approval。划线依据：「产品层打包」与「机制层执行」分离——预设只是命名加写透，不是新的权限机制，所以 custom 状态不能持久化为命名预设，auto 也不能成为默认。",
+    "tour": [
+      { "file": "packages/interaction/permission-presets/src/index.ts", "line": 403, "sym": "PermissionPresetService.apply", "note": "写路径核心：先记 permission/preset 用户意图，再只写值变化的旋钮，净零选择不追加" },
+      { "file": "packages/interaction/permission-presets/src/index.ts", "line": 348, "sym": "PermissionPresetService.derive", "note": "读路径数学：仍匹配的末次选择优先（auto 兼容 never），否则首个配置匹配，否则 custom" },
+      { "file": "packages/interaction/permission-presets/src/index.ts", "line": 428, "sym": "pinInitialPermission", "note": "会话钉入：真新会话写 defaultPreset 全套，种子会话只补缺失事实，auto 需活集成" },
+      { "file": "packages/interaction/permission-presets/src/index.ts", "line": 219, "sym": "constructor 沙箱闸", "note": "挂载即要求 executor 报告 sandboxMode——预设捆绑沙箱，配在无 confinement 执行器上是错误配置" },
+      { "file": "packages/interaction/permission-presets/src/index.ts", "line": 307, "sym": "registerAuto", "note": "Auto 集成钩子：同步 admission 门 + 会话级生命周期 + catalog-changed 广播" }
+    ],
+    "gotchas": "custom 是派生态，只能切走不能选中或持久化。预设表在插件生命周期内固定，只有 auto 能动态进出 catalog。auto 不能当 default——刻意缺席于 permission settings schema。被引用的 defaultPreset 预设被删时必须在同一次配置修改里换掉。/permission 只在 commands 组合时注册。live auto 身份的恢复需要集成在位且过 admission，否则服务抛错而不是悄悄改写为 Full access。只捆绑 sandbox 与 approval 两个旋钮，agent/profile 选择不在 PresetSpec 里。",
+    "analogy": "像手机的「省电模式」一键开关：底下亮度、CPU、后台刷新是各管各的系统设置（机制旋钮），用户只看到一个「省电/正常/性能」的选择器（预设）。切到省电时系统去改那几项设置——哪项本来就没开就不动它（净零选择不落事件）；当前设置凑不出任何预设时显示「自定义」，能看不能选。删掉这个开关 App，各项设置保持原样继续生效。"
+  },
+  {
+    "group": "interaction",
+    "dir": "commands",
+    "short": "commands",
+    "oneLiner": "ctx.commands 斜杠命令注册表：插件自有的人类直控，不经模型消息",
+    "why": "交互式 UI 需要用户直接驱动 agent 侧行为——/plan、/feedback、/permission——而不是把每句话都发给模型。没有这个包，每个 UI 适配器都得自己维护命令表、自己解析 /xxx 语法、自己决定哪些输入不该成为 model prompt；命令插件（如 plan-mode）则要为 CLI 和 Web 各写一遍注册逻辑。它提供统一契约：ctx.commands.register() 挂命令，execute(agent, line, attachments, signal) 统一解析、准入、记账。删掉它，plan-mode 的命令 child 激活不了（/plan 消失，只能靠其它入口驱动 ctx.planMode），feedback 命令消失，未知斜杠输入也会被当普通 prompt 发给模型——既浪费 token 又诱发模型幻觉执行。",
+    "position": "上游：交互式适配器（CLI、Web）调用 list(agent)/find() 做发现、execute() 做派发；插件经 ctx.commands.register() 贡献命令。下游：dsh-scope 的 ScopedLayers 支撑全局与 agent 两层注册合并；dsh-session 承接 command/run、command/done 生命周期事件；dsh-attachment 的 admitEncodedImages 与 Session 级 file receipt 解析器处理附件准入；dsh-util-crypto 提供 instance token。数据流：UI 行 → parseCommand 解析 → view() 合层查找 → handler 直调（产物 CommandResult 不进模型历史）→ command/run、command/done 落 session 日志。注册与注销广播 commands/change，活适配器据此刷新发现；观察者失败只记日志，不能否决变更也不能饿死后续观察者。",
+    "inside": "CommandRuntime（src/index.ts:263，TypertRemoteService）。三层结构。① 注册层：normalizeDefinition()（179）校验名字（/^[a-z][a-z0-9_-]*$/）、非空描述、handler 类型；CommandLayer（94）包着 NamedEntries，同层重名直接抛错，错误信息还提示 per-agent 变体应挂到 agent.ctx 下；全局层与 agent-scoped 层由 ScopedLayers 合并（view() at 470），agent 挂载的命令插件注册的同名命令只 shadow 该 agent 的全局版，且 effective descriptor 只带所选定义自己的 identity。② 语法层：parseCommand()（125）一行正则——字节 0 的斜杠、小写名、名字后必须行尾或空白；rawInput 从名字后原样保留，语法归命令自己。③ 执行层：execute()（361）先准入后执行——command/run 在 handler 前落盘（373，recordInput:false 时省 args 防日志重复）；附件准入在执行器做：未声明 attachments 的命令收到附件（391）、没有 attachment store、未知 file receipt、超限图片批都先 settle 成 error；admission 之后、handler 之前再查一次取消（415，注释解释 admission 可能 await 慢存储，取消后进 handler 会让重试调用者重复变更）；handler 结果经 normalizeResult()（228）边界校验并冻结，withAbort()（155）保证 UI 请求中止时 registry 停止等待（handler 已逃逸的外部副作用靠协作取消）；抛错或中止 settle 成 command/done error（settleThrown at 434 包住 append 失败），准入失败（语法或未知名）什么都不记。mintCommandId()（446）用 cmd-<instanceToken>-<seq> 防恢复日志撞号。",
+    "boundary": "归它管：命令语法、注册与作用域 shadowing、生命周期记账、附件准入、发现协议。不归它管：① 不提交任何模型消息——命令文本和结果都不进 model prompt；消费者想驱动模型得自己来，如 plan-mode 经 agent.steer()；② 不做结构化输入——表单、补全 schema、类型化参数都是命令自己的解析责任（Known Limitations 明说只有非结构化文本）；③ 取消是协作式——registry 只停止 await，handler 自己尊重 signal 才能停住已逃逸的工作。划线依据：命令平面（人直控、零 token、日志记账）与对话平面（模型可见）是严格分离的两条线，registry 只服务前者。",
+    "tour": [
+      { "file": "packages/interaction/commands/src/index.ts", "line": 361, "sym": "CommandRuntime.execute", "note": "派发总入口：解析→合层查找→准入→run/done 记账→handler 直调，全程不经模型" },
+      { "file": "packages/interaction/commands/src/index.ts", "line": 373, "sym": "command/run 落盘", "note": "handler 前先 append run 事件（recordInput:false 省 args），命令生命周期从入日志起可回放" },
+      { "file": "packages/interaction/commands/src/index.ts", "line": 391, "sym": "附件准入闸", "note": "未声明 attachments 的命令收到附件先 settle error——准入权在执行器，不在 composer" },
+      { "file": "packages/interaction/commands/src/index.ts", "line": 470, "sym": "view 合层", "note": "ScopedLayers 合并全局与 agent 层，agent-scoped 同名命令只 shadow 该 agent" },
+      { "file": "packages/interaction/commands/src/index.ts", "line": 125, "sym": "parseCommand", "note": "命令语法契约：字节 0 斜杠+小写名+行尾或空白，rawInput 原样留给命令自己" }
+    ],
+    "gotchas": "未知语法或未知名的输入返回 undefined，适配器应拒绝而不是发给模型。同层重名注册抛错。取消是协作式：无视 signal 的 handler 在调用方停止等待后仍可继续外部副作用。附件按声明强制：图片走 base64，文件走已完成上传的 receipt，命令提交不再读文件字节；image 存储失败可能留下不可达的内容寻址对象等待延迟回收。recordInput 默认 true，自带权威领域事件的命令要显式关掉防日志重复。UI-less demo 与 ACP 自动化不提供命令面。",
+    "analogy": "像写字楼大堂的「直达内线电话」面板：员工按 /plan 这类快捷键直达对应部门（插件 handler），通话内容不经秘书（模型）转述；每次通话前台都登记进出（command/run、command/done）；带附件来访要提前预约（input.attachments 声明），没预约的一律在大堂被拦下。登记簿只在批准的通话上留痕，按错的、查无此号的都不记。"
+  },
+  {
+    "group": "interaction",
+    "dir": "tool-ask-user",
+    "short": "tool-ask-user",
+    "oneLiner": "ask_user_question 薄工具包：纯翻译直通 userQuestions 接缝",
+    "why": "模型没有直接调 ctx.userQuestions.ask() 的能力——它只能调工具。没有这个包，user-questions 接缝对模型是盲的：模型永远无法主动发起「等人回答」的暂停，只能在需要确认时结束回合、赌用户下一句会答。它用 101 行把接缝翻译成 ask_user_question 工具：参数 schema（questions 数组：id/question/header/options/multi_select）映射成 AskUserQuestionRequest，答案映射回 canonical 的 answers 数组。删掉它，模型侧失去唯一的主动提问通道，plan-mode 之外所有「模型向人要决策」的点全部断开；而接缝本身（user-questions）完好无损——这正是薄工具包定位的意义：语义在接缝，工具只是翻译。",
+    "position": "上游是 agent loop：模型发出 tool call，ToolRuntime 经 ctx.tools 找到本工具执行。下游两个依赖：dsh-tools 的 defineTool 注册面，dsh-user-questions 的 ctx.userQuestions.ask()。数据流极短：模型参数 → execute 里 map 成 request（exec.agent 有则带上，exec.signal 恒带上）→ ask() 阻塞等待 → 答案 map 回 answers 数组 → 作为普通 tool result 回到 agent loop。它自己不做身份校验、不做瀑布、不定义错误分类——那些全在接缝里；接缝的错误以 Error: <message> 形式出现在模型可见的 tool result 中（如 DELEGATED_CALLER 的整句指引）。无 invariant companion：执行关系全归它调用的接缝。",
+    "inside": "整包就是 src/index.ts 一个文件 101 行，是「薄工具包」的标本。三件套：name = 'tool-ask-user'、inject = ['tools','userQuestions']（13-14）、apply()（18）只做一件事：ctx.tools.register(defineTool({...}))（19）。工具定义里值得看三处。① 参数 schema（22-56）：把「推荐项放第一个并在标签尾部加 (Recommended)」写进 option description——推荐排序是提示词约定而非机制；multi_select 在模型侧用下划线命名，映射时改名成接缝的 multiSelect（86）。② render（77）：直接 JSON.stringify(value) 输出单 text block——这就是模型看到 compact JSON 而非富内容块的原因，canonical value 仍是结构化的。③ execute（79）是纯翻译：questions 逐个 map，exec.agent 有则带上（让接缝做 CALLER_NOT_LIVE、DELEGATED_CALLER 等身份裁决，88），exec.signal 恒带上（89，取消只随 turn 信号）；答案侧 selected 拷贝成新数组、custom 有则附上（91-97）。包内没有任何条件分支属于「交互逻辑」——没有等待策略、没有重试、没有降级，全部委托给 ask()。",
+    "boundary": "归它管：工具 schema、模型参数与接缝词汇的双向映射、结果的 JSON 渲染。不归它管：交互逻辑一行都没有——身份校验、intent 校验、瀑布分发、NO_PROVIDER/DELEGATED_CALLER 错误分类全在 user-questions；UI 呈现（包括 plan-review 的特殊渲染）在各 answerer；什么时候该问是调用方的事。划线依据：接缝拥有语义、工具只拥有翻译——所以接缝词汇升级（比如加 intent 字段）时这个工具包一行不改，这正是它独立成包却薄至 101 行的理由：装与不装是部署的模型能力开关，而不是机制变更。",
+    "tour": [
+      { "file": "packages/interaction/tool-ask-user/src/index.ts", "line": 19, "sym": "apply 的 defineTool 注册", "note": "全包就一个工具注册：inject ['tools','userQuestions']，薄到没有第二个职责" },
+      { "file": "packages/interaction/tool-ask-user/src/index.ts", "line": 80, "sym": "execute 转 ctx.userQuestions.ask", "note": "模型参数 map 成 AskUserQuestionRequest 直接交给接缝，工具本身零交互逻辑" },
+      { "file": "packages/interaction/tool-ask-user/src/index.ts", "line": 88, "sym": "agent/signal 透传", "note": "exec.agent 有则透传（接缝做身份裁决），exec.signal 恒透传——取消只随 turn 信号" },
+      { "file": "packages/interaction/tool-ask-user/src/index.ts", "line": 77, "sym": "render JSON.stringify", "note": "结果渲染就是一行的 JSON.stringify——compact JSON 形状的唯一来源" }
+    ],
+    "gotchas": "挂起的问题会阻塞 tool call 直到人类回答——本工具不声明 timeout-policy 预算，取消只随 turn 的 exec.signal。被拥有的活子代理调用会被接缝拒（DELEGATED_CALLER），必须把未决问题写进 final result；带谱系的 session 恢复为 runtime root 后不受影响。无 answerer 接受时模型收到错误而非降级。模型可见结果是 JSON 文本而非富内容块。等待人类期间零 token 成本；问题全文保留在 assistant 工具调用的 arguments 里直到 compaction。",
+    "analogy": "像给员工配的一部「直拨总台」的座机：话机本身（工具）只会拨号和复读答案，接待流程、身份核验、找不到人怎么回复全是大堂总台（接缝）的规矩；话机连说明书都只有一页（101 行）。员工提着话筒等人接听时外面的活照常等着，但也不产生任何谈话记录成本。"
+  },
+  {
+    "group": "plan",
+    "dir": "plan-mode",
+    "short": "plan-mode",
+    "oneLiner": "per-agent 计划模式：/plan 直入 + exit_plan_mode 评审退出",
+    "why": "「先探索设计、经人批准再执行」是一种协作姿态，需要横跨 prompt、命令、工具、状态四处：guidance 进 prompt、/plan 进命令面、exit_plan_mode 进工具面、激活状态要跨 resume 与 fork 存活。没有这个包，四处各自为政：guidance 靠人肉粘贴、状态无法从日志恢复、退出靠模型自觉——计划模式就退化成一句没有牙齿的话。它把整条链收进一个包：durable 状态是单个 log-only whole-value 事件 plan/mode，最后一条即状态，resume/fork/compaction 全靠折叠日志恢复。删掉它，Web 客户端失去 plan projection、模型失去 exit_plan_mode、用户失去评审通道，「批准后再执行」的产品形态整个消失。",
+    "position": "上游：用户经 /plan 命令（commands 可选组合时注册）进入；客户端经 plan projection 读 {active, pending}。下游五条挂接：ctx.systemPrompt 注册 plan:policy section（first-party order 500 的 PLAN_POLICY 槽位）；ctx.tools 注册 exit_plan_mode；ctx.userQuestions 承载评审（plan-review intent 的提问）；ctx.sessionProjections 注册 plan 投影单元（另需 turnBoundary 单元判断 open turn）；agent/pre-step 事件是 turn 内唯一落盘点。数据流：用户选择 → pendingIntents（WeakMap）→ 下一个被接受的 in-turn pre-step 时 append plan/mode → 投影折叠 → 客户端与 narration 更新；/plan <message> 经 agent.steer() 变成下一 step 的普通已记录用户消息。",
+    "inside": "PlanModeController（src/index.ts:176，static inject ['tools','systemPrompt','sessionProjections']）。四个部件。① 状态机：set()（419）返回四态——committed（无 open turn 立即 append，434）、queued（open turn 时挂 pendingIntents 等下个 pre-step）、cancelled（清掉反向 pending）、noop；agent/pre-step 监听（197）在 step 被接受后调 onBoundary()（442）追加，append 失败只 warn 不挡 step（pending 留待重试）——注释写明 pre-step 在 Session.append 发布之外，是 turn 内唯一能落 log-only 事件的点。② 投影单元 planProjectionDefinition（137）：折叠 command/run(name=plan)、command/done、plan/mode、request/header 四类事件，view 输出 {active, pending}——pending 只在未决或成功选择与已记录状态不同时为 true，是纯回放量。③ /plan 命令 child（230）：裸 /plan 进 active，精确 off 出 inactive 不带模型输入，其余非空参数进 active 加 agent.steer()（260）提交 trim 后的消息与有序附件；/plan off 带附件在改模式前被拒（238）。④ exit_plan_mode 工具（278）：inactive 时也保持注册——进入与退出只改 prompt section 不改工具 catalog（KV cache 友好的关键决策）；执行要求 markdown 以 # 标题开头（300）、必须处于 plan mode，然后构造 plan-review intent 的提问（307-321，detail 即完整计划，approve 标签定案）；用户选 Approve 则 pendingIntents.set(active:false, narrate:false)（352，静默退出，本 tool batch 剩余部分仍受 plan guidance 约束）；选 Keep planning 则抛错把 feedback 带回给模型（343-348）；用户关掉评审去打字（ASK_CANCELLED）翻成「停下来等用户消息」的专门话术（330）。无 userQuestions 通道（304）或评审期间服务被 reload（disposed 检查，338）都 fail closed，/plan off 是手动逃生门。narration（457）只在上次请求头描述的是另一种模式时注入一句切换通知。",
+    "boundary": "归它管：plan 状态的记录与恢复、guidance 注入、进入与退出命令、评审工具、pending 语义。不归它管：强制约束——它是软层，靠文本约束而非过滤能力：所有工具在 plan mode 下照常可用，要硬限制得配 sandbox 模式与审批策略（guidance, not enforcement）；sandbox 与 approval 的执行完全不读写 plan 状态。划线依据：设计笔记否决了通用 named-mode registry——只 ship 一个 plan 时抽共享接缝是过度设计；任何未来提取必须保住 log-only fold、边界 append、评审退出三件事。",
+    "tour": [
+      { "file": "packages/plan/plan-mode/src/index.ts", "line": 419, "sym": "PlanModeController.set", "note": "四态状态机：committed/queued/cancelled/noop——turn 内选择挂 pending，无 turn 立即落盘" },
+      { "file": "packages/plan/plan-mode/src/index.ts", "line": 197, "sym": "agent/pre-step 监听", "note": "turn 内唯一落盘点：step 被接受才 append plan/mode，失败不挡 step、pending 留待重试" },
+      { "file": "packages/plan/plan-mode/src/index.ts", "line": 307, "sym": "exit_plan_mode 评审提问", "note": "plan-review intent 经 ctx.userQuestions 发起评审，detail 即完整计划，Approve 标签定案" },
+      { "file": "packages/plan/plan-mode/src/index.ts", "line": 137, "sym": "planProjectionDefinition", "note": "plan 投影折叠四类事件，view 输出 {active,pending}——resume/fork 靠日志折叠恢复" },
+      { "file": "packages/plan/plan-mode/src/index.ts", "line": 278, "sym": "exit_plan_mode 注册", "note": "inactive 时仍注册：模式切换只改 prompt section 不改工具 catalog，保住请求前缀稳定" }
+    ],
+    "gotchas": "guidance 而非 enforcement——模型理论上可在 plan mode 下直接执行任何工具，硬限制靠 sandbox/approval。turn 最后一个被接受的 pre-step 之后做的选择是 process-local 的，进程退出即丢，UI 需重新施加。fork 的 agent 继承 plan 状态，新建 agent 从 inactive 开始。被拥有的活子代理开不了评审（必须写进 final result）。评审 pending 时服务 reload 会让调用 fail closed。只有 Web UI 有 plan-review 专用呈现，其它 provider 走通用选项流。exit_plan_mode 的完整 plan 保留在原有调用日志里，评审 intent 只带 callId 供导航。",
+    "analogy": "像装修队的「先出图纸后动工」流程：工头（模型）接到「进设计模式」的指令后只画图不动手（工具箱还挂在身上，全靠自觉）；图纸画好交业主签字（exit_plan_mode 评审），签了才开工；业主写「客厅重画」（Keep planning 反馈）就打回重画；业主随时一句「别画了直接说」（/plan off）终止流程。所有状态变更都写进工程日志（plan/mode 事件），复工、换工头都从日志读出进度。"
+  },
+  {
+    "group": "todo",
+    "dir": "tool-todo",
+    "short": "tool-todo",
+    "oneLiner": "todo_write：整表替换的模型任务清单，快照落 session 日志",
+    "why": "多步工作需要模型有一个跨 turn、跨重开 session 存活的显式计划，且 UI 能实时渲染进度。没有这个包，模型要么把计划藏在自己复述的文本里（不可渲染、不可恢复），要么全靠记忆（compaction 后就丢）。它把每次调用变成一个 todo/write 整表快照事件追加到 agent session 日志：last-write-wins 的回放语义天然给出「当前清单」，todos 投影单元把它变成 UI 的 standing plan。删掉它，模型失去结构化 planning 工具、UI 失去任务清单渲染，但不会有任何执行层损坏——它纯粹是模型与 UI 之间的计划通道，这也是它敢单文件 213 行的原因。",
+    "position": "上游是 agent loop：模型调 todo_write，ToolRuntime 进到 execute。下游：ctx.tools（注册面）、ctx.sessionProjections（注册 todos 投影单元）、调用方的 exec.agent.session（append 目标）。数据流：模型参数 → toTodoList() 校验 → session.append('todo/write', {todos}) → 投影单元折叠（todo/write 换整表、turn/start 清空）→ 载体在历史尾页与 session/projection push 帧上供 UI 取。回放方向同样成立：session 重开时投影从日志重算出最新清单。返回值只有固定形状的计数句 Updated todo list: ...，整表内容在调用 arguments 里自证。",
+    "inside": "apply()（src/index.ts:117）两段注册。① todos 投影单元（123）：state 是 TodoItem[] | null，apply 对 todo/write 整表替换（128）、对 turn/start 置 null（129，turn/end 保留完成清单可见——下一 turn 开始才清），其它事件原样返回同一引用（registry 的变更门）。② 工具（135）：参数 schema additionalProperties:false 且 items 只有 content/status——注释写明「日志快照必须等于模型自以为写下的」，多余字段在 schema 边界响亮失败而不是静默拍平。toTodoList()（80）做 schema 表达不了的值校验：trim 后非空（87）、Set 查重（89）、单活纪律——allowParallelInProgress:false 时 in_progress 计数超 1 直接拒（96）。execute（192）先校验、再确认 exec.agent 存在（194，非 agent 调用者没有可归属的清单，拒绝而非静默写空），然后 append 整表（199）、返回三态计数。配置 allowParallelInProgress 必填无默认（41-43）：工具无法观测运行时并发，单活还是并行是部署策略而非代码规则；工具 description 的 active-status 子句随之切换（describe at 63）。invariant companion（src/invariant.ts）校验持久快照形状与 open-turn 归属，刻意不谈 in_progress 数量——那不是 durable 数据规则，一种策略下写的日志要在另一种策略下也能回放。",
+    "boundary": "归它管：todo_write schema 与值校验、整表快照事件、todos 投影、并行策略的表达。不归它管：共享或跨 agent 清单——单 owner（调用者 session）是刻意剪裁，子代理各有各的清单；部分更新、逐项编辑、读回工具都不存在——整表替换是唯一操作；条目形状刻意极简（content 加三态 status，无 id、无优先级、无 active-form）。划线依据：planning 工具的常见形态就是整表替换，最小形状不需要稳定 id；要共享清单需要 per-item 增量与显式 scope 选择，那会改变模型可见契约，留作未来设计。",
+    "tour": [
+      { "file": "packages/todo/tool-todo/src/index.ts", "line": 199, "sym": "execute 的 session.append", "note": "整表快照作为 todo/write 事件落调用者 session——last-write-wins 回放即当前清单" },
+      { "file": "packages/todo/tool-todo/src/index.ts", "line": 80, "sym": "toTodoList", "note": "schema 外的值校验：非空、查重、单活纪律——拒绝写不诚实的快照" },
+      { "file": "packages/todo/tool-todo/src/index.ts", "line": 123, "sym": "todos 投影注册", "note": "standing plan 折叠单元：todo/write 换表、turn/start 清空，UI 从此读最新计划" },
+      { "file": "packages/todo/tool-todo/src/index.ts", "line": 96, "sym": "单活纪律检查", "note": "allowParallelInProgress:false 时多 in_progress 直接拒——部署策略而非编码规则" },
+      { "file": "packages/todo/tool-todo/src/index.ts", "line": 41, "sym": "Config schema", "note": "allowParallelInProgress 必填无默认：省略配置的组合在 load 时失败，逼部署者表态" }
+    ],
+    "gotchas": "每次 update 必须重发完整清单：无增量、无逐项编辑、无读回工具。清单属于单个 agent session，子代理不共享，非 agent 调用被拒。空内容、重复内容、未知字段、超编 in_progress 都显式失败。allowParallelInProgress 必填，忘配直接 load 失败。清空清单只能靠写空列表。投影在下一 turn 开始时清空，完成清单靠 turn/end 前的最后一版保留可见。export 形状必须保持 name/inject/apply 具名导出——误加 export default 会让 Loader 的 unwrapExports 坍塌模块、丢掉 inject（postmortem 0001）。",
+    "analogy": "像团队看板上的便利贴墙：每次改动都整面重贴（整表替换），墙上永远只有最新的那版；这块板只属于一个班组（agent session），别组不能来插便利贴；「同时只能有一张进行中」还是允许多张，开工前由经理（部署配置）定死；下个班次开始时墙自动擦净重新规划（turn/start 清空），但交接记录里永远查得到上一班贴过什么（日志回放）。"
+  },
+  {
+    "group": "guard",
+    "dir": "repeat-tool-reminder",
+    "short": "repeat-tool-reminder",
+    "oneLiner": "循环卫生守卫（劝导）：重复调用达阈值注入提醒，从不拦截",
+    "why": "自主长跑的模型最典型的失速方式是对同一工具用同样参数无限重试。没有这个守卫，止损手段只剩硬性 veto（pre-execute 拦截）或烧到超时——前者会误伤合法幂等重试，后者烧真金白银。它选第三条路：在 tools/post-execute 数连击，到阈值注入一条模型可见的提醒消息，让模型自己分析上次结果、换思路或收工。删掉它，dsh base bundle 少了默认防循环网，模型死循环只能靠外部干预；但系统不会错——它是纯加法：提醒只是 additionalContexts 里多一条消息，从不 block、从不改写调用，合法重复调用一次都没被耽误过。",
+    "position": "上游是 tools/post-execute waterfall：每次工具尝试（含被 deny 的）执行后它都被调到；agent/pre-step 事件用于链重置。下游依赖：dsh-tools 的 ToolExecution/PostToolDecision 形状、dsh-llm 的 createUserMessage 与 MessageSourceMap（repeat-tool-reminder source 声明在 14-18）。数据流：exec（工具名+参数）→ canonicalize → 链计数 → 命中阈值则造 UserMessage → prepend 进 downstream decision 的 additionalContexts → agent loop 把它落成 injected user/message。提醒呈现为 session 渲染的普通合成用户消息：模型可见、带 source 署名、从日志可重建，不新增 session 事件，tool/result 保持工具自己的输出。",
+    "inside": "单文件 241 行，无 Service 无 invariant——纯监听器插件。apply()（169）装两个 listener。① tools/post-execute（220）：先 observe() 计数（状态先推进，无论下游结果），总是 await next() 委托——后面可能有 listener 要 block；然后在两种 decision 变体（含 block）上都 prepend 提醒进 additionalContexts，每个 context 保留自己的 source 与元数据。② agent/pre-step（236）：本次 step 消息里含 user 来源消息就 chains.delete(agent)（237）——新用户指令改变上下文，跨它的重复不是循环。链本体是 WeakMap<Agent, Chain>（180），Chain 只有 {key, count}；key 是 JSON.stringify([toolName, canonical])，canonicalize()（110）先 sortJsonValue()（96）深度键排序再 stringify——参数以 loop 的 JSON.parse 输出到达，JSON 值域即全部输入域，故无需 bigint/环/undefined 处理。被 include/exclude 排除的调用对链透明（既不计数也不重置，tracked at 183）——grep X → todo_write → grep X 仍算两次连续 grep，记账工具夹在中间洗不掉循环。计数放 post-execute 的理由（注释 188-195）：被 deny 的调用也流经这条瀑布，模型锤被拒调用恰是最值得打破的循环。提醒两档：thresholds[0] 是温和版（GENTLE_REMINDER at 70，键控阈值而非字面量），后续阈值是详细版（detailedReminder at 77，带工具名、连击数、截断到 argumentsPreviewChars 的参数预览，previewArguments at 125）。validateThresholds()（135）fail-loud：空表、小于 2、重复都在 load 时抛。",
+    "boundary": "归它管：精确重复检测、提醒注入、阈值与工具范围的配置。不归它管：拦截——advisory only，PostToolDecision 的 block 能力留给后面的 listener；近似重复检测——只有精确匹配（深度键排序后逐字节相同），fuzzy 匹配被明确拒绝直到有需求证据；跨 agent 链共享——父子代理各算各的。划线依据：guard 家族的分工——本包是劝导型（事后提醒），timeout-policy 是强制型（事中替换结果），而 veto 型拦截不在这里做，是为了让合法幂等轮询零打扰、让「要不要硬停」留给有更多上下文的下游决策。",
+    "tour": [
+      { "file": "packages/guard/repeat-tool-reminder/src/index.ts", "line": 220, "sym": "tools/post-execute 监听", "note": "先计数后 next() 委托，提醒 prepend 进两种 decision 的 additionalContexts，从不 veto" },
+      { "file": "packages/guard/repeat-tool-reminder/src/index.ts", "line": 196, "sym": "observe 计数", "note": "链推进与阈值判定：exact key 匹配连击加一，异调用重置为一，无 agent 调用不参与" },
+      { "file": "packages/guard/repeat-tool-reminder/src/index.ts", "line": 110, "sym": "canonicalize", "note": "深度键排序加 stringify 的确定性身份——参数顺序无关的精确匹配之基" },
+      { "file": "packages/guard/repeat-tool-reminder/src/index.ts", "line": 237, "sym": "pre-step 链重置", "note": "step 里出现 user 来源消息即删链：新指令改变上下文，跨指令重复不算循环" },
+      { "file": "packages/guard/repeat-tool-reminder/src/index.ts", "line": 135, "sym": "validateThresholds", "note": "fail-loud：空表、小于 2、重复都在 load 时抛，绝不静默回退默认" }
+    ],
+    "gotchas": "只识别精确重复：改个路径、值内多个空格就绕过链。compaction 不重置链，跨 checkpoint 的连击继续计数。超过最高阈值后链静默——提醒只在精确配置的次数上触发。合法幂等轮询过阈值照样被唠叨，泄压阀只有 thresholds/exclude 配置。链只在内存，恢复 session 后从零计起（accepted cost）。被 deny 的调用也计数——设计使然，但对固执的重试可能产生密集提醒。include/exclude 是通配符模式而非注册表引用，匹配不到任何已注册工具也合法。",
+    "analogy": "像站在你身后的健身私教：你用同样姿势把同一个动作连做三下，他轻声提醒「先看看镜子里刚才那组的效果」；五下、八下后他报出动作编号和重量明细，劝你换动作或收工。但他从不按停你的器械（不拦截），也不管你换个动作哪怕只差一厘米（精确匹配）；教练一开口布置新计划（用户消息），计数清零重来。"
+  },
+  {
+    "group": "guard",
+    "dir": "timeout-policy",
+    "short": "timeout-policy",
+    "oneLiner": "循环卫生守卫（强制）：tools/execute 布防截止时间换 TOOL_TIMEOUT",
+    "why": "长时间工具调用（web_fetch、web_search 等）需要可预期的时限，否则一个挂死的请求能拖住整个 agent step。dsh-timeout 库提供计时原语（deadline/timeoutOf），但没人把它接到工具管线上。这个包 82 行就是那截接线：一个 tools/execute listener，读工具自报的 timeoutMs，把截止时间熔进 exec.signal，计时器赢时把结果替换成结构化 TOOL_TIMEOUT 错误。删掉它，声明了预算的工具失去时限保护，模型在慢工具上无限等待；声明预算的机制本身（ToolDefinition.timeoutMs）仍在，但没有执行者它就是死字段。它是 guard 家族里唯一动结果而非加消息的包。",
+    "position": "上游是 tools/execute waterfall：所有工具派发都穿过它。下游依赖两个：dsh-timeout 的 deadline()/timeoutOf()（计时与分类），ctx.tools.get()（读派发工具 caller-visible 定义的 timeoutMs）。数据流：exec → 查预算 → 无预算原样 next() → 有预算则 deadline(exec.signal, timeoutMs, TOOL_TIMEOUT) 造熔合信号 → 换上 exec 派发 → 下游 settle 后用 timeoutOf(d.signal, 'TOOL_TIMEOUT') 判定是否自己的计时器赢 → 赢了换 toolTimeoutResult()，没赢原样放行 → finally 恢复上游信号。它是 enforcement 链的接线端：计时归 dsh-timeout，终止归各能力自己，per-call 接线归本包——三者拆开的理由记录在 timeout-deadline-library Agent Note。",
+    "inside": "全部逻辑在 src/index.ts 一个文件。TOOL_TIMEOUT（25）一身二职：既是 deadline 的分类码又是结构化错误的 code——timeoutOf 按码 scope（注释 18-24），嵌套外层 wrapper 的计时器先响时读作普通上游取消而非本包超时，这是 scoped classification 的关键设计。apply()（55）注册的 listener 四步：① ctx.tools.get(exec.name, exec.agent)?.timeoutMs（57）——预算从注册表读，工具名打错不可能，未声明预算的工具原样委托（59）；② using d = deadline(...）（61）——using 声明保证 dispose；③ 信号换入换出（65-78）：先把派发信号换成 d.signal，finally 恢复上游——注释写明 Cordis next() 忽略传入参数，只能原地改共享 exec，恢复是为了让 tools/post-execute 监听者永远看不到本包可能已中止的信号；④ timeoutOf(d.signal, TOOL_TIMEOUT) !== undefined（73）时替换结果——toolTimeoutResult()（41）产出 isError:true、content 为 Error: tool call timed out after <ms>ms、error info {name:'ToolTimeoutError', code:'TOOL_TIMEOUT'}，供重试与沙箱插件及回放按码路由。与其它 tools/execute wrapper 的组合语义由 Cordis 注册顺序决定：外层超时罩整个重试操作，内层超时罩单次尝试。无 invariant companion——stateless 策略插件，没有可独立观测的事件流。",
+    "boundary": "归它管：per-call 截止时间布防、自家超时的结果替换、信号恢复。不归它管：硬杀——合作式设计，deadline 只通过 exec.signal 通知，无视 signal 的工具不会停，wrapper 停在 await next() 里，模型在下游 settle 前拿不到超时结果；统一默认预算——每个工具的预算只来自自己的 ToolDefinition，没有 registry 级默认，shipped 的 bash/read/write/edit 声明了 none 就永不被掐。划线依据：与 repeat-tool-reminder 同属 guard 家族但执行方式相对——那个是事后提醒（advisory，加消息），这个是事中替换结果（enforcement，改 outcome）；但两者都不终止进程、都不改工具自身行为。",
+    "tour": [
+      { "file": "packages/guard/timeout-policy/src/index.ts", "line": 56, "sym": "tools/execute 监听", "note": "全部逻辑就是一个 wrapper：查预算→布防→派发→分类→恢复" },
+      { "file": "packages/guard/timeout-policy/src/index.ts", "line": 57, "sym": "读 ToolDefinition.timeoutMs", "note": "预算从注册表的 caller-visible 定义读——工具自报家门，无默认预算" },
+      { "file": "packages/guard/timeout-policy/src/index.ts", "line": 61, "sym": "deadline 布防", "note": "dsh-timeout 的 deadline 熔合上游信号与超时码，using 声明保证 dispose" },
+      { "file": "packages/guard/timeout-policy/src/index.ts", "line": 73, "sym": "timeoutOf 按码分类", "note": "只认自家 TOOL_TIMEOUT 码：嵌套外层计时器先响读作普通上游取消，不误判" },
+      { "file": "packages/guard/timeout-policy/src/index.ts", "line": 78, "sym": "finally 恢复信号", "note": "Cordis next() 忽略传参只能原地改 exec，finally 恢复让 post-execute 看不到超时信号" }
+    ],
+    "gotchas": "合作式永不硬杀：工具无视 exec.signal 就不会停，调用者一直等，模型拿不到超时结果直到下游 settle。无统一预算：只有声明了 timeoutMs 的工具受保护，shipped bash/read/write/edit 声明了 none。结果替换发生在下游已 settle 之后，不是抢先中断——先到者拿到的可能是工具自己的 abort 结果。与其它 tools/execute wrapper 的组合语义取决于注册顺序（外层罩整个重试、内层罩单次尝试）。src/index.ts 顶部有一个关于 dsh-timeout-guard 改名的陈年 FIXME，naming ledger 已定名、代码待清理。",
+    "analogy": "像给快递员配的计时闹钟：每张快递单上写了「最长等 30 秒」（timeoutMs），没写的（bash 那类）根本不上闹钟；闹钟响时快递员不能被硬拖走——只是收到「时间到了」的通知（signal），等他手头的事体面收尾（settle），前台才把「超时」回执（TOOL_TIMEOUT）盖章发给客户。回执上印着自家编号，别家的闹钟响了不会被误盖成这家的章（scoped code）。"
+  },
+  {
+    "group": "feedback",
+    "dir": "message-feedback",
+    "short": "message-feedback",
+    "oneLiner": "逐消息反馈的 canonical 服务：评级与笔记记 session 日志",
+    "why": "产品需要收集用户对单条 assistant 回复的赞/踩、分类与文字笔记，而这些数据的权威归属必须想清楚：放独立 sidecar 会和事件溯源的 session 日志分叉——fork、恢复、回放各自说谎。这个包把反馈作为 feedback/message-put 与 feedback/message-delete 事件直接写进 canonical Session log：当前状态永远从日志折叠得出，没有第二存储、没有缓存。删掉它，Web 的逐消息反馈对话框失去后端（list/put/delete Remote 消失），日志里的旧反馈事件不可达；但它不承担任何模型路径职责——模型对反馈零感知，token 零影响。",
+    "position": "上游：Web 客户端（ui-message-feedback）经 typert-protocol 的 Remote 调 list/put/delete；遥测后端经 feedback/committed 事件观察冷变更（58）。下游：ctx.sessionPersistence（读写 Session JSONL 的句柄：stat/open/read/append/flush）、ctx.sessions（活 Session store，live 路径直接 append+flush）、FEEDBACK_CATEGORIES 从 command-feedback 借用（分类词汇共享）。数据流分两路：live（session 活着）→ live.append 加 sessions.flush 加持久化读句柄验证端点后才报成功；cold（只有落盘 session）→ 持久化写句柄贯穿读-校验-比对-append-flush-close，然后广播 feedback/committed。per-Session 队列串行化操作（enqueue），写句柄排除竞争的冷写者。",
+    "inside": "MessageFeedbackService（src/index.ts:118，TypertRemoteService，static inject ['sessionPersistence','sessions']）。核心部件五件。① currentItems()（97）——状态折叠器：遍历事件流，feedback/message-put 覆盖同 messageId 项（zod 校验持久 payload，忽略其他 Session owner 的事件），feedback/message-delete 删除。② 三个 Remote：list（155）纯读；put（167）四道闸——目标必须是 append-origin 的非空 assistant 消息（deriveEventMessage 加 isAppendSurfaceEvent 鉴别，否则 target-not-found，用户消息、空 assistant 占位、replacement-origin 全拒），乐观版本锁（ifVersion 不匹配返回 version-conflict 附当前项），幂等 no-op（同 rating/note/category 的 put 不追加事件直接返回），新建才 mint 新 version token 并保留 createdAt；delete（207）删现有项查版本，删不存在项无论版本都成功且不追加事件。③ withSession()（221）——live/cold 双路分派：live 路径先 double-check sessions.get（竞态防御）再走活 append+flush+持久化端点核验（246-258：flush 成功还不够，要用读句柄确认 header 与最后一事件真的落盘）；cold 路径开写句柄贯穿全程，事件 seq 重新编为 SessionSeq(events.length)，成功后广播 feedback/committed（载荷是借来的只读前缀，观察者必须深拷贝）。④ resolveNote()（286）在 Session 查找之前校验笔记：blank 抛 note-blank、超 maxNoteBytes 抛 note-too-large，接受文本原样保留（含周围空白），省略即清除。⑤ enqueue()（301）per-Session promise 链串行化，disposal 关 admission 并排干在途操作。两个易忽视语义：note 校验前置于任何 IO；失败 flush 不回滚已接受事件（调用方可 list 后用其版本重试）。",
+    "boundary": "归它管：反馈项 CRUD Remote、事件投影、live/cold 双路持久化、版本乐观锁、笔记字节预算。不归它管：不迁移旧 message_feedback sidecar 数据；不是隐私擦除——delete 只删当前状态，append-only 日志里的历史评级与笔记还在；不做跨进程协调——另一进程持写句柄时冷变更直接拒绝，不唤醒 owner；不带审计身份——请求里没有认证 actor，网关保护是部署责任。划线依据：与 command-feedback 的分工——那个管会话级自由文本加分类词表（无版本、无编辑、append-only），这个管逐消息结构化反馈（版本化、可编辑、可删除）；两者只共享 FEEDBACK_CATEGORIES 作为 durable 词汇。",
+    "tour": [
+      { "file": "packages/feedback/message-feedback/src/index.ts", "line": 97, "sym": "currentItems", "note": "当前状态从日志折叠：put 覆盖、delete 删除、他方事件忽略，zod 校验持久 payload" },
+      { "file": "packages/feedback/message-feedback/src/index.ts", "line": 167, "sym": "put", "note": "四道闸：append-origin 目标校验、乐观版本锁、幂等 no-op、新建 mint 新 token" },
+      { "file": "packages/feedback/message-feedback/src/index.ts", "line": 221, "sym": "withSession", "note": "live/cold 双路分派：live 走 append+flush+端点核验，cold 持写句柄贯穿全程" },
+      { "file": "packages/feedback/message-feedback/src/index.ts", "line": 286, "sym": "resolveNote", "note": "笔记校验前置于 Session 查找：blank 或超 maxNoteBytes 的失败先于任何 IO" },
+      { "file": "packages/feedback/message-feedback/src/index.ts", "line": 301, "sym": "enqueue", "note": "per-Session promise 链串行化，disposal 关 admission 并排干在途操作" }
+    ],
+    "gotchas": "每次触达已存在 Session 的 list/put/delete 都全量扫日志推导当前反馈，成本随 session 总历史增长而非反馈条数。旧 message_feedback sidecar 数据既不读也不迁移。delete 不是隐私擦除。另一进程持写句柄时冷变更拒绝，服务不会唤醒那个 owner。冷 put 成功后广播的 feedback/committed 载荷是借来的只读前缀，观察者必须深拷贝。失败 flush 不回滚已接受事件。fork 出的 session 不继承父反馈（即使前缀里有）。maxNoteBytes 限单条笔记，不限日志总量。",
+    "analogy": "像餐厅的「菜品点评簿」：每条点评贴着菜品编号（messageId）盖时间章写进总账本（session log），想改就重写一行盖新章（put 新事件），想删就贴张作废条（delete 事件）——但旧墨迹永远在账本里，撕不掉。改之前要先报出你上次看到的版本号，报错了前台把最新一版递给你（version-conflict 附 current）。账本大家共用，同一本上的修改要排队（per-Session 队列）。"
+  },
+  {
+    "group": "feedback",
+    "dir": "command-feedback",
+    "short": "command-feedback",
+    "oneLiner": "会话级反馈：/feedback 与 sessionFeedback Remote 采集通道",
+    "why": "用户对整个会话的观感（一句牢骚、一个分类）需要一条不惊动模型的采集通道。没有这个包，Web 反馈对话框没有后端（sessionFeedback Remote 消失）、CLI 用户没有 /feedback 命令、固定分类词表（FEEDBACK_CATEGORIES 七类）无处定义——而 message-feedback 还直接 import 这个词表。它把「记录反馈」设计成事件自有的事实：feedback/record 是权威事实本身，命令和对话框只是触发器，所以反馈可以从任何 UI、hook、集成进来而不依赖斜杠命令。删掉它，这条采集通道整个消失；但已记录的 feedback/record 事件仍在日志里——事实归事件所有，不归触发器。",
+    "position": "上游三个入口：① CLI/Web 的 /feedback 命令（commands 组合时经 apply 注册）；② Web 反馈对话框经 typert-protocol 的 sessionFeedback.record Remote；③ 任意集成直接调导出函数 recordFeedback()。下游：ctx.sessions（Remote 按 id 解析活 Session）、dsh-anonymous-user-id 的 getOrCreateAnonymousUserId()（首次命令反馈时铸造匿名用户 id）、ctx.commands。数据流极短：文本 → trim → session.append('feedback/record', {...})——写是 eager 但不 flush：确认语只代表进了日志，不代表落了盘。模型全程不可见：事件是 log-only 非 surface 事件，不进 deriveMessages()，不改变任何请求前缀，录反馈的那一 turn 不受任何影响。",
+    "inside": "128 行单文件，三件套。① recordFeedback()（58）——与触发器无关的裸生产者：trim 文本、空白记为缺席（61）、text 与 category 都没有也照样落一个事件——注释明确：事实归事件所有而非触发器。② SessionFeedbackService（85，TypertRemoteService，inject ['sessions']）——record()（102）按 sessionId 从活 Session store 解析，无活 owner 返回 session-not-found（105，Web 对话框在其 session 退休时会遇到），解析到就转调 recordFeedback。③ apply()（117）——注册 Remote 服务（118）加 /feedback 命令：executeFeedbackCommand（73）空输入返 usage error（75，Feedback text is required. Usage: /feedback <text>，空白输入算空），成功则 ack 两行：Feedback recorded for session {id} 加 Anonymous user: {userId}（80）。命令注册的 recordInput: false（124）是关键细节——remark 文本只存在于 feedback/record 事件的 text 字段这一处，命令簿记（command/run）不带 args 防日志重复，这是「remark 在日志里恰好只有一个位置」设计决策的直接体现。FEEDBACK_CATEGORIES（30）七类固定词表（task-result、instruction-following、product-interaction、service-stability、resource-cost、security-privacy-permission、other），顺序即产品呈现顺序，各 surface 自管本地化标签。无 invariant companion——每条 feedback/record 是独立 append-only 事实，没有跨事件关系可校验。",
+    "boundary": "归它管：feedback/record 事件词汇、分类词表、裸生产者、/feedback 命令、sessionFeedback Remote。不归它管：检索、聚合、管理面——没有任何读回路径，也没有模型侧工具；修改与撤回——日志 append-only 且无 tombstone，误发的牢骚只能被后一条盖过；逐消息结构化反馈（评级/版本/编辑）归兄弟包 message-feedback；命令簿记本身归 dsh-commands。划线依据：会话级与消息级是两条反馈粒度——前者一次性事实（无版本、无编辑），后者结构化状态机（版本化可编辑）；共享的只有分类词表。",
+    "tour": [
+      { "file": "packages/feedback/command-feedback/src/index.ts", "line": 58, "sym": "recordFeedback", "note": "触发器无关的裸生产者：trim、空白记缺席、无 text 无 category 也落事件" },
+      { "file": "packages/feedback/command-feedback/src/index.ts", "line": 119, "sym": "apply 命令注册", "note": "/feedback 注册（recordInput:false）——remark 只存在于 feedback/record 一处，簿记不带 args" },
+      { "file": "packages/feedback/command-feedback/src/index.ts", "line": 102, "sym": "SessionFeedbackService.record", "note": "Remote 按 id 解析活 Session，无活 owner 即 session-not-found，命中即转裸生产者" },
+      { "file": "packages/feedback/command-feedback/src/index.ts", "line": 74, "sym": "executeFeedbackCommand 空输入闸", "note": "空白输入返 usage error 且不落事件；成功 ack 报 session id 与匿名用户 id" },
+      { "file": "packages/feedback/command-feedback/src/index.ts", "line": 30, "sym": "FEEDBACK_CATEGORIES", "note": "七类固定词表，顺序即呈现顺序——与 message-feedback 共享的 durable 词汇" }
+    ],
+    "gotchas": "无检索/聚合面，也没有模型侧工具。不可修改或撤回（无 tombstone）。Remote 只解析活 Session，session 退休后对话框记录会拿到 session-not-found。ack 跟随 append 而非 flush，崩溃前一刻的记录可能随未 flush 的尾部丢失——需要 barrier 的消费者应 await ctx.sessions.flush(session)。全新 session 上打的命令 ack 行不显示（transcript 要 session 活跃才渲染命令行；对话框的 toast 不受影响）。headless、ACP、JSON-RPC 无命令适配器，/feedback 只在 Web 等交互入口可用。",
+    "analogy": "像餐厅门口的「意见快速投递口」：顾客随口一句抱怨（/feedback）或填张分类小卡片（Web 对话框）投进去，投递口只管「咚」的一声确认投进箱里（ack 进日志）——不保证当晚入柜上锁（不 flush），也没人读给你听（无检索），投错了也取不出来（append-only）。但前台登记簿不会记这一笔（不进模型历史），厨师永远不会被打扰。"
+  }
+]

@@ -1,0 +1,11 @@
+# @deepseek-ai/dsh-settings-file
+path: packages/settings/settings-file
+desc: File-backed settings provider (settings.yaml) for the DeepSeek Harness
+deps: @deepseek-ai/dsh-util-values, @deepseek-ai/schemastery
+peers: @deepseek-ai/cordis, @deepseek-ai/dsh-atomic-write, @deepseek-ai/dsh-home-paths, @deepseek-ai/dsh-settings
+srcFiles: 1  srcLoc: 372
+
+## README.md (1 行)
+
+
+## 源文件与导出符号

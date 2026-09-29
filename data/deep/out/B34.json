@@ -1,0 +1,270 @@
+[
+  {
+    "group": "util",
+    "dir": "brand",
+    "short": "brand",
+    "oneLiner": "零依赖的 Branded 名义类型原语：让同是 string/number 的不同领域 id 在编译期不可互换",
+    "why": "dsh 里 SessionId、ToolCallId、JobId、SessionSeq、SessionLogOffset 全都是普通 string/number。没有这个包，各包要么各自重复实现一遍 `string & { __brand }` 技巧（写法各异、易漂移），要么直接传裸 string——一个 ToolCallId 被误当 SessionId 传进 session 查询、一个 SessionSeq 被当成日志 offset 去回放，TypeScript 全都放行，只在运行期炸出难查的错。删掉它，jobs 包要 brand JobId 就得引入一个无关的能力包（循环依赖风险），或复制粘贴 brand 机制；跨包边界上的 id 误用会从「编译失败」退化为「运行时静默错配」。40 行代码换来的是把一整类 bug 从运行期移到编译期。",
+    "position": "位于 util 家族最底层，deps 为空，只有 cordis 作为 peer。上游是所有拥有「易混淆领域值」的包：dsh-session 用它定义 SessionId、SessionSeq、SessionLogOffset，dsh-llm 定义 ToolCallId，dsh-jobs 定义 JobId，LSP 侧定义 LspProviderId。数据流极简单：拥有者包在「承认」一个 string/number 进入领域的时刻调用 brandString/brandNumber，此后该值在函数签名、事件、Session log 里以 branded 类型流动；运行期它就是原始值，序列化、比较、上 wire 均无任何包装。它不依赖也不感知任何使用方。",
+    "inside": "单文件 src/index.ts 共 40 行，四个导出。核心是模块私有的 `declare const BRAND: unique symbol`（index.ts:15）——一个只存在于类型系统、运行期被完全擦除的标记。`Branded<B> = string & { readonly [BRAND]: B }`（index.ts:18）与 `BrandedNumber<B>`（index.ts:21）用交叉类型给原始值盖上名义烙印：两个不同的 B 互不兼容，TS 结构化比较在此失效。`brandString<T>(value: string | T): T`（index.ts:28）和 `brandNumber`（index.ts:37）只是 `return value as T`——零运行时开销、零校验，构造函数刻意无状态。这正是设计的巧处：因为 BRAND symbol 从不实例化，独立安装的两份副本产出的值天然可互换，不需要共享 registry 或构造器身份，避开了 npm 重复安装下 instanceof 式失败的老坑。校验责任完全归拥有者包：先验证领域语法（如非负安全整数），再 admit 进品牌。运算结果（如 SessionSeq+1）会掉出品牌，必须重新经 brandNumber 收编。",
+    "boundary": "归它管：给可跨包混淆的 string/number 提供编译期名义类型和无状态构造器，以及「何时该 brand」的规范（跨包边界且可能混淆才 brand，局部值不需要）。不归它管：任何具体领域类型的定义与校验——SessionId 的语法规则归 dsh-session，JobId 归 dsh-jobs；它连一个具体的 id 都不认识。运行期校验、UUID 生成（util/crypto）、JSON 值代数（util/values）也都不在这里。划线依据：brand 机制若放进任何一个能力包，其他包 brand 自己的 id 就得反向依赖该能力包，制造耦合；只有把它抽成谁都不依赖的原子件，才能让每个拥有者独立声明自己的领域类型。",
+    "tour": [
+      { "file": "packages/util/brand/src/index.ts", "line": 15, "sym": "BRAND unique symbol", "note": "模块私有 unique symbol：只存在于类型层，运行期被擦除，这是「多副本安装仍互换」的根本前提。" },
+      { "file": "packages/util/brand/src/index.ts", "line": 18, "sym": "Branded", "note": "`string & { readonly [BRAND]: B }` 交叉类型：用最小机制让结构化类型系统产生名义区分。" },
+      { "file": "packages/util/brand/src/index.ts", "line": 28, "sym": "brandString", "note": "构造器就是 `value as T`：零校验零开销，把 admit 的责任明确推给拥有者包。" }
+    ],
+    "gotchas": "brandString/brandNumber 不做任何运行期校验——传入未验证的字符串它照单全收，领域语法必须在调用前由拥有者验证。BRAND symbol 纯类型层，运行期没有任何 tag：typeof、JSON.stringify、比较全是原始值行为，不能在运行期「检测」一个值是否被 brand。数字运算会掉出品牌（SessionSeq + 1 不再是 SessionSeq），须重新 admit。README 明确「不是每个 string 都需要 brand」——只对跨包边界且可能混淆的值用，否则是类型噪音。这是纯类型包，npm 包 main 指向的 lib/index.js 几乎为空壳，调试时不要期待运行期行为。",
+    "analogy": "像货币面额章：一张纸条（string）盖上「100 元」的章才只能在货币系统里流通，盖上「收据编号」的章只能在档案系统里流通——纸还是那张纸，但两个系统互不收对方的纸条。刻章的人（这个包）不发行任何货币，每家银行（session、jobs、llm）自己决定什么算合法面额、自己盖章。"
+  },
+  {
+    "group": "util",
+    "dir": "crypto",
+    "short": "crypto",
+    "oneLiner": "跨运行时安全的 UUID 生成与 base64 编码：替代 secure-context 专属的 crypto.randomUUID",
+    "why": "`crypto.randomUUID` 是 secure-context Web API：浏览器预览部署走局域网纯 HTTP 时，页面或 worker 里根本没有这个方法，代码一调用就崩。dsh 的 Web UI 会在这种环境下运行，若各处直接调 randomUUID，Session/请求/附件 id 的生成就只能在 HTTPS 部署下工作。删掉这个包，要么每个调用方自己写 polyfill（实现各异、漂移），要么所有浏览器侧 id 生成在 LAN HTTP 部署下集体失败。仓库用 `no-restricted-properties` lint 规则把 crypto.randomUUID 的调用者强制指到这里，保证全仓库只有一个实现点。Node 侧纯 Node 代码从 node:crypto 导入 randomUUID 的则不受影响。",
+    "position": "util 家族的纯库件，deps 为空，不注册任何 ctx、不持状态。上游是需要在浏览器上下文里铸造 id 的消费方：请求 id、Session id、附件标识等 mint 点（README 明示消费方铸造这些 id，但 id 不作为语义内容进入 prompt）。数据流单向：调用方调 `randomUUID()` 拿到一个 `Uuid` 字符串，之后这个字符串归调用方所有——本包不记录、不追踪。`bytesToBase64` 服务于需要在浏览器里把字节数组转 base64 的场景（如二进制附件/传输），用 0x8000 分块绕开 `String.fromCharCode` 的参数上限。",
+    "inside": "单文件 src/index.ts 共 42 行，三个导出。`randomUUID()`（index.ts:33）是核心：从 `globalThis.crypto.getRandomValues` 取 16 字节随机数——这是唯一一个「所有发布目标都提供」的随机原语（浏览器、worker、Node≥19 均可用）；随后手工实现 RFC 9562 §5.4 的 v4 变换（index.ts:37）：byte 6 高半字节置 0x40（version 4），byte 8 高两位置 10（variant），再拼成五组连字符字符串。类型 `Uuid`（index.ts:13）用模板字面量 `` `${string}-${string}-${string}-${string}-${string}` `` 匹配 crypto.randomUUID 的返回形状，让类型层面可识别。`bytesToBase64(data)`（index.ts:20）以 0x8000（32768）字节为 chunk 循环 `String.fromCharCode(...subarray)` 再 `btoa`——直接展开整个数组会撞函数参数上限（约 65k），分块是浏览器 base64 编码的标准绕法。",
+    "boundary": "归它管：跨运行时（浏览器+Node）的 v4 UUID 铸造和字节数组 base64 编码。不归它管：其他 UUID 版本/命名空间/解析（README 明说 v4 only，需要更多应引入真正的 UUID 库）；Node 专属的加密操作（密钥、哈希、签名留给 node:crypto）；碰撞检测——122 位随机保证的是概率性唯一，与 crypto.randomUUID 同级别的承诺。划线依据：这个包存在的唯一理由是「secure-context 之外没有 randomUUID」，所以它只收编那些在浏览器上下文会崩的调用；凡是 Node-only 的 crypto 能力留原地，不制造一个大而全的 crypto 门面。",
+    "tour": [
+      { "file": "packages/util/crypto/src/index.ts", "line": 33, "sym": "randomUUID", "note": "用 getRandomValues 而非 randomUUID 铸造 v4：绕开 secure-context 限制，是整个包存在的理由。" },
+      { "file": "packages/util/crypto/src/index.ts", "line": 37, "sym": "version/variant pinning", "note": "手工实现 RFC 9562 §5.4：byte 6 置 version 4、byte 8 置 variant 10，保证产出是合规 UUID。" },
+      { "file": "packages/util/crypto/src/index.ts", "line": 20, "sym": "bytesToBase64", "note": "0x8000 分块调 String.fromCharCode 再 btoa：绕开浏览器函数参数数量上限。" }
+    ],
+    "gotchas": "只有 v4：没有 namespace/解析/校验他版 UUID 的能力。唯一性是概率性的（122 随机位），本包不检测碰撞。`bytesToBase64` 只在提供 btoa 的环境可用（浏览器和 Node≥16 有全局 btoa；老 Node 没有）。lint 规则 no-restricted-properties 会拦截直接调 crypto.randomUUID——这是强制的，别绕过。identity 格式上 `Uuid` 只是模板字面量类型，不校验内容，任何五段连字符字符串都能赋给它。",
+    "analogy": "像一台不挑电源的老式手摇发号机：酒店大堂（HTTPS 部署）和路边摊（LAN HTTP）都能用它摇出号码牌（UUID），而官方号码机（crypto.randomUUID）只在有稳定电网的大堂里能插电。发号机本身不记账——号码发出去就是你的了。"
+  },
+  {
+    "group": "util",
+    "dir": "deque",
+    "short": "deque",
+    "oneLiner": "零依赖环形双端队列：摊还 O(1) 的端部操作，出队即释放引用，空闲存储有界",
+    "why": "dsh 的流式管道（如 production stream 的 backlog drain）需要跨异步工作累积条目再按 FIFO 排空。用数组做队列，每次 `shift()` 都要把剩余全部条目前移一位——一个长期积压上万条目的流，每次出队都是 O(n) 拷贝，排空一个 backlog 的总代价是 O(n²)。删掉这个包，消费方要么忍下这个平方级退化，要么各自手写环形缓冲（head 游标管理、扩缩容、wrap-around 都是易错点）。它另一个关键承诺：popFront 时立刻清空槽位（index.ts:54），不留对已移除条目的引用——数组 shift 的实现并不会主动置 null，长生命周期队列里已出队的对象可能被滞留引用挂住，阻碍 GC。README 引用的架构决策记录（2026-08-28-linear-stream-queue-drain）明确了生产流选它而非数组的原因。",
+    "position": "util 家族纯数据结构件，deps 为空，不注册不监听。上游是 Host 与浏览器侧需要长期持有进程内队列的包——README 点名 Host 与 browser packages；典型场景是流式传输的帧/事件积压排空（drain）。数据流：生产者 pushBack/pushFront 追加，消费者循环 `while (size > 0) popFront()` 排空。刻意的职责切割：本包只管条目顺序与底层存储的释放；唤醒、失败、取消、容量、过载行为全部归消费方——README 明说它不施加队列上限也不翻译消费方的失败。",
+    "inside": "单文件 src/index.ts 共 96 行，一个类。`Deque<T>`（index.ts:13）内部三件套：`buffer`（环形数组，初始容量 MIN_CAPACITY=16）、`head`（队首游标）、`count`。`pushBack`（index.ts:27）写入 `head+count` 位置并对 buffer.length 取模实现 wrap-around；`pushFront`（index.ts:38）先把 head 逆时针退一格再写入。`popFront`（index.ts:51）取出后立刻把槽位置 undefined（index.ts:54）——这是「移除即释放」承诺的实现点——然后 head 顺时针进一格、count 减一、触发 compact。容量策略是两端几何：`ensureCapacity`（index.ts:69）满时倍增；`compact`（index.ts:74）在存活条目降到容量的四分之一以下时缩半（index.ts:79），防止 head 游标长期游走导致空闲存储无限膨胀（这也是包描述里 bounded vacant storage 的含义）。`resize`（index.ts:84）按逻辑顺序把存活条目拷进新数组并归零 head。`clear`（index.ts:63）直接换新 buffer 释放全部存储。",
+    "boundary": "归它管：环形存储、端部插入/移除的摊还常数复杂度、出队槽位即时清空、按存活比例缩容。不归它管：任何容量上限与过载策略（README Known Limitations 第一条：不 bound、不 coalesce、不拒绝条目，过载行为消费方自定义）；元素类型含 undefined 时区分「空队列」和「取出了 undefined」也推给消费方——用 size 判断。划线依据：一旦内置容量/过载语义，不同流（日志流要丢弃、任务流要阻塞）就得各要一个变体；把顺序与存储生命周期留下、把业务策略推出去，一个类就能服务所有队列场景。",
+    "tour": [
+      { "file": "packages/util/deque/src/index.ts", "line": 54, "sym": "Deque.popFront", "note": "出队时立刻把槽位置 undefined：移除即释放引用，防止长生命周期队列挂住已消费对象。" },
+      { "file": "packages/util/deque/src/index.ts", "line": 79, "sym": "Deque.compact", "note": "存活数低于容量 1/4 才缩半：既回收空闲存储，又避免频繁 resize 抖动。" },
+      { "file": "packages/util/deque/src/index.ts", "line": 30, "sym": "Deque.pushBack", "note": "`tail < len ? tail : tail - len` 的取模回绕：环形缓冲 O(1) 追加的核心一行。" }
+    ],
+    "gotchas": "元素类型可能为 undefined 时，popFront 返回 undefined 有歧义，必须先查 size。没有容量上限：无界生产、慢消费会让 buffer 无限增长，过载策略（丢弃/阻塞/合并）完全由消费方实现。只有端部操作——没有随机访问、没有迭代器，中段读取得自己 pop。仓库自带 benchmarks/drain.ts 可复现 backlog 排空耗时，评估是否够用可直接跑。极小场景（worklist 上限可数）README 建议继续用数组，别为几条目引入它。",
+    "analogy": "像一条环形传送带：货物从尾巴推上去、从头取下来，取走的位置立刻清干净不留残渣；传送带太挤就接长一倍，长期空了大半就截短——取放都只动头尾，不用搬动整条带上的货。至于货积压了该怎么办，传送带不管，得用工头（消费方）自己想办法。"
+  },
+  {
+    "group": "util",
+    "dir": "home-paths",
+    "short": "home-paths",
+    "oneLiner": "$DSH_HOME 路径布局的唯一定义点：home 解析、符号化显示、tilde 展开与 watch 路径规范化",
+    "why": "dsh 的所有用户数据——settings、credentials、cache、identity——都住在一个根目录下。如果没有唯一定义点，每个需要写文件的包都会自己猜一遍根目录在哪：有人读 $DSH_HOME 却不处理空字符串（把 home 解析成了当前工作目录），有人不 expand `~`，有人把绝对路径打在 UI 上泄漏机器信息，文件被散落到两处导致配置读不到、缓存双份。删掉这个包，launcher、shell-env、identity、config-editor 各自为政，`DSH_HOME` 这个环境变量名都要被重复硬编码。它还藏着两个易错机制：空白 `$DSH_HOME` 视为未设置（防止空覆盖把 home 变成 cwd）；canonicalizeWatchPath 解决「文件还没创建就没法 watch」的问题——这是文件监视场景独有、别的包不会替你想到的坑。",
+    "position": "util 家族的路径语义层，deps 为空（只用 node 内建）。上游按 README Further Exploration 点名三处：boot/app-boot——launcher 在任何插件挂载前解析 home；shell/shell-env——把 DSH_HOME 传进模型 shell 调用的环境；identity/anonymous-user-id——在解析出的 home 下存身份文件。数据流：launcher 一次调 resolveDshHome() 定根，之后所有子路径经 dshHomePath/dshCachePath 从根派生；UI 侧用 dshHomeDisplay 拿符号化标签而非绝对路径。方向是「读环境→算路径」，本包不创建任何目录（dshCachePath 明确返回绝对路径但不 mkdir）。",
+    "inside": "单文件 src/index.ts 共 124 行。解析链是核心：`resolveDshHome`（index.ts:87）按「显式 configured 参数 > $DSH_HOME > ~/.dsh」取值，且 `$DSH_HOME` 为空白（trim 后空）时视为未设置直接落到 defaultDshHome()（index.ts:89，即 `join(homedir(), '.dsh')`），最后 `resolve(expandHomePath(selected))` 归一为绝对路径。`expandHomePath`（index.ts:70）只展开 `~`、`~/`、`~\\` 三种裸前缀，`~alice` 这类具名形式原样放行。`dshHomePath`（index.ts:98）按平台规则拼接子段；`dshCachePath`（index.ts:108）是 cache 目录的快捷方式，支持 `{ dshHome }` 显式覆盖。`dshHomeDisplay`（index.ts:121）把解析结果与默认根比对：是默认就显示 `~/.dsh`，否则一律显示 `$DSH_HOME`——永远不吐绝对路径。最非常规的是 `canonicalizeWatchPath`（index.ts:33）：从目标逐级向上找第一个存在的祖先，用 realpath 解析它，再用 opendir 证明这个祖先是可枚举目录（index.ts:42——Windows 对「文件作父目录」的探测报 ENOENT，必须打开验证），最后把缺失的后缀拼回去，让尚未创建的文件/目录也能被原生 watcher 规范化监视，同时消掉 Windows 8.3 短名混用问题。",
+    "boundary": "归它管：home 的解析优先级、子路径派生、符号化显示、裸 tilde 展开、watch 目标的跨平台规范化。不归它管：目录创建与权限（README 明说调用方自理）；`.env` 文件的加载与内容解释（那是 launch-environment 和 launcher 的事，这里只认 $DSH_HOME 一个变量）；通用路径库的活（.`/..` 消解、glob 等 node:path 已覆盖的不重复）。划线依据：路径语义必须只有一个答案，否则「数据住哪」会分叉；但文件系统副作用（mkdir、写文件）一旦进来，这个纯函数包就有了状态和失败模式，会拖累所有只算路径的调用方。",
+    "tour": [
+      { "file": "packages/util/home-paths/src/index.ts", "line": 87, "sym": "resolveDshHome", "note": "三级优先级 + 空白 $DSH_HOME 视为未设置：防止空覆盖把 home 解析成 cwd 的关键守卫。" },
+      { "file": "packages/util/home-paths/src/index.ts", "line": 42, "sym": "canonicalizeWatchPath", "note": "opendir 验证已解析祖先是目录：Windows 把「文件作父目录」报成 ENOENT，跨平台必需的证明步骤。" },
+      { "file": "packages/util/home-paths/src/index.ts", "line": 121, "sym": "dshHomeDisplay", "note": "默认根显示 ~/.dsh、配置根一律显示 $DSH_HOME：符号化显示永不泄漏绝对机器路径。" }
+    ],
+    "gotchas": "tilde 展开刻意窄：只认裸 `~`/`~/`/`~\\`，`~alice/...`、`$VAR`、shell 表达式都原样返回——想在配置里用这些得自己先展开。$DSH_HOME 是纯空白字符串时被当作未设置，这是故意的。canonicalizeWatchPath 只读不改：realpath 探测、除「不存在」外的错误都向上抛，建目录和信任策略归调用方。dshCachePath 不创建目录，首次写 cache 前得自己 mkdir。显示函数的判断是「解析结果 === 默认根」的路径比对，传未经 resolve 的路径会判断失真。",
+    "analogy": "像小区物业定的唯一门牌规则：所有住户数据都放一栋楼（~/.dsh），住户可以用 $DSH_HOME 搬家但地址只认一次；门牌牌子上永远写「~/.dsh」或「$DSH_HOME」而不写真实街道地址（不泄漏隐私）；至于搬家时家具怎么搬、新家要不要装修（建目录），物业只指路不动手。"
+  },
+  {
+    "group": "util",
+    "dir": "http-proxy",
+    "short": "http-proxy",
+    "oneLiner": "进程级出站 HTTP 代理策略：从启动环境解析一次，装成 undici 全局 dispatcher，让所有 fetch 流量自动走代理",
+    "why": "Node 内建的 fetch 无视 HTTP_PROXY 等环境变量——用户导出了代理，dsh 的 LLM 请求、web search、HTTP MCP 流量却仍然直连，在有防火墙的企业环境里直接不可用。删掉这个包，每个出站调用点（llm 适配器、web-fetch、MCP transport、web-search）都要各自读环境变量、各自建 dispatcher，任何一处遗漏就是一次静默直连失败；而且各处解析规则不一致（大写小写、blank 值、fallback 链）会让「同一个用户环境」在不同包里走出不同路由。它把答案收敛为一：launcher 在第一个插件加载前调 installProxyFromEnvironment 一次，此后所有 plain fetch（包括任何触达 globalThis.fetch 的 SDK）无感知地被代理。还有防御性配套：verify-no-bare-dispatcher 静态检查拦截包外私建 dispatcher 绕过代理的代码。",
+    "position": "util 家族里唯一带真实依赖（undici ^8.10.0）的包，仍是库不是插件——「传输策略每进程只有一个答案，没有可挂载的第二实现」。上游是 dsh 启动器（launcher）：对每个 profile 在插件加载前调 installProxyFromEnvironment(env, report)，env 是 launch-environment 的快照（先导出变量后 $DSH_HOME/.env；项目自己的 .env 被禁止携带代理变量）。下游受益者是所有出站流量：LLM 适配器、web-search、HTTP MCP、以及任何用 globalThis.fetch 的 SDK。数据流双向：入向是环境快照→策略；出向是每个请求 URL→proxyForUrl 判路由；另有子进程方向——proxyEnvironmentForChild 为 spawn 的子进程发布环境变量，clearedProxyEnv 为回放隔离清空变量。dsh-web-fetch-http 是唯一特例消费方：它要 pin 已验证地址，用 proxy-exempt 注释合法豁免。",
+    "inside": "三个文件、明确的纯/传输分层。policy.ts（344 行，纯逻辑，不 import undici，浏览器 worker 也能加载）：`resolveProxyPolicy`（policy.ts:306）读 http_proxy/https_proxy/no_proxy/all_proxy（小写优先、大写兜底、空白视为未设置），HTTPS 的 fallback 链是 ALL_PROXY→HTTP 代理（policy.ts:315，对齐 undici，否则两个匹配器会对同一 URL 给不同答案）；每个候选 URL 经 `acceptProxyUrl` 校验，SOCKS/PAC/畸形值不抛异常而是产出 ProxyDiagnostic（命名变量但绝不带值，防泄凭据），且「rejected 槽位」与「absent 槽位」严格区分（policy.ts:193 resolveScheme）——被拒的 scheme 保持直连，绝不借另一 scheme 的代理。`proxyForUrl`（policy.ts:338）是唯一匹配器：先按 scheme 选代理，再过 `isLoopbackHost`（policy.ts:257——认 127.0.0.0/8 整段、IPv4-mapped 拼写、::1、0.0.0.0）和 `bypassesProxy`（policy.ts:279——条目含子域匹配、`*.` 前缀、:port、`*` 通配；不支持 CIDR）。install.ts（316 行）负责落盘：`createPolicyDispatcher`（install.ts:143）建一个 Agent，其 per-origin factory（install.ts:149）对每个 origin 调同一个 proxyForUrl——「一个解析、一个匹配器」，绝不引入第二套解析；刻意不用 undici 的 EnvHttpProxyAgent，因为它在无 HTTPS_PROXY 时会把 HTTP 代理复用给 https:，破坏「被拒 scheme 直连」的语义。`proxyRouteFor`（install.ts:62）返回的 proxied 分支携带正在路由的 dispatcher 本体——防「读取答案与构建传输之间策略被卸载」的竞态。`proxyEnvironmentForChild`（install.ts:262）为子进程发布策略：用户亲导出的值原样保留（SOCKS 给 curl 的不被替换），未命名的 scheme 补解析值（因 NODE_USE_ENV_PROXY 不读 ALL_PROXY），并检测到被拒值时扣下 NODE_USE_ENV_PROXY 旗标防止 Node 子进程启动即崩（install.ts:275）。`installGlobalProxy`（install.ts:174）处理嵌套安装与卸载恢复，直连策略覆盖已装策略时会真正换掉 dispatcher 而非只记状态（install.ts:176-207 注释里写明了这个坑）。",
+    "boundary": "归它管：进程级代理策略的解析、报告、安装、卸载、对子进程的发布与对回放的清空、loopback/NO_PROXY 匹配语义。不归它管：SOCKS/PAC/系统代理检测（明确不支持，报告后该 scheme 直连）；自定义 CA（TLS 拦截代理需用户自设 NODE_EXTRA_CA_CERTS）；telemetry 通道（OTLP 走 node:http，全局 dispatcher 够不着，刻意保持直连）；模型编写的程序（ptc-runtime/workflow worker 不继承代理——URL 可能带 user:password，见 install.ts:166-169 注释）；per-request 的传输状态（web-fetch-http 的地址 pinning）。划线依据：传输策略全进程只有一份答案，所以装全局；但「哪些调用点合法豁免」必须逐个用 egress.spec.ts 证明真实流量走向，静态 gate 只看得到源码看不到 SDK 内部。",
+    "tour": [
+      { "file": "packages/util/http-proxy/src/install.ts", "line": 149, "sym": "createPolicyDispatcher.factory", "note": "per-origin factory 调同一个 proxyForUrl：「一个解析、一个匹配器」设计的落点，fetch 与查询方永不打架。" },
+      { "file": "packages/util/http-proxy/src/policy.ts", "line": 193, "sym": "resolveScheme", "note": "rejected 槽位返回 undefined 保持直连：用户点名的 scheme 被拒后绝不借别的 scheme 的代理，诊断与路由一致。" },
+      { "file": "packages/util/http-proxy/src/install.ts", "line": 275, "sym": "proxyEnvironmentForChild", "note": "子进程收到被拒代理值时扣下 NODE_USE_ENV_PROXY：防 Node 启动即退出，同时让 curl 仍拿到为它保留的 SOCKS 值。" },
+      { "file": "packages/util/http-proxy/src/policy.ts", "line": 257, "sym": "isLoopbackHost", "note": "认整段 127.0.0.0/8 与 IPv4-mapped 拼写：bypass 列表只有四个字面量，环回范围本身只能代码表达。" },
+      { "file": "packages/util/http-proxy/src/index.ts", "line": 3, "sym": "模块文档", "note": "开篇点明 Node fetch 无视代理变量、launcher 装全局 dispatcher 覆盖一切 fetch 调用者的定位。" }
+    ],
+    "gotchas": "不读 macOS/Windows 系统代理设置——只在代理应用里开关不导出变量是不生效的。SOCKS/PAC 一律报告并直连，不借别的 scheme。包外 `new Agent(...)` 传 dispatcher 会静默绕过代理，被 verify-no-bare-dispatcher 拦截（唯一合法豁免是 web-fetch-http 的 proxy-exempt 注释）。子进程走 NODE_USE_ENV_PROXY 需要 Node 22.21+/24+，更老运行时的子进程直连；子进程的 NO_PROXY 匹配规则与本包有差异。undici 全局 dispatcher 槽位（Symbol.for('undici.globalDispatcher.1')）是隐式跨版本耦合（corepack#834），版本升级有断裂风险，tests/install.spec.ts 用真实环回代理请求兜底。每个出站调用点必须有 egress.spec.ts，这是硬性门槛。",
+    "analogy": "像小区统一装的分水器：物业（launcher）在你入住时读一次水表房规矩（环境变量），把全屋水管总闸接到分水器上——之后屋里每个水龙头（每个 fetch 调用点）都不用改，出来的水自动走分水器。自家后院的井（localhost/127.x）永远直连不走分水器，不然水在自己家打转。你给花园水管留的旧牌子（SOCKS 给 curl）不会被分水器撕掉，分水器还会告诉装修队（子进程）哪条规矩是它定的、哪条是你亲手写的。"
+  },
+  {
+    "group": "util",
+    "dir": "launch-environment",
+    "short": "launch-environment",
+    "oneLiner": "不可变的启动环境快照：记住每个变量来自哪一层（process/project .env/home .env），按固定信任序解析",
+    "why": "process.env 是被 .env 文件逐层拍平的大杂烩：一个凭据覆盖既可能来自用户的 shell，也可能来自某个克隆下来的项目目录里的 .env——后者不该被信任去覆盖凭据类配置。直接读 process.env 的代码分不清这两者，也无法回答「这个值是谁给的」。删掉这个包，每个要区分信任层的消费方（credentials-local、llm-deepseek）都得自己再读一遍三处 .env 再自行排序，层序规则一多必然漂移；更危险的是，没有 getFrom 的「漏掉即不可达」语义，敏感查询就无法从机制上拒绝某个层。launcher 在任何插件挂载前把快照放进 ctx.launchEnvironment，此后 chdir、切换 workspace、恢复 Session 都看到 boot 时同一份值。",
+    "position": "util 家族的信任语义层，deps 为空、仅 peer cordis（这是少数真正 import Context 类型的 util 包）。上游是 boot/app-boot：launcher 收集三层内容建快照并填入 `ctx.launchEnvironment` 槽（DSH_LAUNCH_ENVIRONMENT_KEY，index.ts:106）。消费方按 README 点名：credentials-local 把存储凭据与快照层对照解析；llm-deepseek 经快照读 provider 配置；Web 浏览器 handoff、自适应目录选择器、Open In 共用 launchedThroughSsh 谓词。数据流：launcher → ctx 槽 → 消费方 get/getFrom；SDK host 或裸 cordis.yml 场景下 launchEnvironmentOf（index.ts:114）回退为仅含 process 层的快照，规则不弱化。",
+    "inside": "单文件 src/index.ts 共 138 行。三个核心类型：`LaunchEnvironmentSource`（index.ts:16）三值 'process' | 'project-env' | 'user-env'，`SOURCE_ORDER`（index.ts:19）固定信任序 process > project-env > user-env；`LaunchEnvironmentEntry`（index.ts:22）携带 value + source + 可选 path（文件层才有的来源路径）。`createLaunchEnvironmentSnapshot`（index.ts:78）在构造时深拷贝每层 values 进 Map——之后源对象怎么变都改不动快照（冻结语义的实现点）；Windows 上经 lookupKey（index.ts:60）把名字折叠为大写存储，防大小写变体拆散优先级（POSIX 精确匹配）。getFrom（index.ts:88）是唯一的查找实现：按 SOURCE_ORDER 遍历、跳过未许可的层——注意过滤按「规范信任序」而非调用者传入顺序，漏掉的层就是不可达的拒绝。`launchEnvironmentOf`（index.ts:114）读 ctx 槽、无则用 process.env 自建单层快照。`launchedThroughSsh`（index.ts:125）只查 process 层的 SSH_CONNECTION/SSH_TTY 且非空才算——项目/用户 .env 永远无法伪造 SSH 会话。文件尾的 declare module（index.ts:132）给 cordis Context 挂上可选的 launchEnvironment 属性。",
+    "boundary": "归它管：三层的信任排序、不可变快照、按层过滤的查找、来源标注、SSH 检测。不归它管：.env 文件的发现与解析（launcher 负责哪些文件存在，快照只负责值怎么排）；process.env 的物化——README Known Limitations 明说每一层仍会被写进 process.env，所以它不是子进程隔离边界（子进程清洗归 dsh-subprocess 的 scrub）；per-workspace 层——项目层固定为启动目录，Web UI 后选的 workspace 刻意不贡献（否则模型自己的 workspace 能中途改 harness 环境）。划线依据：「哪些文件存在」与「值怎么排名」分离，让快照成为纯函数式的排序器，文件系统逻辑留在 launcher。",
+    "tour": [
+      { "file": "packages/util/launch-environment/src/index.ts", "line": 88, "sym": "getFrom", "note": "按规范信任序遍历而非调用者列表顺序：漏掉一层即不可达，这是敏感查询拒绝某层的机制。" },
+      { "file": "packages/util/launch-environment/src/index.ts", "line": 83, "sym": "createLaunchEnvironmentSnapshot", "note": "构造时把每层 values 拷进 Map：后续对源对象的任何修改都改不动快照。" },
+      { "file": "packages/util/launch-environment/src/index.ts", "line": 125, "sym": "launchedThroughSsh", "note": "只信 process 层的 SSH_CONNECTION/SSH_TTY：.env 文件里的值永远无法伪造 SSH 会话。" },
+      { "file": "packages/util/launch-environment/src/index.ts", "line": 62, "sym": "lookupKey", "note": "Windows 折叠大写、POSIX 精确匹配：与 OS 的环境变量匹配规则对齐，防大小写变体拆散层优先级。" }
+    ],
+    "gotchas": "快照不是安全边界：所有层仍会物化进 process.env，普通项目变量照样到达子进程（靠 subprocess 的 scrub 兜底）。项目层是启动目录的 .env，固定于启动时刻——会话中途切换 workspace 不会引入新层，这是刻意防「模型通过 workspace 改环境」。名字匹配在 Windows 上大小写不敏感、其余平台精确——跨平台工具要意识到同一个 key 在两处可能不同拼写。无 launcher 启动（SDK host）时快照只有 process 层，getFrom 排除 process 层就等于什么都查不到。value 可能为空字符串，空值的语义归各拥有者判断。",
+    "analogy": "像公司的文件密级制度：每份文件（环境变量）进门时都盖上出处章——总部直发（process）、部门自拟（项目 .env）、员工个人笔记（用户 .env）。查资料时按密级从高到低翻，但你可以说「这份文件只准看总部的」——没盖章允许的层级连翻都不翻。章一旦盖好就改不了，事后有人改了原始文件也影响不了你手里这份。"
+  },
+  {
+    "group": "util",
+    "dir": "native-command",
+    "short": "native-command",
+    "oneLiner": "Host 原生命令执行与桌面路径打开：shell-free execFile、取消传播、桌面检测与 WSL 交接",
+    "why": "dsh 的大量 Host 集成需要碰操作系统：目录选择器要跑 osascript/zenity，Web UI 的「打开文件」要让桌面应用接管路径，reveal 要在 Finder/Explorer 里选中文件。这些操作若用 shell 字符串拼接执行，路径里的空格/引号就是注入面；若各包自己 spawn，取消传播、Windows 闪黑的控制台窗口、WSL 路径翻译、Explorer 诡异退出码这些坑会被重复踩 N 次。删掉它，每个 Host 集成点都要重写一遍 execFile 包装与三平台 × 三意图的打开分发；「当前主机到底有没有桌面」这个判断（canOpenNativePath）散落各处后，headless Linux 上会出现按钮点了却往虚空里 spawn xdg-open 的体验。NativeCommandRunner 类型作为可注入命令边界，让所有平台适配测试可以换假 runner 跑。",
+    "position": "util 家族的 OS 交互层，deps 为空，库而非插件。上游按 README 点名：host/directory-picker-native（用 runner 执行 OS 选择器命令）、api/session-controller（先解析 Session 相对 workspace 路径再打开）、api/settings-controller（打开 settings 文档）。README 还刻意声明它不是 subprocess 能力的一部分——subprocess 是模型可用的通用子进程 seam，这里是 Host 侧专用工具。数据流：调用方给（command, argv, signal）→ runner 返回 stdout/stderr 或带 code 的失败；路径打开方向是「Host 路径 → 平台命令（open/explorer.exe/xdg-open/wslpath）→ 桌面」。路径授权（哪个路径可以打开）永远归调用方。",
+    "inside": "八个文件。runner.ts（42 行）是地基：`NativeCommandRunner` 类型（runner.ts:9）签名固定为 (command, args, signal) => Promise<{stdout,stderr}>，`runNativeCommand`（runner.ts:22）是 Node execFile 的薄包装——argv 数组直接 spawn 可执行文件，绝无 shell 字符串；encoding utf8、signal 传入（abort 终止子进程）、windowsHide: true 压掉 Windows 瞬态控制台；失败时把 code/stdout/stderr 挂到错误对象上（runner.ts:30），调用方能区分 ENOENT（缺工具）、ABORT_ERR（取消）、真实命令失败而无需重跑。path-opener.ts（315 行）是分发中枢：`PathOpenIntent` 三意图 'default'|'association'|'text-editor'，`openNativePathWithIntent`（path-opener.ts:167）按平台分派——macOS 用 open（text-editor 加 -t），Windows 统一交 explorer.exe，Linux 判 WSL：是则先 `wslpath -w` 翻译（path-opener.ts:159）再走 Windows 桌面，否则 xdg-open。'default' 意图对 HTML/SVG 先试默认浏览器：macOS 读 LaunchServices plist（macBundleForHttps，path-opener.ts:41）、Linux 看 $BROWSER、Windows 不猜直接落回 Explorer。Windows 特有的坑被两处专门处理：`explorerTarget`（path-opener.ts:116）把路径编码成 Explorer 能完整接收的 file URI（只转义逗号/等号、解码非 ASCII——Explorer 对 percent 编码的中文会打开用户的 Documents 文件夹）；`runExplorer`（path-opener.ts:136）接受 exit 1 作为「已委托给常驻桌面进程」的交接信号但取消优先。`canOpenNativePath`（path-opener.ts:214）报告桌面可达性：Linux 需 WSL、DISPLAY 或 WAYLAND_DISPLAY 之一。另有 file-applications*.ts 三平台实现「列出注册应用+图标+默认项」（macOS LaunchServices、Windows Shell 关联、Linux GIO/XDG），desktop-entry.ts 解析 XDG desktop-entry 字段与图标。",
+    "boundary": "归它管：shell-free 执行单个原生命令并捕获输出、三平台三意图的路径打开分发、WSL 翻译、桌面可达性检测、注册应用枚举。不归它管：通用子进程能力（streaming 输出、长生命周期进程归 dsh-subprocess——这里用 execFile 缓冲，超限直接拒绝）；打开哪个路径的授权决策（调用方必须先验证绝对路径）；模型可见的工具语义（它不注册任何 tool）；native 桌面验证（仓库用注入 runner 的平台适配测试，真机验证归各平台）。划线依据：一次性的「跑一个 OS 命令拿输出」与「托管一个长命子进程」是两种资源模型；后者属于模型可触及的 subprocess seam，前者是 Host UI 专属的胶水，混在一起会让安全审查范围失控。",
+    "tour": [
+      { "file": "packages/util/native-command/src/runner.ts", "line": 24, "sym": "runNativeCommand", "note": "execFile + argv 数组 + windowsHide：shell-free 是注入面的根本防线，三个选项各堵一个平台坑。" },
+      { "file": "packages/util/native-command/src/path-opener.ts", "line": 116, "sym": "explorerTarget", "note": "只转义逗号/等号、回解非 ASCII：Explorer 自有一套 URI 解析，标准 percent 编码反而会打开错目标。" },
+      { "file": "packages/util/native-command/src/path-opener.ts", "line": 142, "sym": "runExplorer", "note": "Explorer 委托后 exit 1 算成功交接，但 signal.throwIfAborted 优先：取消永远压过委托退出码。" },
+      { "file": "packages/util/native-command/src/path-opener.ts", "line": 214, "sym": "canOpenNativePath", "note": "Linux 判 WSL/DISPLAY/WAYLAND_DISPLAY：headless 主机上让 UI 显示路径文本而非点了落空的按钮。" }
+    ],
+    "gotchas": "execFile 有缓冲上限，超大输出直接 reject——要 streaming 就用 subprocess 能力。Windows 非交互会话（服务、SSH session 0）里 explorer.exe 不触发关联、约一秒后照样 exit 1，open 会「报告成功但什么都没开」，无回退实现（README 写明）。Explorer exit 1 只是交接确认，不证明真的有应用打开了文件或窗口选中了它。Linux 的关联发现/显式启动依赖 GIO，缺失时 reject。Windows 处理器图标取决于 Shell 能否解析间接引用，解析不出就没有图标。macOS 上同 bundle id 同显示名的副本会折叠成一条。",
+    "analogy": "像一个万能遥控器 + 送达服务：你给它一行命令（遥控器按钮），它不经过任何中间人（shell）直接按下去，把屏幕输出和错误都带回来；给它一个文件路径，它认得你在家里的哪个系统（macOS/Windows/WSL/桌面 Linux），转成对的方式递给对应的应用，还会先告诉你这户人家到底有没有客厅（桌面检测）——免得你在毛坯房里对着空气按开门铃。"
+  },
+  {
+    "group": "util",
+    "dir": "output-retention",
+    "short": "output-retention",
+    "oneLiner": "有界模型输出原语：ItemRetainer/TextRetainer 截断并精确报告省略，UTF-8 边界永不被切开",
+    "why": "工具（glob、grep、bash、web_fetch、web_search）的输出直接进模型上下文，无界输出会撑爆窗口也浪费钱；但截断必须「诚实」——模型需要知道被省略了多少、还剩什么，否则它会基于残缺结果自信作答。没有这个包，每个工具自己写截断：有的数错单位（字节当字符），有的在 UTF-8 中间一刀切出 U+FFFD 替换符（严格 JSON 解析器会拒绝含孤立代理对/断码点的 Session log），有的把「上游本来就不完整」（权限失败、二进制跳过）和「预算截断」混为一谈。这个包把机械问题「留了什么、省了什么」收敛成一套代数：truncated 只表示预算事实，`Omitted` 的 exact/unknown/none 三态杜绝假精确（unknown 时打印不出数量就不打印），省略计数按「实际返回的字节」而非预算算——因为边界裁剪也会丢字节，按预算报数就是在撒谎（index.ts:372-376 注释原话）。",
+    "position": "util 家族中最大的纯库件（444 行），deps 为空。上游按 README 的消费表点名五个工具：glob 与 grep 用 ItemRetainer head（同时把全量结果收进 spill 文件）、bash 用 TextRetainer tail 或 headTail（子进程 stdout/stderr）、web_fetch 用 TextRetainer head/headTail（HTTP body）、web_search 用 ItemRetainer head。下游组合：spill/spill-policy 用 TextRetainer 围绕 spill-file 通知构造有界预览。刻意留在外面的是 read 工具——它的 offset/limit 行窗口分页是文件专属渲染器，一个 Omitted 值表达不了窗口两侧。数据流：工具把观察到的每个条目/chunk push 进 retainer（push 超预算也继续喂，才能数出精确省略数），finish() 时拿回保留内容+省略元数据，再经 formatRetentionNotice 拼上工具自己的恢复建议。",
+    "inside": "单文件 src/index.ts 共 461 行，两条主线。其一 `ItemRetainer<T>`（index.ts:146）：只有 head 策略，构造时 assertBudget 校验非负整数；`push`（index.ts:166）逐条计数——低于 maxItems 收下并报 {kept:true, truncated:false}，超了丢弃计数 omittedCount++；`finish`（index.ts:186）产出 RetainedItems：items、truncated、seen/kept、以及 exact 的 Omitted。调用方持续 push 全部观察条目是「省略数精确」的契约前提。其二 `TextRetainer`（index.ts:247）：head/tail/headTail 三策略共享一个前缀/后缀累积器，字节计数；`push`（index.ts:287）前缀填到 cap 即停，后缀滑动窗口——整 chunk 追加后把完全滑出 suffixCap 的头部 chunk shift 掉（index.ts:306），单 chunk 大于窗口时裁掉头部多余字节（index.ts:319），内存始终有界于 prefixCap+tailBytes+一个 chunk；`omittedAt`（index.ts:338）定义任意时刻的省略字节数，push 与 finish 用同一函数保证永不打架。`finish`（index.ts:350）的 UTF-8 处理最见功力：有省略时前缀经 trimTrailingPartialUtf8（index.ts:211，回扫 continuation byte 找 lead byte，序列不完整则裁掉）、后缀经 trimLeadingContinuationUtf8（index.ts:228）各自对齐边界再分别解码——码点绝不跨被省略的中段重组；但**无省略**时前缀后缀是同一流的两段相邻切片，头尾切分是人为的，码点可能横跨切点，所以整体拼一块一次解码（index.ts:357-370 注释详细论证了这个反直觉点）。省略数按裁剪后的实际字节重算（index.ts:376）。外围三件：`describeOmitted`（index.ts:412）把 Omitted 渲染成中性从句（exact 打数量、unknown 不打、none 空串）；`formatRetentionNotice`（index.ts:436）把它与工具提供的 recovery 句子用空格拼接——恢复措辞归工具，因为只有工具知道下一步动作；`truncateWithoutSplittingSurrogatePair`（index.ts:456）按 UTF-16 code units 裁字符预算预览，落在代理对内则弃掉未配对半边，供 bash/pwsh 常驻 shell 与 str_replace_editor 用。",
+    "boundary": "归它管：条目/文本的预算截断、省略计数的三态表示、UTF-8/代理对边界安全、中性省略措辞。不归它管：一切业务语义——分组、行号、排序、路径映射、spill 文件、退出码、provider 错误状态、以及模型可读的恢复建议（README 消费表右列全是工具自留的）；Item 侧只有 head（tail/分页/分组留给第二消费者出现时再做）；read 的行窗口分页整体在外。划线依据：库只拥有「kept vs omitted」这个所有工具共通的机械问题；把任何业务词（「结果被截断，请缩小 pattern」）收进来，就会让五个工具的措辞被一个库绑架。truncated 的语义红线也在此：它永不表示上游不完整。",
+    "tour": [
+      { "file": "packages/util/output-retention/src/index.ts", "line": 211, "sym": "trimTrailingPartialUtf8", "note": "回扫 continuation byte 找 lead byte 判断序列完整性：截断永不产出 U+FFFD 的机制核心。" },
+      { "file": "packages/util/output-retention/src/index.ts", "line": 357, "sym": "TextRetainer.finish", "note": "无省略时整体解码、有省略时两侧分别对齐边界：一个码点绝不跨被省略的中段重组。" },
+      { "file": "packages/util/output-retention/src/index.ts", "line": 376, "sym": "TextRetainer.finish omitted", "note": "省略数按裁剪后实际字节重算：按预算报数会夸大保留文本，注释直言这是 lie。" },
+      { "file": "packages/util/output-retention/src/index.ts", "line": 306, "sym": "TextRetainer.push", "note": "后缀窗口整 chunk 滑出即丢弃：内存有界于两 cap + 一个 chunk，大流不无界累积。" },
+      { "file": "packages/util/output-retention/src/index.ts", "line": 436, "sym": "formatRetentionNotice", "note": "库出中性从句、工具出恢复建议：措辞主权的边界在函数签名上可见。" }
+    ],
+    "gotchas": "ItemRetainer 只有 head：要 tail/分页/分组得自己写。TextRetainer 全按字节算——「省略 N bytes」不等于 N 个字符；字符预算的截断要走 truncateWithoutSplittingSurrogatePair。TextRetainer 的 tail/headTail 必须读到流结束才能产出，head 随时可用。push 的 kept=false 只是「这条被丢了」，truncated 是累计值。省略计数精确的前提是调用方把每个观察到的条目都 push 进来——只 push 前几个就停，拿到的是 unknown 语义都算不上（retainer 自身只产 exact/none）。文本已含孤立代理对时库不修复，只保证自己的切不引入。",
+    "analogy": "像机场行李超限处理台：你在值机口把行李一件件递过去，超件的被准确计数（「还有 3 件没上来」），留下的都是完整的——绝不把一个箱子拦腰锯开（UTF-8 边界）；柜台只负责点数和贴「已省略」标签，至于「建议您托运到下一班」（恢复建议）得由航空公司（工具）自己写，因为只有它知道下一班是几点。"
+  },
+  {
+    "group": "util",
+    "dir": "package-manifest",
+    "short": "package-manifest",
+    "oneLiner": "package.json 的 dsh 字段与插件元数据的共享类型声明：纯类型、零运行时",
+    "why": "dsh 生态里每个包的 package.json 都可能携带 dsh 字段（manifestVersion、bundle.patch、profile、client 配置）与插件显示元数据（title/description/icon）。launcher（boot/app-boot）、client-modules、插件市场、打包器都要读这些字段——如果没有共享声明，每个读取方各自手写一遍字段形状，字段一改名（或新增一个可选字段）就会在 N 处漂移出「这边认得那边不认得」的裂痕。删掉它，DshBundleManifest.patch 是 string 还是 string[] 这种关键契约（决定 launcher 是否按序应用多个补丁层）就只能在 launcher 源码里考古，插件作者写 package.json 时没有类型参照。它刻意只做类型：解析、校验、默认值归各读取方（README 反复强调 Each reader owns JSON parsing, validation, and default resolution），这样类型契约单一、语义各归其主。",
+    "position": "util 家族最纯的类型件：src/index.ts 只有 16 行 re-export，运行时产物为空。上游（按 README Further Exploration）：boot/app-boot 的 profile launcher 是主要读者——加载 manifest 并处理 composition（bundles 列表、patch 层）；PluginLocalizedMeta 的 title/description/icon 由 app-boot 读取用于插件展示；DshClientManifest 的 platform/inject/immediately/external 由 client-modules 与 client 构建读取。数据流是「编译期单向」：插件作者按类型写 package.json → 各读取方解析实际 JSON → 类型只在两端的 TS 工程里约束形状，运行期零存在感。engines.dsh 声明兼容宿主版本范围，但当前 installer/loader 并不强制执行——纯声明性。",
+    "inside": "两个文件。src/index.ts（16 行）只做 `export type { ... } from './types.ts'` 的门面 re-export，没有运行时导出。src/types.ts（95 行）是全部内容，八个类型：`DshPackageManifest`（types.ts:8）覆盖 package.json 中 DSH 用到的字段——必填 name/version，可选 icon（SVG/PNG/JPEG/WebP、≤256KiB、realpath 后必须留在包目录内）、private、dependencies/peerDependencies、engines、dsh；本地 profile 读者可用 Partial<>。`DshManifest`（types.ts:30）是 dsh 字段下的公共作者声明：manifestVersion（固定字面量 1，独立于 npm 版本与 Session format 版本）、bundle、profile、client。`DshBundleManifest`（types.ts:69）的 patch 字段是 `string | string[]`——单路径或有序列表，列表按序作为 bundle 层应用，这是 launcher 的组合契约。`DshProfileManifest`（types.ts:75）的 bundles 是有序安装包名列表。`DshClientManifest`（types.ts:81）声明 client 平台：platform 必填，inject 是信息性包名依赖（非 Cordis service 注入）、immediately 是 boot 第一阶段注册屏障、external 是超出基线的精确模块表请求。`LocalizedText`（types.ts:42）是 string 或以 en 为必填回退的语言映射；`PluginLocalizedMeta`（types.ts:45）组装 title/description/icon（从 package.json.icon 读出的 base64 data URL）/error 诊断。`DshEnginesManifest`（types.ts:57）含 dsh/node/npm 与开放索引签名。README 明确：内部 configTrees、sessionFormatMigration、生成的 moduleFallback 元数据不进公共类型，由各自的 image-packer/catalog/launcher 读者独占。",
+    "boundary": "归它管：package.json 中 DSH 相关字段与插件显示元数据的类型形状，以及「哪些字段公共、哪些字段内部」的划界（configTrees 等内部字段刻意不暴露）。不归它管：JSON 解析、字段校验、默认值推断、文件存在性检查（engines.dsh/manifestVersion 当前无人强制——README Known Limitations 明说声明一个范围不会拒绝不兼容宿主，也不校验 SemVer 语法）；icon 的读取与尺寸/路径校验归 app-boot。划线依据：类型是所有读者共享的最小公约数，语义（默认值、版本强制）因读者而异——profile 读者要 Partial、launcher 要强制 manifestVersion，塞进一个包只会让最强的读者绑架最弱的。",
+    "tour": [
+      { "file": "packages/util/package-manifest/src/types.ts", "line": 69, "sym": "DshBundleManifest", "note": "patch 是 string | string[]：单补丁或多补丁按序成层，是 launcher 组合语义的类型化契约。" },
+      { "file": "packages/util/package-manifest/src/types.ts", "line": 81, "sym": "DshClientManifest", "note": "platform 必填 + inject/immediately/external 三个可选：client 构建与模块加载的完整声明面。" },
+      { "file": "packages/util/package-manifest/src/types.ts", "line": 42, "sym": "LocalizedText", "note": "string 或带必填 en 回退的语言映射：插件显示文案的国际化最小约定。" },
+      { "file": "packages/util/package-manifest/src/index.ts", "line": 6, "sym": "re-export 门面", "note": "整个包只是 types.ts 的 type-only re-export：零运行时，npm main 的 lib/index.js 是空壳。" }
+    ],
+    "gotchas": "纯类型包：import type 在编译后被擦除，运行期查无此包；别期待任何校验器。engines.dsh 与 dsh.manifestVersion 目前是纯声明——省略即不声明，读取方不会推断默认值，也没有安装器拒绝不兼容宿主。icon 的 256KiB 上限与 realpath 包含性检查归读取方，类型管不住。DshClientManifest.inject 是信息性的包名列表，不是 Cordis inject——名字撞了但语义完全不同。公共类型不含 configTrees/sessionFormatMigration/moduleFallback 这些内部元数据，别在公共面上找。",
+    "analogy": "像一份公共表格模板：物业（launcher）、前台（client-modules）、装修队（插件市场）都要从住户的申请书（package.json）里读信息，这份模板规定每栏叫什么、哪些必填哪些选填。模板只管格子长什么样——字写得好不好、填没填、填错了算谁的，全由各个读表人自己把关；有些内部格子（configTrees）干脆不印在公共模板上。"
+  },
+  {
+    "group": "util",
+    "dir": "timeout",
+    "short": "timeout",
+    "oneLiner": "超时算术与截止期原语：clampTimeout/deadline/idleWatchdog/timeoutOf——只计时与分类，绝不亲手终止",
+    "why": "dsh 里每个能力（bash 工具、LLM 流式调用、tool 调用策略）都要面对同一组问题：调用方的 timeoutMs 提示怎么校验钳制（缺失填默认、超上限封顶、非法拒绝）？超时信号和上游取消怎么融合成一个 signal 且事后能分清谁先到？流式响应的「空闲」和「消费方思考慢」怎么区分？这些逻辑若各包手写，会出现三种经典 bug：用 Promise.race 对拍计时器——工具调用「完成」了但子进程/套接字还在泄漏；timeout 和 cancel 混为一谈——用户按 ESC 取消被报成命令超时；流式读的总时限误伤慢消费者。删掉它，guard/timeout-policy、shell/bash-local（要杀进程组）、llm 适配器（要关响应体）各自重写一遍信号融合与分类，第一原因归属（先 abort 的赢）会因实现细节不同而漂移。",
+    "position": "util 家族的时间语义层，deps 为空。上游按 README 点名：guard/timeout-policy 强制执行工具声明的超时；shell/bash-local 是前台 deadline 消费者（超时杀进程组）；LLM 适配器（DeepSeek/pi-ai）用 idleWatchdog 监视流式读；文件 IO（read/write/edit）刻意不设超时。数据流：能力包先 clampTimeout 校验调用方提示 → deadline/upstream signal + timeoutMs + code 建 Deadline → 把 d.signal 交给真正干活的东西（fetch、child process）→ 事后用 timeoutOf(signal, code) 分类。关键契约：库只通过 abort signal **通知**，终止机制（杀进程、断 socket、停任务）完全归调用方——信号不被监听就什么都停不下来。",
+    "inside": "单文件 src/index.ts 共 191 行，四个导出函数加两个类型。`TimeoutReason`（index.ts:12）是继承 Error 的原因载体：capability 专属 code（如 'BASH_TIMEOUT'）+ 实际 elapsed 的 timeoutMs。`clampTimeout`（index.ts:45）是入口闸门：requested 缺省用 def、结果 cap 到 max、非正或非有限直接抛（带调用方给的字段名）；零永远不被接受——它不是公开的禁用超时哨兵。`deadline`（index.ts:91）是核心：timeoutMs<=0 是内部「不装计时器」哨兵（仅转发 upstream 或永不 abort 的信号，index.ts:96-100，供后端拥有的后台工作保持统一调用形状）；正常路径 setTimeout 到点 `timer.abort(new TimeoutReason(code, timeoutMs))`（index.ts:105），然后用 `AbortSignal.any([upstream, timer.signal])` 融合——any 会采纳**先 abort 那一方**的 reason（index.ts:107-109 注释点明），所以竞态收敛为单一原因：timeoutOf 只在超时方先到时才读到 TimeoutReason，upstream 先到留下的是普通 abort reason。`[Symbol.dispose]` 清计时器，配合 `using d = deadline(...)` 作用域语法。`timeoutOf`（index.ts:184）做事后分类：reason instanceof TimeoutReason 才可能命中；传入自己的 code 时只有 code 精确匹配才算本地超时——嵌套 deadline（upstream 本身是个 deadline）下，外层计时器到点不会伪装成本层超时（index.ts:177-179 的文档写明这是组合语义的关键）。`idleWatchdog`（index.ts:126）服务流式读：信号稳定不变，计时器只在 `next()` outstanding 期间 armed（index.ts:153-159，finally 里必清），`pulse()`（index.ts:162）为「有传输活动但没产出值」重新武装——消费方两次读之间的思考时间永不算 idle；并发 demand 直接抛错。`MAX_TIMER_DELAY_MS`（index.ts:25）= 2147483647，是 Node 不把 setTimeout 钳到 1ms 的上限，assertTimerDelay 用来在装计时器前拒绝超界值。",
+    "boundary": "归它管：提示校验与钳制、截止期信号融合、超时与取消的事后分类、流式空闲看门狗的武装节奏。不归它管：任何终止动作——deadline 不能停掉无视 signal 的工作，杀进程组归 bash-local、关响应体归 LLM 适配器、强制策略归 guard/timeout-policy；timeoutMs<=0 是内部词汇，绝不能当公开的 model/plugin 可见旋钮暴露；本地文件 IO 的「要不要超时」决策也不在这里（README 明说 file IO 无时限，因为 deadline 会杀死 OS 本会完成的工作）。划线依据：「共享计时与分类、硬终止留在本地」——计时算术和第一原因归属是共通的纯逻辑，值得一个实现；而终止机制与资源形态（进程/socket/task）强耦合，必须各归其主。",
+    "tour": [
+      { "file": "packages/util/timeout/src/index.ts", "line": 110, "sym": "deadline", "note": "AbortSignal.any 采纳先 abort 方的 reason：超时与上游取消竞态收敛为单一原因，是分类可靠性的根基。" },
+      { "file": "packages/util/timeout/src/index.ts", "line": 184, "sym": "timeoutOf", "note": "code 精确匹配才算本层超时：嵌套 deadline 下外层计时器到点不会伪装成本地超时。" },
+      { "file": "packages/util/timeout/src/index.ts", "line": 153, "sym": "idleWatchdog.next", "note": "计时器只在 next() outstanding 时武装、finally 必清：消费方思考时间永不计入 idle。" },
+      { "file": "packages/util/timeout/src/index.ts", "line": 96, "sym": "deadline 哨兵分支", "note": "timeoutMs<=0 不装计时器、只转发上游信号：后台工作保持与前台相同的调用形状。" }
+    ],
+    "gotchas": "信号只是通知：不监听 d.signal 的工作超时后照跑不误，每个能力必须自带终止路径（交给 fetch、监听 abort 杀子进程）。用 Promise.race 对拍计时器是明确的反模式——工具调用返回了但子进程还在泄漏。timeoutMs<=0 不是公开旋钮，是后端解析完策略后的内部哨兵。先到的原因赢分类：上游取消抢先时，本层无法事后声称「我的超时其实也快到了」。idleWatchdog 不是总 deadline——它按每次 demand 重新武装，刻意排除思考时间；并发调用 next 会抛错。MAX_TIMER_DELAY_MS 之上 Node 会把延迟钳到 1ms（立即触发），所以入口就拒绝。",
+    "analogy": "像秒表+裁判，但不是保安：比赛（工作）开始前，裁判先检查你申报的时长合不合法（clampTimeout），把你的秒表和观众席的叫停铃（上游取消）接成一条线路——谁先响听谁的，且铃上刻着名字（code）能查出是谁按的。但裁判只摇铃不拉人下台——选手（进程/socket）听不听铃、下场动作怎么做，是教练（能力包）的事。看门狗模式则是只盯「选手发呆」的秒表：观众聊天（消费方思考）不计入，选手一有动作就重新按表。"
+  },
+  {
+    "group": "util",
+    "dir": "time",
+    "short": "time",
+    "oneLiner": "线边界上的时区词表：canonicalClientTimeZone 只做 IANA 时区校验与规范化，不做任何格式化",
+    "why": "Session 提示和 subagent 续传需要把调用方报告的时区写进**持久记录**：时区身份存在消息上，之后由另一个进程重新解析使用。如果存的是别名（如 Asia/Phnom_Penh 的某个别名拼写或带偏移的写法），两个不同 Node 构建解析出的规范名可能不一致，别名就与读者派生出的时区比对不相等——持久数据里埋下身份分裂。删掉这个包，session 与 subagent 各自写一遍「什么算合法时区」的正则 + Intl 规范化调用，两处校验宽严不一就会出现「提示端接受的值存储端拒绝」的裂痕。34 行包住这个共识，让两个 wire 边界共享同一套词表。它刻意不拥有失败词表：session 抛 session/invalid-time-zone，subagent 抛 subagent/invalid-time-zone，各自的领域错误码留在各自边界。",
+    "position": "util 家族最小的包之一（34 行），deps 为空、无 ctx、无状态。上游是接受调用方时区的 wire 边界：Session（把规范时区写进 durable message，拒绝时抛 session/invalid-time-zone）与 subagent 续传（抛 subagent/invalid-time-zone）。下游衔接 context/time-context：它从持久消息上记录的规范时区渲染回合的模型可见时区指令与时间戳——即本包在入口把值规范化，time-context 在出口消费。数据流单向：调用方报告的 zone 字符串 → canonicalClientTimeZone → 规范名（或 undefined，由调用方映射成自己的领域拒绝）→ 存储与后续渲染。",
+    "inside": "单文件 src/index.ts 共 34 行，一个导出。模块常量 `IANA_TIME_ZONE`（index.ts:9）是严格浏览器侧 profile 的正则：要求首字符为字母、多段用 / 分隔的 `Area/Location` 形状——单段名、缩写（如 CST）、前后空白都进不了。`canonicalClientTimeZone(value)`（index.ts:20）三步走：先拒掉空串、带空白、非 UTC 且不匹配正则的输入（index.ts:21-22）；再用 `new Intl.DateTimeFormat('en-US', { timeZone: value }).resolvedOptions().timeZone` 让运行时 ICU 解析并给出**平台规范拼写**（index.ts:24-25）——别名在这里被折算成规范名；最后对结果再过一遍同样的正则防御（index.ts:27），Intl 内部抛错（不支持的时区名）一律折回 undefined（index.ts:29-31）。UTC 是特例：单字面量 'UTC' 直接放行，不要求 IANA 形状。返回 undefined 时调用方抛自己的领域拒绝——库不拥有任何错误码。",
+    "boundary": "归它管：UTC/IANA 形状校验、经 ICU 的别名规范化、统一「什么算可用时区」的边界词表。不归它管：时间格式化、偏移运算、夏令时推理、instant 换算（README 明说需要这些直接用 Intl）；拒绝的错误码与用户提示（session/subagent 各有各的）；时区对模型提示的渲染（归 context/time-context）。划线依据：持久记录上「时区身份是什么」是一个共识问题，值得唯一答案；而「怎么用这个时区」因消费方而异，塞进来会让 34 行的词表膨胀成时间库。",
+    "tour": [
+      { "file": "packages/util/time/src/index.ts", "line": 24, "sym": "canonicalClientTimeZone", "note": "经 Intl.resolvedOptions 求平台规范拼写：别名在此折算成规范名，持久记录才可跨进程比对。" },
+      { "file": "packages/util/time/src/index.ts", "line": 9, "sym": "IANA_TIME_ZONE", "note": "严格 Area/Location 正则：单段名、缩写、空白输入在进 Intl 前就被拒。" },
+      { "file": "packages/util/time/src/index.ts", "line": 29, "sym": "catch 分支", "note": "Intl 拒绝不支持的时区名时折回 undefined：库不抛错，领域拒绝码归调用边界。" }
+    ],
+    "gotchas": "别名规范化跟随运行时 ICU 数据——两个不同 Node 构建可能把同一别名组规范化为不同名字，跨机器的持久记录因此有分歧可能（README Known Limitations 明说）。只做校验与规范化：不做格式化、偏移、DST、instant 转换。返回 undefined 不带原因，调用方无从区分「格式不对」和「平台不支持」。'UTC' 是唯一的单段特例。库不抛错也不定义错误码——忘了在调用方处理 undefined 会把 undefined 时区写进记录。",
+    "analogy": "像护照姓名标准化窗口：旅客报名字时什么写法都有（别名、缩写、随手拼），窗口只负责查证后把护照上的规范拼写盖章给你——盖不了章就摆手让你去找签证官（调用方的领域错误码）。窗口不帮你订机票（格式化/换算），它只保证：进入系统的名字都是官方唯一拼写。"
+  },
+  {
+    "group": "util",
+    "dir": "values",
+    "short": "values",
+    "oneLiner": "重复安装安全的值原语：无损 JSON 校验/快照、深冻结、结构相等、弱键强值映射与穷尽联合断言",
+    "why": "dsh 的持久层（Session 事件、工具结果、设置）要求进出的一切都是无损 JSON：循环、稀疏数组、symbol 属性、类实例、-0、非有限数都会在序列化或跨进程时变形，混进持久流就是数据损坏。但 JS 的相等与不可变性原语全是身份型：双份安装（npm 重复解析）下两个 realm 的 Array.prototype 不互认，instanceof 检查全灭；deepEqual 各包手写则循环/键序处理不一致；deepFreeze 谁都写过一遍，但没人记得排除活的 AbortSignal（冻结它会让 abort 机制静默失效）。删掉这个包，session 的 durable events 失去「入库前无损性」的统一闸门，tools 的 schema 校验失去共享的 JsonValue 定义，每个包自己长出一套有细微差别的值代数。",
+    "position": "util 家族的值代数层，deps 为空、无共享 registry 或构造器身份（duplicate-install-safe 与 brand 同理：所有操作只从参数推导结果）。上游按 README Further Exploration：Session 子系统——durable events 要求无损 JSON；Tools 子系统——schema 校验与规范化工具结果建立在 JsonValue 之上。数据流是纯函数式的：调用方给 unknown，isJsonValue/snapshotJsonValue 回答「能不能无损 JSON 往返」并可选产出脱离副本；deepFreeze 原地冻结已发布值；deepEqualJson 比较结构；WeakMapWithValues 服务需要「对象键→强持有值集」的生命周期映射（键弱、值强）。assertNever 是 TS 穷尽 switch 的标准兜底。",
+    "inside": "单文件 src/index.ts 共 307 行。核心是 `walkJsonValue(value, detach)`（index.ts:72）：显式任务栈（JsonWalkTask 数组）替代递归——深层嵌套不耗 JS 调用栈，重复的非循环引用合法、循环经 ancestors Set 拒绝（index.ts:134）。校验规则严格：null/布尔/有限非 -0 数/字符串/稠密数组/plain 或 null-prototype 记录，且 Reflect.ownKeys 必须全为可枚举 string 键（index.ts:54-58，symbol 或不可枚举自有属性即拒绝）；跨 realm 安全靠 hasIntrinsicConstructor（index.ts:18）验证 Array/Object 构造器是原生代码且 prototype 自洽，而非 instanceof。数组还检查 ownKeys 数 === length+1（index.ts:139）拒绝稀疏。detach 时经 Object.defineProperty 写快照——连 `__proto__` 这样的键也按自有数据属性落位，不触达原型链。导出 `snapshotJsonValue`（index.ts:172）与 `isJsonValue`（index.ts:181）共用这一遍走。`deepEqualJson`（index.ts:191）递归比较 JSON 兼容值，README 明说前提是调用方已验证输入。`deepFreeze`（index.ts:210）也是显式栈 + WeakSet 去重，`node instanceof AbortSignal` 直接跳过（index.ts:226）——冻结活的 AbortSignal 会破坏取消机制。`WeakMapWithValues`（index.ts:247）组合 WeakMap 弱键查找与强持有、插入有序的 values Set：一值一键，set 覆盖旧值时从 valueSet 摘除旧的（index.ts:281），生命周期清理归拥有者调 delete/clear。`assertNever`（index.ts:12）在 closed union 的 default 分支抛带 context 标签的错误——新增变体会让每个穷尽 switch 编译失败。",
+    "boundary": "归它管：无损 JSON 的判定与快照、跨 realm 安全的 plain 性判定、JSON 结构相等、可豁免 AbortSignal 的深冻结、弱键强值关联、穷尽联合断言。不归它管：deepEqualJson 不是通用对象比较器——原型/symbol/accessor/循环/Map/Set 语义未定义（README Known Limitations 第一条）；deepFreeze 不冻结符号键子对象、也不把任意宿主对象变成不可变数据；WeakMapWithValues 不做自动清理、不允许多键共享一值；JSON 之外的数据格式（YAML、二进制）不涉足。划线依据：这些操作共享同一个客户契约——「处理不可信输入、产出可信 JSON 数据」，且必须 duplicate-install-safe（无构造器身份依赖）；任何带状态的或依赖 realm 身份的逻辑都不符合这条线。",
+    "tour": [
+      { "file": "packages/util/values/src/index.ts", "line": 72, "sym": "walkJsonValue", "note": "显式任务栈 + ancestors Set：深嵌套不爆栈、循环被拒而重复引用放行，是无损校验的引擎。" },
+      { "file": "packages/util/values/src/index.ts", "line": 18, "sym": "hasIntrinsicConstructor", "note": "验证构造器名/prototype/原生源码三重自洽：跨 realm 的 plain 性判定，不依赖 instanceof。" },
+      { "file": "packages/util/values/src/index.ts", "line": 226, "sym": "deepFreeze", "note": "显式跳过 AbortSignal：冻结活信号会让 abort 机制静默失效，是深冻结最隐蔽的坑。" },
+      { "file": "packages/util/values/src/index.ts", "line": 139, "sym": "稀疏数组检查", "note": "ownKeys 数 === length+1：一个 ownKeys 计数就把稀疏数组挡在无损 JSON 之外。" },
+      { "file": "packages/util/values/src/index.ts", "line": 12, "sym": "assertNever", "note": "穷尽 switch 的标准兜底：新增联合变体在编译期炸掉每一个未更新的分支。" }
+    ],
+    "gotchas": "deepEqualJson 只对已验证 JSON 兼容输入有意义，对任意对象的结果未定义。deepFreeze 沿可枚举 string 键走，冻结后返回同一引用（不是副本）；AbortSignal 豁免是刻意的，别「修复」它。WeakMapWithValues 的值被强持有：忘记 delete/clear 就是内存泄漏；一个值只能属于一个键。snapshotJsonValue 拒绝 -0 与非有限数——严格符合 JSON 规范，序列化库里允许的怪值这里不要。isJsonValue 对 getter 不求值即拒绝（非数据属性）。-0 与 0 在 deepEqualJson 里相等（Object.is 之外的比较路径）。",
+    "analogy": "像海关的货物检验台：进关（持久化）的每件货都要过一遍 X 光（walkJsonValue）——有夹层（稀疏数组）、藏暗格（symbol 属性）、活体（AbortSignal 之外的怪对象）一律退回；过检的可以当场复制一份密封托运（snapshotJsonValue）。检验员不看货是哪条生产线出的（跨 realm 安全），只验货本身。至于海关不管的：两个检验报告怎么比对（deepEqualJson 前提是双方都过检）、仓库怎么记台账不丢页（WeakMapWithValues 要自己清）。"
+  },
+  {
+    "group": "util",
+    "dir": "workspace-path",
+    "short": "workspace-path",
+    "oneLiner": "浏览器安全的 Workspace 路径与 dsh-resource://file 地址语法：连接、显示、寻址一体",
+    "why": "dsh 的 Web UI（浏览器端）与 Host 控制器要共享同一套路径与文件寻址语义：Sidebar 显示文件树、Preview 打开资源、Markdown 里引用文件、客户端把用户选的相对路径发给 Host。但 node:path 在浏览器里不存在——客户端包需要一个不碰文件系统、跨 POSIX/Windows 双拼写的纯词法层。更关键的是 `dsh-resource://file/…` 这个自定义 URI 语法：它是 Sidebar 和资源模型之间给文件命名的唯一契约，编码规则（组件编码但保留冒号）、scope 语义（session 授权 Host 读 vs absolute 无授权）、UNC/盘符的边界情形，若没有单一权威定义点，两端各自 parse 就会出现「这端写得那端读不懂」的裂痕。删掉它，address 语法散落进 client 与 controller 各自的实现，file-card、Preview、Sidebar 各猜一遍。",
+    "position": "util 家族的浏览器侧路径层，deps 为空（刻意不 import node:path），两个源文件 198 行。上游按 README 与 Further Exploration：Workspace-facing 的 client 包（Sidebar、Preview、file-card 渲染）与 controller 包共享；Host 端持有 Session workspace 根并负责真正解析与访问强制。数据流：客户端拿到 Session 的 cwd 与用户路径 → resolveWorkspacePath/fileAddressFor 算出 Host 可解析的拼写或 `dsh-resource://file/session/<id>/<path>` 地址 → 地址经 Sidebar/资源模型传递 → Host 收到地址后解析路径并执行访问控制。fileMediaUrl 则从已解码的绝对路径构造经认证的 file 路由 URL，供 UI 引用图片等媒体。`absolute/` 形式的地址可解析但无授权 Session——文件提供方拒读、Preview 不认领。",
+    "inside": "两个文件。file-address.ts（113 行）独占地址语法：`FileAddress`（file-address.ts:27）是两态判别联合——session scope（sessionId + 绝对或 workspace 相对路径）与 absolute scope（纯绝对路径，无授权）。编码规则：`encodeSegment`（file-address.ts:45）用 encodeURIComponent 后把 %3A 还原为字面冒号——`#`、`?`、空格都能过 round trip，而盘符 `C:` 保持可读；`sessionFileAddress`（file-address.ts:65）先把反斜杠归一为 `/`、剥掉前导 `./` 再逐段编码；`absoluteFileAddress`（file-address.ts:76）特殊处理 UNC：`//server/share` 保留一个空首段（`dsh-resource://file/absolute//server/share/x.txt`）；`parseFileAddress`（file-address.ts:89）校验精确前缀、忽略 query/fragment、逐段解码——scope 未知、缺 id/path、畸形转义（decodeURIComponent 抛 URIError）一律折回 undefined，绝不半途猜。index.ts（125 行）是纯词法路径层：`isAbsoluteWorkspacePath`（index.ts:17）认 POSIX `/`、Windows 盘符、UNC 三种绝对拼写；`resolveWorkspacePath`（index.ts:27）按 cwd 的分隔符风格拼接相对路径；`abbreviateHomePath`（index.ts:42）把 POSIX home 缩写为 `~`（Windows 路径刻意不动——便携浏览器无法安全推断 Windows home 等价）；`workspaceTitleOf`/`pathPartsOf`（index.ts:58/73）双分隔符显示拆分；`fileAddressFor`（index.ts:92）是「按调用方持有方式寻址」的统一入口：cwd 内变相对、cwd 外或 cwd 未知保持绝对（但仍在该 Session 的地址里，由该 Session 授权）；`relativizeToCwd`（index.ts:107）纯显示用的去前缀；`fileMediaUrl`（index.ts:120）只接受 http(s) base 或 Desktop 的 dsh-app://app/ origin，拒绝相对路径、网络路径前缀、控制字符。",
+    "boundary": "归它管：路径词法（绝对性判定、连接、显示缩写/拆分）、`dsh-resource://file` 地址的构建与解析、媒体 URL 构造。不归它管：任何文件系统访问——`. /..` 不消解、不做 realpath、不读盘（README Known Limitations 明说 lexical resolution）；路径的访问授权（Host 拿到地址后强制执行）；navigation 协议的地址（其他 scheme 定义在别处）。划线依据：这份词法必须同时活在浏览器与 Host——它就不能碰 node:path 或 fs；一旦连文件系统语义进来，client 侧就无法共享，地址语法就会分裂成两套。",
+    "tour": [
+      { "file": "packages/util/workspace-path/src/file-address.ts", "line": 45, "sym": "encodeSegment", "note": "encodeURIComponent 后还原 %3A：`#`/空格可过 round trip，盘符 `C:` 又保持字面可读。" },
+      { "file": "packages/util/workspace-path/src/file-address.ts", "line": 89, "sym": "parseFileAddress", "note": "精确前缀校验 + 逐段解码 + 畸形转义折回 undefined：解析器绝不半途猜，两端才敢共享语法。" },
+      { "file": "packages/util/workspace-path/src/index.ts", "line": 92, "sym": "fileAddressFor", "note": "cwd 内转相对、cwd 外保持绝对但仍在 Session 地址内：授权语义跟随 Session 而非路径形态。" },
+      { "file": "packages/util/workspace-path/src/index.ts", "line": 42, "sym": "abbreviateHomePath", "note": "POSIX-only 的 home 缩写，Windows 路径原样不动：便携浏览器无法安全推断 Windows home 等价。" }
+    ],
+    "gotchas": "解析全是词法的：`.` 和 `..` 不消解、不访问文件系统——`a/../b` 会原样留在地址里。home 缩写只对 POSIX 生效，Windows 路径显示时不缩写。`dsh-resource://file/absolute/…` 可被解析但无授权 Session，文件提供方无法读它，Preview 也不认领——不要试图借当前或 Tab 的 Session。fileMediaUrl 只认 http(s) base 和 dsh-app://app/，且要求路径已解码（Markdown 里编写过的 URL 需先 decode）；含 `%` 字面量的路径会被保留原样。UNC 地址的空首段（`/absolute//server/...`）是刻意的，自行 trim 掉会导致解析成普通 POSIX 路径。",
+    "analogy": "像一套跨部门的文件调阅编码：前端（浏览器）和后台（Host）共用同一套调阅单格式（dsh-resource://file 地址）——单子上写清楚「由哪个案卷（Session）授权、要哪份文件（路径）」，特殊字符按约定转写（编码）保证抄写不失真；后台收到单子才去库房取件并核验权限。至于路上怎么走（文件系统实际路径解析），前台一概不管——它只管把单子写得双方都读得懂。"
+  },
+  {
+    "group": "util",
+    "dir": "atomic-write",
+    "short": "atomic-write",
+    "oneLiner": "零依赖原子文件替换与跨进程写锁：永不暴露半成品、不被 symlink 劫持、权限由调用方逐点声明",
+    "why": "dsh 的 file-backed store（配置编辑器写 cordis.patch.yml、credentials-local 写凭据文件）都要原地替换用户文件。用 fs.writeFile 直接覆盖，进程中途崩溃就留下半个文件；临时文件路径可猜测且写入时会跟随 symlink——攻击者放一个 symlink 就能劫持写入目标（凭据文件场景是真实提权面）；重命名后还要 chmod 收紧权限则有一个权限放宽的竞态窗口。删掉这个包，每个持久化 store 自己重写 temp+rename，Windows 上 EACCES/EBUSY/EPERM 的瞬态冲突直接让写入随机失败；多个进程（plugin manager 的 pnpm run、CLI 会话、Web 服务）同时读改写同一配置文件时，靠原子提交本身挡不住丢更新——read-modify-write 需要 withFileLock 这样的跨进程锁，而锁的崩溃接管（PID 探测）是出了名的易错细节。",
+    "position": "util 家族的文件系统原子性层，deps 为空。上游按 README Further Exploration：boot/config-editor——profile patch 的每次编辑都经此替换；credentials-local——凭据文件的锁与替换；plugin-manager——为 pnpm run 留下锁内线索的接管方。数据流分两层：写路径是「渲染完整字符串 → writeFileAtomic(path, text, {mode}) → 读者看到旧或新完整内容之一」；协调路径是「withFileLock(path, waitMs) 包住 read-render-commit 全周期 → 竞争者指数退避或超时失败」。读者永不参与锁——rename 提交本身就是原子的。mode 是必填参数：权限决策必须在每个调用点可见（README「Why the swap stays safe」明确这一条）。",
+    "inside": "单文件 src/index.ts 共 269 行，两个导出。`writeFileAtomic`（index.ts:79）的写路径：按需建父目录 → 在**同目录**下创建随机后缀的临时 sibling，用 `wx`（exclusive create，index.ts:79 前的选项契约）打开——独占创建拒绝跟随攻击者埋在可猜测 temp 路径上的 symlink；同目录保证 rename 在同一文件系统内（跨设备 rename 会失败）；携带调用方声明的 mode 走完 rename——新 inode 从头就是目标权限，收紧旧文件的宽权限没有 chmod 竞态；rename 替换 symlink 目标本身而非写入其引用目标。Windows 上 rename 报 EACCES/EBUSY/EPERM 的瞬态干扰按有界指数退避重试且**复用同一个完整 sibling**（防止半成品）；最终失败删临时文件、目标原封不动。`withFileLock`（index.ts:235）的锁路径：用 `wx` 创建 `<filename>.lock` sibling，EEXIST 直接判定竞争，EPERM 需 lstat 确认锁存在才算（Windows 独占创建的怪癖，不掩盖无关权限错误，index.ts:199 附近的 FileLockOptions 契约）；锁记录写入 `<pid>\\n`，持有者在 finally 里删除。接管协议最精巧：竞争者读到 PID 探测为 ESRCH（进程已死）的记录后，先创建 `.lock.takeover-<记录哈希>` 声明文件、重读锁并再探 PID——第二次探测防止「复用了死进程 PID 的活持有者」被误杀——确认后才删锁删声明立即重试（多个竞争者竞争同一声明，README 详述）；持有者活在别的用户名下（EPERM）或记录写着自己的 PID 时只等待不接管。竞争退避指数增长、超过 per-call waitMs（默认两秒）即失败而非永久阻塞；README 特意举例：凭据刷新若含网络往返必须声明更长的 waitMs，否则把同文件其他写者全饿死。",
+    "boundary": "归它管：原子替换（含 symlink 防护、权限声明式传递、Windows 瞬态重试）、跨进程写锁（含死持有者接管、竞争退避）。不归它管：崩溃持久性——不 fsync 文件与父目录，崩溃后 rename 可能被观测为回退，持久性策略归调用方（file-backed store 在 boot 时重读并重发布，README Known Limitations 明说）；非 string 内容（Buffer/流形式等有消费者再说）；跨主机/共享网络文件系统的锁语义——PID 探测只在本机有效，多容器共享卷会把活持有者误判为已死而并发写；孤儿锁中「记录为空/不完整/PID 被活进程复用」的情形需要运维手工清理。划线依据：「一次替换的原子性」与「多次读改写的顺序性」是两个不同强度的问题——rename 只能解决前者，后者必须靠锁；把两者放进一个 269 行文件是因为它们总是成对出现，但读者可以只用其一。",
+    "tour": [
+      { "file": "packages/util/atomic-write/src/index.ts", "line": 79, "sym": "writeFileAtomic", "note": "wx 独占创建随机后缀 sibling + 同目录 rename：拒绝跟随 symlink、保证同文件系统、新 inode 原生携带 mode。" },
+      { "file": "packages/util/atomic-write/src/index.ts", "line": 235, "sym": "withFileLock", "note": "wx 建 .lock + EEXIST/EPERM 判别 + PID 探测接管：跨进程读改写的顺序性全在这一个函数。" },
+      { "file": "packages/util/atomic-write/src/index.ts", "line": 49, "sym": "WriteFileAtomicOptions", "note": "mode 必填：权限决策在每个调用点可见，杜绝「默认继承宽权限」的隐性选择。" }
+    ],
+    "gotchas": "原子但不持久：无 fsync，崩溃后 rename 可能回退——依赖「boot 时重读重发布」的 store 才安全。只接受 string。部分孤儿锁要运维恢复：记录为空/不完整或 PID 被活进程复用的锁不会被接管，后来者只会超时；接管中途死掉会同时留下 .lock 和 .lock.takeover-<hash> 两个文件等人工删除。接管只证明记录中的进程已退出：若操作又启动了别的写者（如 plugin manager 的 pnpm run），继任者需要另行线索（README 指向其做法）。跨主机/容器共享卷的场景锁会失效——活持有者可被误判已死。Windows 下 withFileLock 观察不到锁时重试一次 EPERM，反复未确认的 EPERM 直接重抛且不执行操作。锁的父目录必须已存在。",
+    "analogy": "像银行保险柜的换锁流程：新锁芯（临时文件）先在柜台后（同目录）装配好并设好你要的密码（mode 必填），然后一瞬间整体换上（rename）——顾客任何时刻看到的都是完整能用的锁，绝无装到一半的裸门。多人同时要改同一份档案（写锁）时排队登记、登记条上写工号（PID）；发现登记人早就离职（进程已死）且没别人顶上（双重探测），就可以把条子撕了顶替——但拿不准的条子宁可排队超时也不撕，免得撕错。"
+  },
+  {
+    "group": "runtime-diagnostics",
+    "dir": "invariants",
+    "short": "invariants",
+    "oneLiner": "包自有运行时不变式的注册表服务：各包随包携带 invariant 伴生插件，组合运行中自检持久关系",
+    "why": "dsh 的架构靠大量隐式契约维系：Session log 的事件必须成对闭合（call/result）、agent 状态机转移必须合法、loop 重建的请求必须与发出时一致、hook 的调用与结果必须配对……这些「持久关系」在单测里验证的是构造路径，运行期的异常路径（部分失败、并发、reload）仍可能把不变式打破，而打破后的状态往往继续污染后续所有请求，故障报告离根因十万八千里。删掉这个包，这些检查要么不存在（异常路径静默腐化），要么被塞进各包主入口——让产品代码依赖诊断代码，主包从此无法独立于诊断栈加载。它的解法是反转归属：检查代码放在各包的 `./invariant` 伴生入口，与产品代码共存亡但独立挂载；注册表本身零产品知识（不 import 任何 session/agent 包），只有归属、过滤、生命周期三件事。标准 agent composition（sdk-minimal）已默认挂载注册表加四个核心伴生。",
+    "position": "runtime-diagnostics 组的核心，deps 只有 schemastery（config schema），peer cordis。上游是挂载它的组合：dsh-sdk-minimal 挂注册表 + session/agent/scope/agent-loop 四个核心伴生；dsh-base 刻意不挂（纯库组合不跑诊断）；自定义组合按需加任意伴生。下游是几十个包的 `/invariant` 伴生入口（README 列出完整表：dsh-llm 流语法、dsh-tools 阶段配对、dsh-fs 事件身份、dsh-jobs 快照字段关系……），它们在启动时调 ctx.invariants.register(包名, installer)。数据流：伴生插件挂载 → register 预订包名 → 选中的 installer 在专属子 fiber 里运行（可声明 inject 的服务）→ 检查代码在运行期监听事件/观察可变状态，违规时抛 InvariantError（携带稳定 code 'INVARIANT' + 完整 npm 包名）。方向是「观察不修改」：检查从不改写请求上下文，KV cache 不受影响。",
+    "inside": "单文件 src/index.ts 共 201 行，一个 Cordis Service。`InvariantRegistry extends Service`（index.ts:94），静态 Config 用 z.object 声明三字段：enabled（默认 true）、package_allowlist/package_blocklist（大小写敏感的正则 source 数组），经 compilePatterns（index.ts:75）在启动时编译——空白、重复、非法正则都直接让服务启动失败而非跳过（坏过滤条件静默失效比启动失败更危险）。`selected`（index.ts:121）是过滤语义：先看 enabled，allowlist 非空时必须命中，blocklist 命中即排除——blocklist 覆盖 allowlist。`register`（index.ts:136）是核心契约：先校验包名非空无空白、查 registrations Set 拒绝重名——**过滤不通过的包名照样预订**（index.ts:149 在 selected 判断之前 add），两个伴生永远无法静默争夺同一个名字；然后 ctx.effect 包裹整个安装：未选中的包返回只做清理的空 effect；选中的把 installer 装进子插件（installer.inject 透传为插件的 inject，index.ts:166-168），fail 回调（index.ts:161）被绑定到注册包名——伴生代码只管抛消息，归属由注册表盖上。安装本身失败（同步或 await child 出错）时 dispose 子上下文并原子释放名字预订（index.ts:172-175、184-186）——坏检查不能留下半截监听器。`InvariantError`（index.ts:50）带 readonly code='INVARIANT' 与 packageName，消息格式固定为 `invariant violated by \"<package>\": …`，让故障报告无需注册表 import 任何产品代码就能归因到包。设计哲学三条（README 明文）：产品无关注册表（伴生携带检查、紧邻拥有者）、真实关系而非合成断言（只查事件流/可变数据关系，方法存在性是类型/单测的事）、注册即预订所有权。工程侧还有机械门禁：pnpm run verify-package-invariants 拒绝空 installer、忽略 reporter 的 installer、错名注册、缺发布接线。",
+    "boundary": "归它管：包名预订与冲突拒绝、enable/allowlist/blocklist 三层过滤、installer 子 fiber 生命周期（含失败回滚与 reload 重注册）、InvariantError 的归属格式。不归它管：任何具体检查——注册表自带零个产品检查，只挂服务不挂伴生的组合什么都观察不到（README Known Limitations 明说）；方法/插件名/inject 存在性这类「类型或加载期」断言被明确划出运行时不变式的范围；过滤条件在服务生命周期内固定——改 enabled 或过滤列表需要 Cordis 插件 reload。划线依据：检查的归属必须跟包走（伴生模式），注册表若自带检查就要 import 产品包、破坏「诊断可独立于产品加载」；而「只查可观测关系」的划线则把单测的领地和运行时的领地分开，避免同一个断言写两遍。",
+    "tour": [
+      { "file": "packages/runtime-diagnostics/invariants/src/index.ts", "line": 149, "sym": "InvariantRegistry.register", "note": "包名在过滤判断之前就 add 进 Set：被过滤禁用的包也保留所有权预订，两伴生永不静默争名。" },
+      { "file": "packages/runtime-diagnostics/invariants/src/index.ts", "line": 161, "sym": "installInvariant fail 回调", "note": "fail 闭包绑定注册包名：伴生只抛消息，InvariantError 的归属由注册表统一盖章。" },
+      { "file": "packages/runtime-diagnostics/invariants/src/index.ts", "line": 121, "sym": "selected", "note": "enable→allowlist→blocklist 的三层语义：blocklist 命中覆盖 allowlist，过滤在启动时一次性编译定死。" },
+      { "file": "packages/runtime-diagnostics/invariants/src/index.ts", "line": 172, "sym": "安装失败回滚", "note": "await child 失败即 dispose 子上下文并释放预订：坏检查不留半截监听器，伴生可安全 reload 重注册。" },
+      { "file": "packages/runtime-diagnostics/invariants/src/index.ts", "line": 50, "sym": "InvariantError", "note": "稳定 code 'INVARIANT' + 完整 npm 包名：故障报告只看错误对象就能归因，无需产品知识。" }
+    ],
+    "gotchas": "过滤条件（enabled/allowlist/blocklist）在服务生命周期内固定，改配置要走插件 reload。live-only 伴生 reload 后观察不到 reload 之前开始的操作（session-backed 伴生可从持久事件重建基线）。agent-loop 伴生的请求重建只覆盖 loop 显式构建的请求——一次性直调 LLM 不在契约内，即使调用方冻结了请求或附了 session id。注册表单独挂载零检查——「装了为什么没反应」的第一嫌疑就是没挂伴生。检查从不修改请求内容：它不是数据修复机制，发现问题只能抛错报警。伴生注册名必须与 npm 包名精确一致，verify-package-invariants 会拦错名。",
+    "analogy": "像大楼的年度消防巡检制度：巡检调度中心（注册表）自己不懂电路也不懂燃气——它只管登记「哪家公司（包）报备了哪些巡检项」，按物业的规定（allowlist/blocklist）决定今天查谁，出事时在报告上盖章写明责任公司（InvariantError 带包名）。每家租户的巡检手册（/invariant 伴生）放在自己屋里、随装修（插件挂载）生效；报备了但今天被跳过的公司，名字也留在登记簿上——没人能冒充别人报备。巡检员只拍照上报（观察不修改），绝不动手改线路。"
+  }
+]

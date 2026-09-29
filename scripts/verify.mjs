@@ -1,5 +1,7 @@
 // Render key pages of the site headlessly and capture screenshots + console errors.
-import { chromium } from 'playwright'
+import { createRequire } from 'node:module'
+const require = createRequire(import.meta.url)
+const { chromium } = require('C:/Users/admin/.workbuddy/binaries/node/workspace/node_modules/playwright/index.js')
 import { pathToFileURL } from 'node:url'
 
 const SITE = 'D:/临时/dsh研究/index.html'

@@ -1,0 +1,172 @@
+[
+  {
+    "group": "core",
+    "dir": "agent",
+    "short": "agent",
+    "oneLiner": "活的 Agent 的身份与注册表中心：句柄、生命周期、agent/* 事件词汇，创建与驱动交给外部工厂",
+    "why": "不加载它，ctx.agents 不存在，AgentFactory 无处注册，agent-loop 建出来的 agent 无处登记，插件与 UI 就只能在各自的代码里直接依赖 agent-loop 的具体类，driver 从此换不掉。更致命的是 agent/* 事件词汇会一起消失：agent/created、agent/disposed、agent/status、agent/pre-step、agent/request、agent/request-error、agent/turn-stopping、agent/inbox/*、agent/assistant-stream 全部无人声明，于是「拦下这一步」「监听一次模型请求失败」「知道某个 session 是不是还在跑一轮」这些能力要么消失，要么被每个包各发明一套私有事件名，跨包协作当场碎掉。Workspace 归档也会失去 turn 家族的回答者（installTurnArchiveAdmission 装在本包 Registry 的构造函数里），会把正在跑的会话当成空闲归档掉，事后又被唤醒继续发请求。typert 的 agent lookup 同样消失，Remote 边界再也拿不到「用 sessionId 换 Agent」的解析能力。最后，裸 Agent 与 AgentHandle 的分工也会消失：要么人人都能拆别人的 agent，要么谁都拆不掉自己建的。",
+    "position": "上游是三类 caller：agent-loop 在构造时 ctx.effect(() => ctx.agents.setFactory(this)) 把自己注册成工厂（agent-loop/src/index.ts:369）；webhook、session-controller 这类入口点调 ctx.agents.create/resume 拿 AgentHandle；其余插件、UI、审批与工具实现只监听 agent/* 或读 ctx.agents.get/list/roots。dsh-workspace 也算上游，它通过本包装的 archive admission 问「这个 session 还有没有活儿在跑」。下游是 dsh-scope（用 scopeTarget 造 carrier）、dsh-session（SessionId、SessionEvent、session.requestHeader()）、dsh-session-projection（inbox 与 turnBoundary 投影声明）、dsh-llm（LlmCallConfig、LlmFailure、StreamChunk 类型）、dsh-system-prompt（往 AssembleContext 合并 agent 字段）、typert（lookups 与 contexts 注册）。数据流是双向的：入口点把 sessionId 与 agentOptions 交给 create()，registry 用 requireFactory() 取出工厂槽，再用 getTraceable 加 Reflect.apply 把调用重挂到调用方 context，于是 ownership 跟调用方 fiber 而不是工厂对象；loop 建好 agent 后回调 enter() 与 announce()，registry 用自己的 carrier 串行派发 agent/created。此后 agent 的推进（followup、steer、inject、cancel、whenIdle）只经过 handle.agent，不再经过 registry。观察者方向是 loop 用 agentEvents(ctx, agent) 把 agent/* 推给所有监听者，UI 与投影据此更新；其中 agent/pre-step 与 agent/request 的返回值会反向流回 driver，改写将要进入该步的消息批次与调用配置，这是唯一一条从监听者流回驱动的反向数据。还有第三条：loop 用 ctx.agents.withInitiator 包住整个 driver 生命期，下面若干层 await 之后的工具实现用 requireInitiator() 把 agent 取回来。",
+    "inside": "包内主体是 src/index.ts 的 AgentRegistry（245 行起）。它持有一个 Map<SessionId, AgentEntry> 作为唯一的活体索引，一个包在普通对象里的工厂槽 FactorySlot（避免 Cordis 在调用方 context 已知前就追踪工厂字段），以及两个 AsyncLocalStorage：initiators 存当前 Agent，initiatorRuns 存嵌套链用于排空。setFactory(358) 只允许登记一次、把 Service 还原成原始 target，并返回精确的 Cordis disposer 以便调用方用生成器 effect 按序嵌套。create/resume(391/410) 都不自己建 agent，只把调用转发给 AgentFactory。两者共用的 options.setup 是另一处关键边界：工厂先铸出 agentCtx、在未发布状态下 await setup，再调用可选的同步 AgentSetupCommit.commit()，任何环节失败就整体回滚、session 与 agent 两个 id 都不发布，所以观察者永远看不到半成品的世界。真正的事务原语是 enter(459) 与 announce(537)：enter 校验 agent.id 必须等于 session.id、同 id 重复插入直接抛错（这是权威碰撞边界），生成 carrier = scopeTarget(agent, agent)，返回幂等 detach；若 dispose 发生在 announce 的串行派发期间，detach 会先置 detachRequested 推迟，保证创建监听器看到的是同一条活条目。announce 先标 announced/announcing 再 ctx.serial(carrier, 'agent/created')，异常也在 finally 里处理被推迟的 detach。detachEntered(497) 只删自己捕获的那条 entry（陈旧 disposer 删不掉后来的同名替身），未 announced 的回滚不发 disposed；emitDisposed(513) 自己遍历回调集合并逐个吞掉 throw 与 rejection，避免一个坏监听者饿死后面的人。initiator 一侧是 currentInitiator、requireInitiator、withInitiator、withoutInitiator，全部落到 runWithInitiator(623)：计数 activeInitiatorRuns，对返回的 Promise 用 Promise.prototype.then 挂 release，卸载时 closeInitiators 拒新边界、disposeInitiators(608) 等排空再 disable 存储，releaseReentrantInitiatorRuns 把发起卸载的那条链排除在自己的排空之外。构造函数还 inject(['typert']) 注册 agent lookup 与 agent context，并装 installTurnArchiveAdmission。src/dispatch.ts 的 agentEvents(107) 是把主体与 carrier 熔在一起的派发器：fused() 里 {...payload, agent} 的展开在前，调用方传的 agent 覆盖不了注入值。src/runtime-types.ts 声明 Agent、AgentOptions、Inbox、AgentStatus、PreStepDecision 以及十二个 agent/* 事件（每个 this 都是 Scoped<Agent>）；src/types.ts 只放最小的 Agent（一个 id）加上往 workspace、typert、session-projection、session 四个模块合并的 turn 家族、agent lookup、inbox 投影与 agent/inbox/spliced 事件。src/model-selection.ts 的 installModelSelection(81) 用三个 scoped waterfall 串起装配前快照、请求时应用路由、pre-step 插换模型通知。src/consumed-work.ts 的 foldConsumedWork(69) 单遍 fold 出被消费掉的工作怎么结账。src/invariant.ts 全局监听 agent/status，重复同状态即判违规。",
+    "boundary": "明确归它管：Agent 的身份、生命周期与可见性；AgentHandle 这块「只有持有者能拆」的能力；agent/* 事件词汇与派发形状（必须带 scope carrier）；进程内的 initiator 归因；创建事务的碰撞边界与回滚语义；模型选择在提示装配层的耦合方式。明确不归它管：session 怎么建怎么持久化（推给 dsh-session 与工厂实现）；turn 与 step 怎么跑、怎么重试、怎么收尾（dsh-agent-loop）；inbox 的具体存储（ReactLoopInbox 住在 agent-loop，本包只给结构性 interface Inbox 与投影词汇）；提示怎么组装、段落怎么排序（dsh-system-prompt）；工具怎么注册与执行（dsh-tools）；scope 本身怎么实现（dsh-scope）。划线依据是「只有一种实现才会有的东西一律下推」：本包刻意只保留所有 driver 都必须同意的公共面，因此消费者依赖 dsh-agent、driver 可换；任何只有默认 driver 才有的机制（具体 inbox、具体循环、具体 provider 调用）放在这里都会把 driver 焊死。",
+    "tour": [
+      {
+        "file": "packages/core/agent/src/index.ts",
+        "line": 358,
+        "sym": "AgentRegistry.setFactory",
+        "note": "工厂槽只登记一次，创建能力被刻意外置给 agent-loop：消费者因此只依赖 dsh-agent，不必认识具体 driver 的实现类，driver 保持可替换——这是「公共面与实现分离」这条切分原则的落点。"
+      },
+      {
+        "file": "packages/core/agent/src/index.ts",
+        "line": 459,
+        "sym": "AgentRegistry.enter",
+        "note": "权威碰撞边界：id 必须与 session.id 一致、重复 id 直接抛错；announcing 期间到来的 detach 被推迟成 detachRequested，保证创建派发先完成再拆，可见性与拆卸因此不会错位。"
+      },
+      {
+        "file": "packages/core/agent/src/index.ts",
+        "line": 623,
+        "sym": "AgentRegistry.runWithInitiator",
+        "note": "两个 AsyncLocalStorage 叠加并计数活跃 run，连返回的 Promise 也挂上 release，所以卸载时能先拒新边界、等驱动链排干，再禁用底层存储，不会留下悬空的身份引用。"
+      },
+      {
+        "file": "packages/core/agent/src/dispatch.ts",
+        "line": 107,
+        "sym": "agentEvents",
+        "note": "把主体与 scope carrier 熔成一个派发器，payload 里的 agent 由它注入且展开在前，调用方传的同名字段覆盖不掉它——主体与路由键因此不可能不一致。"
+      },
+      {
+        "file": "packages/core/agent/src/model-selection.ts",
+        "line": 81,
+        "sym": "installModelSelection",
+        "note": "三个 scoped waterfall 串起装配前快照、请求时应用路由、pre-step 插换模型通知，让一次切换不会把提示与请求劈成两半，也顺手解释了为什么它住在 agent 而不是 loop 里。"
+      }
+    ],
+    "gotchas": "initiator scope 是进程内的 AsyncLocalStorage：worker、子进程、HTTP、持久队列与重启都必须显式携带身份，它不做跨进程传播。ambient 身份既不证明存活也不构成授权，做生命周期敏感的事之前仍要查 agent.status 与取消信号。agent/created 监听者与初始化共享同一段生命周期，不能在其中 await agent.whenIdle() 或自己 owner 的 dispose——那两个操作本身就在等创建结束。cancel() 默认连 inbox 一起清（除 keepInbox: true），而且没有「只中止 step、保留 turn」这一档粒度。一条 UserMessage 只能带一个 MessageSource，多个插件的贡献合到同一条消息上会塌成一个来源，无法署名多个生产者。工厂在一个 registry 里只能注册一次，重复 setFactory 抛错。",
+    "analogy": "把它想成医院的住院登记处加病历号。发号的不是它，是 agent-loop 这个门诊部——门诊部开业时到这里备个案（setFactory）。登记处只负责三件事：这个号现在有没有人住（store）、谁有权办出院（AgentHandle.dispose 是一张能力凭证）、住院期间每次状态变化都往同一块公告板贴统一格式的告示（agent/created、agent/status、agent/pre-step…）。各科室（插件、UI、审批、工具）只要看公告板就能协作，彼此不必认识。另外还有一块「当前谁在办手续」的胸牌（initiator scope），只在同一栋楼里有效，出了楼必须自己报名字。"
+  },
+  {
+    "group": "core",
+    "dir": "scope",
+    "short": "scope",
+    "oneLiner": "作用域原语：给一个 agent 或一组 agent 铸造独立的注册世界，并让事件沿作用域链向上投递",
+    "why": "不加载它，createScope 与 scopeTarget 都不存在，agent.ctx 就失去了依据，「这个工具只给这个 agent 看见」直接变成不可能——所有工具、prompt 段、变量与 restrict 只能是进程全局的，两个不同 preset 的 agent 会看到同一份工具目录，plan mode 的隔离和 preset 之间的能力差异全部塌掉。ctx.tools 与 ctx.systemPrompt 也失去 ScopedLayers（两者都用 new ScopedLayers 建分层存储，tools/src/index.ts:833、system-prompt/src/index.ts:415），只能各自手写一套，而且极可能写出「可见性在一个 scope、拆卸挂在另一个 scope」的版本——本包用同一个 ctx 同时决定两者，正是为了消灭这类错误。事件侧更糟：agent/* 无法按 agent 过滤，agent A 的 pre-step 会被 agent B 的监听器收到，跨会话串台；而漏传 carrier 的 bug 只有在真的串台后才会被发现，因为校验 carrier 的 invariant companion 也住在这个包里。此外它还是唯一能证明「隔离真的生效」的地方——其余包都只是在使用它，没人能提供另一份等价的 WeakMap 拓扑。",
+    "position": "它是 library，没有 ctx key，不提供 Service，只被上层消费。上游使用者包括 core/tools（ToolRuntime 用 ScopedLayers 管每个作用域的工具层与呈现模式）、core/system-prompt（同样用 ScopedLayers 管段与变量）、core/agent（index.ts 用 scopeTarget 造 carrier，dispatch.ts 用 carrier 派发）、preset 与 agent-loop（用 createScope 铸造 preset scope 与 agent scope，并用 bindScopeParent 把 agent 的 key 挂到 preset 的 key 下，于是 preset 的 standing 声明能覆盖它下面每一个 agent），以及任何需要 per-agent 隔离的插件。下游只依赖 @deepseek-ai/cordis（Context、Fiber、Context.filter 符号）与 dsh-invariants。数据流有两条：注册方向，mint 者调 createScope(ctx, key, { parent }) 拿到 scope.ctx，插件通过它注册工具或监听器，注册动作落到 ScopedLayers.effect(ctx, action)，由 ctx 上的 tag 选层、由 ctx.effect 决定拆卸归属；派发方向，emit 方用 scopeTarget(base, key) 造出 carrier 作为 this 传给 Cordis，Cordis 对每个监听者的 ctx 取 tag，只有 tag 等于派发 key 或是其祖先才被准入，读取时 chainLayers 与 merge 沿 scopeParents 从最远祖先到最近 scope 依次覆盖，近者最后说话。还有一条校验流：invariant companion 在派发时从事件参数里解析出真正的主体，与 carrier 的 key 比对，不一致立即判违规。它的上游并不限于 core 组，client 侧与测试里的 registry 也用 createScope 造会话级作用域。",
+    "inside": "src/index.ts 是全包的语义核心。ScopeKey 是不透明的 object，kScope 是一个 Symbol 作为 context tag，Scoped<T>（27）只是带品牌的路由类型，故意不暴露主体的任何属性。整包只有两张模块级 WeakMap：carrierKeys 记 carrier 到 key，scopeParents 记 key 的父 key——后者是唯一的拓扑，一份关系同时支撑两个方向：注册视图沿链向下继承，事件准入沿链向上延伸。createScope(137) 用 ctx.plugin(scope) 挂一个空插件 fiber，再 fiber.ctx.extend({ [kScope]: key }) 得到带 tag 的 scoped context；返回的 Scope 接口刻意给出两个边界：rawDispose 是精确的 Cordis disposer，供生成器 effect 按序嵌套，dispose 走 quiesceFiber(115) 连 fiber.inertia 一起等完，供直接调用。scopeOf(154) 读 tag，carrierKeyOf 与 isScopeCarrier 供 invariant 反查。bindScopeParent(72) 只能绑一次，重复绑抛错，且每次链接都经 linkScopeParent(54) 沿父链走一遍查环——因为所有消费者都会一路走到根。scopeChainOf(98) 返回最近优先的链。scopeTarget(170) 把 base 自带的 Context.filter 与作用域谓词合成：未打 tag 的监听者总准入，打了 tag 的只有在其 tag 是派发 key 或其祖先时才准入，事件只向上不向下；key 为 undefined 时只准入未打 tag 的。src/store.ts 给 registry 作者提供三件套：NamedEntries(30) 按插入序存具名项、重复名抛错、每次 insert 返回只删自己那条且幂等的 undo，清空时换 Map 让旧迭代器自然失效；AnonymousEntries(114) 用 Symbol 作键，因此同一个值 append 两次仍是两条独立注册、撤销互不干扰；ScopedLayers(159) 持一个 eager 的 global 层与按需创建的 scope 层，peek(180) 刻意 chain-blind（读一个作用域自己的限制不能被祖先污染），chainLayers(192) 把链反转成最远祖先在前，merge(208) 以 global 打底再逐个同名覆盖，effect(226) 把一次同步 mutation 同时绑到可见性与归属上，新建层失败或整层为空才回收。scoped-events.generated.ts 是一张生成的解析表，把三十多个事件名映射到「从 payload 第几个参数的哪个字段取路由主体」（system-prompt/assemble 取 args[1].scope，session/* 为 null 表示只能查 carrier 存在）；invariant.ts(17) 监听 internal/dispatch，对照这张表，对没带 carrier 或 carrier key 与 payload 主体不一致的派发直接 fail。",
+    "boundary": "明确归它管：scope key 的铸造、key 之间的父子链、context tag 的读写、scope-filtered 派发的准入规则，以及给 registry 作者用的分层存储原语 ScopedLayers、NamedEntries、AnonymousEntries。明确不归它管：任何注册项的业务语义（工具 schema 怎么渲染归 dsh-tools，prompt 段怎么排序归 dsh-system-prompt）、agent 身份本身（那是 dsh-agent 的事，本包只认不透明 key，甚至不知道自己被用在 agent 上）、以及任何安全边界——README 明说它不是沙箱也不是授权边界，只服务于同进程可信插件之间的路由。划线依据是「只依赖 Context 与 WeakMap、不认识任何 dsh 领域概念」的才算 scope：一旦需要知道 agent、session、tool 是什么，就属于上层包。也因此存在一个反直觉的约束：把 Scope.ctx 递出去，同时也递出了铸造插件的 service 解析能力，从哪个插件 mint 是有后果的。",
+    "tour": [
+      {
+        "file": "packages/core/scope/src/index.ts",
+        "line": 137,
+        "sym": "createScope",
+        "note": "用空插件 fiber 造一个带 kScope tag 的 context：注册语义全靠这个 tag，可见性与拆卸从此绑在同一个 ctx 上，不会出现二者分家的错。"
+      },
+      {
+        "file": "packages/core/scope/src/index.ts",
+        "line": 170,
+        "sym": "scopeTarget",
+        "note": "合成 base 自带 filter 与作用域谓词：未打 tag 的监听者总准入，打了的只有其 tag 是派发 key 或祖先才准入，事件只向上流。"
+      },
+      {
+        "file": "packages/core/scope/src/store.ts",
+        "line": 226,
+        "sym": "ScopedLayers.effect",
+        "note": "一次同步 mutation 同时决定可见性（scopeOf 选层）与归属（ctx.effect 的 yield）；读取永不建层，新建层失败或整层空了才被回收，避免留下空壳。"
+      },
+      {
+        "file": "packages/core/scope/src/index.ts",
+        "line": 54,
+        "sym": "linkScopeParent",
+        "note": "全包唯一的拓扑写入点：每次链接都沿父链走一遍查环，因为所有消费者都会顺着这条链一路走到根。"
+      },
+      {
+        "file": "packages/core/scope/src/invariant.ts",
+        "line": 17,
+        "sym": "scope-invariant install",
+        "note": "监听 internal/dispatch 并对照生成的主体解析表：没带 carrier，或 carrier 的 key 与 payload 主体不是同一个对象，就直接判违规，把漏传 carrier 的 bug 提前到派发时。"
+      }
+    ],
+    "gotchas": "只有 scope-aware 的 API 才真的隔离：registry 必须按 scopeOf() 归档、事件必须经 scopeTarget() 派发，一个普通 Cordis service 不会因为「通过 scoped ctx 调用」就变成 per-agent 的。一个 context 只带一个最近的 scope key，层级活在 key 级的父关系里，嵌套 scope context 仍会被压成单个 tag，多成员（一个 agent 同属多个组）不支持。service 可达性来自 mint 者：交出 Scope.ctx 同时交出了铸造插件注入的服务，而且事后收不窄，所以要用「依赖最少的那个插件」去 mint。父绑定是一次性的，key 已有父再绑会抛错，只有 bindScopeParent 返回的 binding 能 rebind，且每次都做环检测。dispose 与 rawDispose 是两个语义不同的边界，嵌套进生成器 effect 时必须用 rawDispose。",
+    "analogy": "把它想成带楼号的楼层钥匙。createScope 是给某个 agent 配一层楼并配一把刻着楼号的钥匙，通过这把钥匙买进来的东西（工具、prompt 段、监听器）既只在这一层可见，也随这一层退租一起搬走——可见和拆卸永远绑在同一把钥匙上，不会出现「东西放在 A 层、账单挂在 B 层」。scopeParents 是楼层从属表：往下看，子层能看见父层摆的东西；往上喊，父层登记的监听器能听见子层发生的事，但子层听不见兄弟层。scopeTarget 就是电梯呼叫面板上那个楼号，没写楼号的通知全楼都收得着。"
+  },
+  {
+    "group": "core",
+    "dir": "agent-default-model",
+    "short": "agent-default-model",
+    "oneLiner": "进程级的新 agent 默认模型：一份 live Config，读写分离，不参与任何一轮对话",
+    "why": "不加载它，ctx.agentDefaultModel 就缺失，每个创建 agent 的入口点都得自己回答「没指定模型时用哪个」。webhook/src/session.ts:64 就是典型调用点：请求里没带 model 时，它必须有个地方问。于是要么各入口点在配置里重复一遍 provider 与 model，要么把某个模型 id 硬编码进代码，改一次默认要改 N 处，且各自的实现对「reasoningEffort 缺省时怎么办」的理解必然不一致。saveSelection 那套串行化写入 profile patch 的逻辑也会失去唯一归属者，多个入口点并发改默认会互相覆盖。反过来说，它塌掉不会让系统跑不起来——只是「默认模型」这件小事从一处散落到各处，config 里的初值与 profile 里的用户选择不再是同一个来源，运维在 YAML 里改默认值和用户在 UI 里改默认值也会开始互相打架。",
+    "position": "上游是所有创建 agent 的入口点：webhook、session-controller、ACP 之类在组装 AgentOptions 之前调 currentSelection() 拿 { provider, model, reasoningEffort? }；以及 settings-controller 一类 UI 或 API，在用户改默认时调 saveSelection()。下游依赖很薄：@deepseek-ai/cordis（Service、Volatile、ctx.effect、fiber.entry）、@deepseek-ai/dsh-config-editor（真正把值写进 profile patch 的执行者，用 ctx.get('configEditor') 可选取用）、@deepseek-ai/dsh-settings（构造时 inject(['settings']) 声明 configure({ auto: false })，即不让 settings 自动接管本行配置）、@deepseek-ai/dsh-agent 与 dsh-llm（ModelSelection 类型与 ReasoningEffortId 品牌值的来源）。数据流是单向且极短的：入口点调 currentSelection()，它现读三个 Volatile 引用、把字符串 effort 过一遍 ReasoningEffortId 品牌化、返回一个 detached 快照，入口点把它塞进 CreateAgentOptions.agentOptions，之后由 agent-loop 与 dsh-llm 真正拿去发请求。反向只有一条：saveSelection 把整份 selection 全量写入 configEditor.edit(entry, () => config)，写回 profile 后 Config 引用变化，下一次 currentSelection() 才返回新值。它不监听任何事件，也不向任何运行时回调，既不参与 turn 也不参与 step。",
+    "inside": "整个包只有一个 110 行的 src/index.ts，一个 Service，没有事件、没有监听器，也没有 invariant companion（README 明说：唯一拥有的值就是 Config 引用，没有可不变式化的状态）。AgentDefaultModelConfig extends Service（48），服务名 agentDefaultModel，实例上只有两个引用：构造时传入的 ownerContext 和一条 this.saves 的 Promise 链（49）。配置侧用 schemastery 声明三个字段（51-55）：provider 与 model 是 z.string().required().volatile()，reasoningEffort 是可选的 volatile 字符串——volatile 表示运行期可改、不被持久化系统当成需要重启的项，这是「改完立刻生效」的实现基础。构造函数里 ownerContext.inject(['settings'], child => child.effect(() => child.settings.configure({ auto: false }, ownerContext.fiber)))（60）是个容易被忽略的关键动作：它主动告诉 settings 别自动接管本行配置，因为本包要自己管 profile 写入。currentSelection()（67）每次都现读 config.provider.get()、config.model.get()、config.reasoningEffort.get()，交给模块内的 selection()（34）把字符串 effort 过一遍 ReasoningEffortId() 品牌化，返回 detached 的 ModelSelection——所以调用方拿到的是快照，之后 Config 变了它也不变。saveSelection()（82）是唯一的写路径：先取 ownerContext.fiber.entry，没有就 return（不是被 Loader 挂载的行没有 entry）；再 ctx.get('configEditor')，没有也 return，这就是「没有配置编辑器时 saveSelection 是 no-op」的全部实现；然后把整份 selection 摊平成 { provider, model, reasoningEffort? } 做全量覆盖而不是增量合并，用 this.saves = this.saves.then(...) 把并发调用串成一条链，失败处用 .catch(() => {}) 截断以免影响后续保存，同时 await saved 让发起者看到自己的失败。",
+    "boundary": "明确归它管：这一份进程级默认值的读取，以及它的「全量覆盖式」持久化（含并发保存的串行化与按调用者隔离的失败），还有构造时把 settings 的自动配置关掉这一件事。明确不归它管：某个 session 自己的模型选择——那是入口点与 agent 侧的 installModelSelection 的事，session 一旦在 request header 里记下路由就一直沿用，改这里的默认不会动它；也不管 provider 是否真的注册过、模型是否可用，README 明说不校验 catalog 成员，可用性诊断归真正发起请求的消费者；更不参与任何与请求、turn、step 有关的运行时行为——它不发事件、不注册监听器。划线依据是「只回答一个新 agent 该从哪个模型起步」：一旦问题变成「这一轮该用哪个模型」，答案就落在 dsh-agent 的 ModelSelection 与 dsh-agent-loop 的请求装配上，本包立刻退出。",
+    "tour": [
+      {
+        "file": "packages/core/agent-default-model/src/index.ts",
+        "line": 48,
+        "sym": "class AgentDefaultModelConfig extends Service",
+        "note": "唯一的 Service，实例状态只有 ownerContext 与一条 saves 链；它不监听任何事件、不参与任何一轮对话，是一份纯粹的读写配置。"
+      },
+      {
+        "file": "packages/core/agent-default-model/src/index.ts",
+        "line": 51,
+        "sym": "static Config",
+        "note": "schemastery 声明三个字段并标 .volatile()：provider 与 model 必填，reasoningEffort 可选；volatile 表示运行期可改，这是改完即生效、不必重启的基础，也是它敢把 Config 引用当作唯一状态的原因。"
+      },
+      {
+        "file": "packages/core/agent-default-model/src/index.ts",
+        "line": 60,
+        "sym": "constructor inject(['settings'])",
+        "note": "构造即声明 settings.configure({ auto: false })：本行要自己管 profile 写入，不让 settings 自动接管这一份配置——这是它能独占保存路径、让 config 初值与 profile 覆盖保持单一来源的前提。"
+      },
+      {
+        "file": "packages/core/agent-default-model/src/index.ts",
+        "line": 82,
+        "sym": "saveSelection",
+        "note": "全量覆盖而非增量合并，用 this.saves 链串行化并发写；一次失败只拒绝它自己的调用者，后面的保存照常进行，且没有 configEditor 时整段静默 no-op。"
+      }
+    ],
+    "gotchas": "全局只有一份默认，per-session 的模型选择归入口点，别指望它能表达「这个会话用另一个模型」。saveSelection 需要 profile 配置编辑器：没有 configEditor 时它静默返回，README 明说不保留选择，部署里没挂编辑器就会出现「改了但重启后没了」。写入是全量覆盖，省略 reasoningEffort 会把该字段从 profile 的 override 里删掉而不是保留旧值。currentSelection() 返回的是 detached 快照，拿到手之后 Config 变了它不变。它不校验 provider 是否注册、模型是否可用，写错要等到真正发请求时才炸。并发 save 按提交顺序串行，但一次失败只拒绝它自己的调用者，后续保存照常进行，所以「最后一次生效的写入」不一定等于「最后一次成功的调用」。",
+    "analogy": "把它想成公司前台那本「新客户默认分给哪位顾问」的登记簿：全公司只有一本（进程级），新人来了前台翻一下，告诉他去找谁（currentSelection）；客户要是自己点名要哪位顾问，前台听客户的（session-specific 优先）。改默认不是贴便利贴，而是把整行划掉重写（全量覆盖），而且必须真有人负责把登记簿归档（configEditor）才算改成功——没人归档时你写在便签上的改动当天有效、明天就丢。它从头到尾不参与顾问干活的过程，活干完了也不会有人回头问它。"
+  },
+  {
+    "group": "core",
+    "dir": "agent-tool-presentation",
+    "short": "agent-tool-presentation",
+    "oneLiner": "preset 的一行开关：决定其下 agent 的工具以原生 schema 还是 run_code+SDK 呈现给模型",
+    "why": "不加载它（dsh-tools 仍在），所有 agent 只能吃 tools 行上的部署级 mode，一个进程里 native 与 PTC 两种 agent 无法共存——想让某个 preset 用 PTC，就得把整个部署切成 PTC。preset 也就失去了它唯一能自有的一项能力。README 把划线依据讲得很明白：工具注册表本身不能下沉进 preset，因为它的消费者全在 host-plane（agent-loop 读它的调度器、API proxy 读它的 presenters、每个工具插件都往里注册），而一个服务只有在所有消费者都跟着搬走时才能下沉；但「呈现形态」的消费者只在 agent 侧，这一块可以下沉，本包就是那块被允许下沉的东西。它同时还扛着一个早失败职责：选了 ptc 或 both 却没有 ptcRuntime 时，它既不报错也不降级，而是让这一行永远停在 pending，由 preset-registry 的激活审计在挂载期点名报不可用——否则这个错误要等到该 preset 第一个 agent 的第一次提示装配才炸出来。",
+    "position": "上游是 preset 作者与 dsh-agent-preset-registry：这一行不是独立服务，而是写在 preset 的 config.plugins 里的一行（如 packages/bundle/web-app/presets/ptc.patch.yml 里的 id: tool-presentation），随 preset 的 standing mount 一起挂载并接受激活审计。下游只有两个：必需的 @deepseek-ai/dsh-tools，以及按模式才需要的 ctx.ptcRuntime（host-plane 服务，由 dsh-ptc-runtime-node 之类提供）。数据流是一次写入、长期生效：preset 挂载 → 本行在自己的作用域里 apply → native 直接调 ctx.tools.presentAs('native')，ptc 与 both 则先 ctx.inject(['ptcRuntime']) 等到 runtime 出现再声明 → dsh-tools 把 mode 记在该作用域的 ToolLayer 上，并在非 native 时把 PTC 规则段与 SDK 段注册进同一作用域 → 此后每次提示装配（wireSchemas）用 modeFor(scope) 沿作用域链取最近的 mode，决定交给模型的是全量 schema、只留 run_code，还是两者都给。本包自己不留任何状态，也不接收任何回调：写完这一次，剩下的全在 dsh-tools 里。",
+    "inside": "整个包只有一个 73 行的 src/index.ts，没有 Service、没有 ctx key、没有事件，也没有 invariant companion（README 明说：它只向 ctx.tools 发起一次 scoped 调用，不拥有任何事件或快照，它建立的关系归工具注册表持有）。name = 'tool-presentation'（28）是插件名，preset 行用 id 引用它。inject = ['tools']（35）只声明 tools——注意 ptcRuntime 故意不在 inject 里：一个 native 行必须能在完全没有 runtime 的部署里挂载，所以模式相关的等待被写进 apply 内部而不是声明成静态依赖。Config 用 schemastery 声明为 z.object({ mode: z.union(['native', 'ptc', 'both']).required() })（50-52）：required 而不是给默认值，因为「没有这一行」本身就已经代表继承部署默认，若再给默认值，这一行就能毫无意义地存在。apply(ctx, config)（59）分两支：native 直接 ctx.tools.presentAs('native') 后 return；ptc 与 both 走 ctx.inject(['ptcRuntime'], runtimeCtx => runtimeCtx.tools.presentAs(config.mode))（69），这个 inject 就是那次「响亮的失败」——条件不满足时这一行永远 pending，preset-registry 据此报不可用并点名这个 id。源码注释还点明 presentAs 本身就是那个 effect（它用调用方的 ctx 注册并交回精确 disposer），所以声明会随这一行一起 unwound，不需要再包一层。真正落地的是 dsh-tools 的 presentAs（tools/src/index.ts:974）：它要求 scoped context（非作用域上下文直接抛错，因为进程级的呈现是 tools 行的 mode 字段）、一个作用域只允许声明一次（第二次抛 conflict），并在非 native 时额外注册 collapseSection（只有 run_code 可被直接调用这条规则，且用与执行器完全相同的判定谓词，避免提示说一套、执行做一套）与 sdkSection（按 runtime.language 从 SDK_RENDERERS 选渲染器生成 SDK）。读取侧是 modeFor(scope)：沿链取最近的声明，没有才落回部署默认，这正是 preset 的声明能覆盖其下每个 agent 的原因；而 run_code 传输被刻意放在可过滤的注册层之外，per-agent 的 restrict 删不掉它。",
+    "boundary": "明确归它管：一个 preset（一个作用域）选择哪种工具呈现形态，以及 PTC 模式缺少 runtime 时以「挂起」的方式提前暴露。明确不归它管：工具目录本身、schema 怎么渲染、run_code 传输怎么实现、SDK 怎么生成、沙箱策略怎么定，也不提供 runtime——README 明说 preset 能选 PTC 但不能自带 TypeScript runtime，部署里没组合 runtime 就组不出 PTC preset；部署级默认同样不归它，那是 dsh-tools 行上的 mode 配置字段。划线依据是 host-plane 与 agent-plane 的二分：一个服务只有当它的所有消费者都跟着搬走时才能下沉，而 ctx.tools 的消费者（loop 的调度器、proxy 的 presenters、每个工具插件）全在 host 侧，所以注册表必须留在 host；「呈现形态」的消费者只在 agent 侧（就是那一个 agent 的提示装配），因此这一项可以下沉并被 preset 拥有。",
+    "tour": [
+      {
+        "file": "packages/core/agent-tool-presentation/src/index.ts",
+        "line": 35,
+        "sym": "inject = ['tools']",
+        "note": "只依赖 tools；ptcRuntime 故意不写进 inject，因为 native 行必须能在完全没有 runtime 的部署里挂载成功，写成静态依赖会把这一行一起拖死。"
+      },
+      {
+        "file": "packages/core/agent-tool-presentation/src/index.ts",
+        "line": 51,
+        "sym": "Config mode union required",
+        "note": "mode 不给默认值：没有这一行本身就已经表示继承部署默认，给了默认值这一行就能毫无意义地存在。"
+      },
+      {
+        "file": "packages/core/agent-tool-presentation/src/index.ts",
+        "line": 59,
+        "sym": "apply",
+        "note": "native 分支直接声明就返回；ptc 与 both 改用 ctx.inject 等待 host-plane 的 runtime，而 runtime 是 host-plane 的，preset 自己带不来——这个等待本身就是那次响亮的失败，也是本行唯一的运行时行为。"
+      },
+      {
+        "file": "packages/core/agent-tool-presentation/src/index.ts",
+        "line": 69,
+        "sym": "ctx.inject(['ptcRuntime'], …)",
+        "note": "条件不满足时这一行永远停在 pending，preset-registry 的激活审计据此点名报不可用，把失败从「第一次提示装配」提前到「挂载期」。"
+      },
+      {
+        "file": "packages/core/tools/src/index.ts",
+        "line": 974,
+        "sym": "ToolRuntime.presentAs",
+        "note": "真正的落点：要求 scoped context、一个作用域只允许声明一次（第二次抛 conflict），并在非 native 时把 PTC 规则段与 SDK 段注册进同一作用域。"
+      }
+    ],
+    "gotchas": "只在 preset 或作用域里有效：一个作用域只能声明一次，第二次是抛错而不是覆盖——「模型看到哪种形态」出现两个答案，那是矛盾而不是 override。mode 是必填项，不给默认值，行里漏写会直接挂载失败。ptc 与 both 依赖 host-plane 的 ctx.ptcRuntime，且其语言必须有已注册的 SDK 渲染器，部署里没组合 runtime 时整行挂起、preset 报不可用，preset 自身无法自带 runtime。这一行不拥有任何事件或快照，也没有 invariant companion，出问题要去 dsh-tools 的 presentAs 与 modeFor 查。run_code 传输被刻意放在可过滤的注册层之外，per-agent 的 restrict 删不掉它，作用域注册也遮蔽不了它。",
+    "analogy": "把它想成包间里那张「这桌客人要哪种菜单」的小卡片。厨房（dsh-tools）只有一套菜，但同一时间可以给一桌上整本菜单（native：每个工具一个 function 定义），给另一桌上「一台点餐机加一本编程手册」（ptc：只给 run_code 和生成的 SDK）。厨房搬不进包间——它的消费者都在大厅（跑循环的、接 API 的、每个工具插件），但「这桌用哪种菜单」可以。卡片上写了 ptc 就得先确认厨房真有那台点餐机，没有的话这张卡片会被一直举着、包间开不了桌并当场点名，而不是等客人点菜时才发现做不了。"
+  }
+]

@@ -1,0 +1,246 @@
+[
+  {
+    "group": "context",
+    "dir": "agent-instructions",
+    "short": "agent-instructions",
+    "oneLiner": "把 AGENTS.md/CLAUDE.md 指令链作为持久 user 消息注入模型请求",
+    "why": "仓库和用户全局目录里写着这个工作区真正的规约——编码约定、目录结构、命令用法。不加载这个包，模型第一次请求就看不到 ~/.dsh/AGENTS.md 与项目根到 cwd 的指令链，嵌套子包的专属指令也永远不会被发现：agent 会按通用习惯改代码，违反仓库自己的约定，用户只能每轮手动粘贴规则。更糟的是恢复会话时没有任何基线可对账。它用字节预算把注入成本钉死：没有它，等价的方案往往是无上限地把所有说明书塞进 system prompt。",
+    "position": "上游是 dsh-agent 的 agent/pre-step 事件管道：插件在 listener 里先调 next() 让下游决定进入哪个 step，再把指令消息折进 decision.messages。下游依赖三样：ctx.fs（dsh-fs 的 FileSystem provider，没有它整个插件退化为 no-op）、ctx.sessionProjections（要求 turnBoundary 投影判断 step 是否 open）、dsh-session 的 user/message 历史回读。数据流：files.ts 经 ctx.fs 探测并流式读取文件 → render.ts 按预算渲染 → compose 产出带 AgentInstructionSource 的 user/message 折入批次；另一条流是 tools/result 记录 read/write/edit 的 file_path touch，step/end 后 queueProjection 重建收件箱。",
+    "inside": "六个文件各管一段。index.ts 的 apply() 注册 agent/pre-step listener（index.ts:315），compose() 做两件事：首次或身份不匹配时 loadBaselineInstructionSet 生成基线；reconcileInstructionContext 处理增量。listener 还负责摆放位置——用 findLastIndex 把指令插在 claimed 批次之后、runtime 上下文之前。tools/result listener（index.ts:343）从 read/write/edit 的 arguments.file_path 收集 touch，沿 exec.parent 向上冒泡到无父执行，stepIsOpen 判断 step 是否仍 open，open 则挂到 stepTouches 等 step/end 再投递。files.ts 是发现层：findProjectRoot（files.ts:181）向上爬找 .git 标记，marker probe 遇到权限或 IO 错误直接失败而不选祖先目录；ancestorChain 产出根到 cwd 的宽到窄链；readBounded 流式读并按 maxSourceBytes 截断；dedupInstructionFilesByDirectory 按目录用 trimmed SHA-1 折叠兄弟重复（CLAUDE.md 复制 AGENTS.md 只渲染一次）。render.ts 是预算层：renderInstructionContext 先整体超预算则从最宽的文件开始整份丢弃，最后对最具体文件二分截断（truncateToFit 按 UTF-8 续字节回退切点）；<system-reminder> 框架由插件烘焙进消息文本并对正文转义 </system-reminder>（render.ts:242），会话层原样投影不再包裹。state.ts 是状态层：InstructionVersionCache（WeakMap<Session, Map<scope, {version,digest}>>）存 FsVersion 与摘要做快路径，version 未变就不重读；reconcileInstructionContext（state.ts:247）把 touchedPaths 经 descendantDirsBetween 展开成候选 scope，探测后产出 set/replace/remove 三种 AgentInstructionChange，同一目录一个成员探测失败就整体保留 last-good 组。",
+    "boundary": "它管：发现、预算渲染、注入、去重、变更与删除通告、恢复对账。它不管：文件监听——没有 watcher，外部编辑只在下一次第一方 read/write/edit touch 或 resume 对账时可见（README 的 Known Limitations 明说 refresh is touch-driven）；也不解析 shell cd，bash 里跳目录不触发嵌套发现。它也不碰 system prompt：注入的是带 source 的持久 user/message 而非 PromptSection，这是与兄弟包分工的划线依据——指令是对话内容，必须随历史 replay、compact、resume，做成 PromptSection 会脱离会话日志。",
+    "tour": [
+      { "file": "packages/context/agent-instructions/src/index.ts", "line": 315, "sym": "apply: agent/pre-step listener", "note": "整个包的入口机制：先 next() 拿下游决定，再把 compose 好的指令消息插到 claimed 批次之后，体现上下文注入是 pre-step 决定的改写而非独立通道。" },
+      { "file": "packages/context/agent-instructions/src/index.ts", "line": 343, "sym": "apply: tools/result listener", "note": "touch 驱动刷新的起点：从 read/write/edit 的 file_path 收集 touch 并沿 exec.parent 冒泡，解释了为什么 bash cd 不触发发现。" },
+      { "file": "packages/context/agent-instructions/src/files.ts", "line": 181, "sym": "findProjectRoot", "note": "根发现的容错哲学：marker probe 失败就抛错而不是退回祖先目录，避免把别的项目误认成根。" },
+      { "file": "packages/context/agent-instructions/src/render.ts", "line": 242, "sym": "buildInstructionText", "note": "<system-reminder> 框架由生产者烘焙进消息正文并对正文转义闭合标签，体现了插件自有框架与会话层原样投影的契约。" },
+      { "file": "packages/context/agent-instructions/src/state.ts", "line": 247, "sym": "reconcileInstructionContext", "note": "增量对账核心： FsVersion+digest 快路径、同目录去重、set/replace/remove 三态变更与 last-good 保留全在这一个函数。" }
+    ],
+    "gotchas": "刷新是 touch 驱动的：没有 watcher，外部 IDE/Git 编辑要等下一次第一方文件工具调用或 resume 才可见。bash 里 cd 不会触发嵌套指令发现。符号链接会跨信任边界解析——克隆来的仓库可以经符号链接把仓外文件当低权威指令注入。指令超预算是被截断或整份省略，从不让模型压缩。user-global 作用域没有 .local overlay。变更被预算挤出的更新要等下一次 touch 才有机会再进。",
+    "analogy": "像新员工入职时发到手上的公司规章手册合集：先发一册总部章程加你所在楼层的部门细则，之后每走进一个新楼层（read/write/edit 到更深目录），前台就把那一层的补充规定塞进你的文件夹；规则改了发修订页，撤了发作废通知，而且从来不超一页纸的预算。"
+  },
+  {
+    "group": "context",
+    "dir": "time-context",
+    "short": "time-context",
+    "oneLiner": "按步注入当前时间、浏览器时区与流逝时长的持久时钟消息",
+    "why": "LLM 没有时钟：不知道今天几号、不知道离上一条消息过了多久，更分不清用户说的下周五是哪个时区的周五。不加载这个包，模型只能从用户消息里猜日期，凡是涉及限时任务、日志时间戳、日程安排的回答都会悄悄出错且无从察觉。它把时钟读数做成带来源的持久 user 消息，让时间成为可 replay 的历史事实而不是每次重新计算的临时变量。",
+    "position": "上游是 dsh-agent 的 agent/pre-step 事件，且以 prepend: true 注册——先让下游 listener 决定，再在最终决定上追加消息。下游依赖 ctx.sessionProjections（自注册 timeContext 投影跟踪 lastMessageTime/lastInjectionTime/lastTurnInjectionTime）与 dsh-session 事件回放。数据流：pre-step 时采样 Date.now()，从本轮已入 user 消息的 user-rpc 来源推导浏览器时区策略，渲染三行读数，以 createUserMessage 追加到 decision.messages 尾部，source 标记 kind time-context、form snapshot。",
+    "inside": "单入口文件 227 行。apply() 先校验 refreshIntervalMs（缺省 600000 即十分钟，0 表示每个 eligible step 都注入，负数或非安全整数直接抛错），再用 createTimestampFormatter 建进程时区的 Intl.DateTimeFormat 作为兜底，按需缓存每个请求时区的 formatter。接着注册 sessionProjections 投影 timeContext（index.ts:157）：fold user/message 时区分本插件消息（更新 lastInjectionTime）与普通消息（只更新 lastMessageTime），turn/start 重置 lastTurnInjectionTime。核心是 prepend 的 pre-step listener（index.ts:185）：先 await next()，reject 或 signal.aborted 原样返回；间隔节流用 state.lastInjectionTime 而非进程内缓存，所以 resume 和 compact 后调度依然成立；elapsed 基线在 step 1 取 lastMessageTime、后续 step 取 lastTurnInjectionTime。requestMessages 收集本轮已进入的 user 消息交给 deriveBrowserTimeZoneContext，后者从 user-rpc 来源推出 resolved/mixed/unavailable 三态——同一回合混着两个浏览器时区时读数明说混合并让模型去问。最终在 index.ts:219 用 createUserMessage 构造三行文本（ISO 时间戳、浏览器时区策略、流逝时长）追加到批次尾部。",
+    "boundary": "它管：时钟读数、浏览器时区策略、注入间隔调度、与 compaction/resume 兼容的调度状态。它不管：不做任何工具调用参数的时区填充（README 明说 prompt guidance only），也不管 tmux 位置、工作区指令这些兄弟上下文——大家只共享 prepend pre-step + 持久 user 消息 + source 标记这套统一模式。划线依据：读数是回合准备时刻的快照，属于对话历史，不该进 system prompt 前缀。",
+    "tour": [
+      { "file": "packages/context/time-context/src/index.ts", "line": 53, "sym": "inject", "note": "声明依赖 agents 与 sessionProjections：注入靠 agent 事件，调度靠投影状态而不是进程内缓存，这是 resume 兼容的关键。" },
+      { "file": "packages/context/time-context/src/index.ts", "line": 157, "sym": "ctx.sessionProjections.register", "note": "timeContext 投影的 fold 逻辑：区分本插件消息与普通消息、turn/start 重置回合基线，调度判据全从这里来。" },
+      { "file": "packages/context/time-context/src/index.ts", "line": 185, "sym": "apply: pre-step listener", "note": "prepend 注册的上下文家族统一模式：先让下游决定，reject/abort 即退出，节流查投影而非内存。" },
+      { "file": "packages/context/time-context/src/index.ts", "line": 219, "sym": "createUserMessage", "note": "注入形态的实物：source 标 kind time-context、form snapshot 并带 sections，会话层据此识别与投影。" },
+      { "file": "packages/context/time-context/src/index.ts", "line": 112, "sym": "renderText", "note": "三行读数的拼装处：step 1 与后续 step 的 elapsed 基线不同，文案也随 baseline 切换。" }
+    ],
+    "gotchas": "读数记录的是进入 step 的时刻而非请求成功发出，后续准备失败读数已留在历史。refreshIntervalMs 为 0 时每个 eligible step 都追加一条，compaction 之前成本线性累积。混时区回合插件拒绝替模型猜，文案要求模型向用户澄清；兜底时区只是格式化用，不是用户权威。时间与时长只显示整秒，底层事件保留毫秒。",
+    "analogy": "像会议记录员在每个议程项旁标注当前时间和距上一项过了多久：你随时翻开会议纪要都知道事情发生在几点，离上一件事隔了多久，而且记录里写的是会议室当地时间和与会的远程同事时区。"
+  },
+  {
+    "group": "context",
+    "dir": "file-reference",
+    "short": "file-reference",
+    "oneLiner": "@file 补全的接缝：抽象发现服务与浏览器安全的 mention 语法",
+    "why": "宿主 UI 都想要 @file 补全，但候选从哪来因部署而异：本地盘、远程工作区、虚拟文件系统。不把这个接缝拆出来，每个 UI 都得自带一套发现逻辑和 mention 语法，provider 换个后端 UI 就要改代码；更关键的是安全模型——选中候选永远只是插入普通 prompt 文本，绝不读文件内容，模型要看内容必须自己调 read 工具。没有这条接缝，UI 很容易顺手把文件内容附进请求，破坏 dsh 的权限边界。",
+    "position": "上游是两类调用方：终端/web 宿主 UI 在光标处调 ctx.fileReferences.list(agent, query, signal)，浏览器侧经 dsh-api-session-controller 的 fileReferences/list Remote 转发。下游是 provider：dsh-file-reference-local 继承这里的抽象类 FileReferenceService 实现唯一的抽象方法 list()。数据流单向：UI 用 activeAtToken 识别光标处的 @token → list() 问 provider 拿排序候选 → formatFileMention 把选中项渲染成 @path 或 @\"path with spaces\" 拼回输入框。整条链路不读任何文件内容。",
+    "inside": "三个小文件。index.ts 定义 abstract class FileReferenceService extends Service（index.ts:26，Cordis Service，注册名 fileReferences），declare module 给 cordis Context 加上 fileReferences 键；唯一抽象方法 list(agent, query, signal) 返回 FileReferenceCandidate[]。index.ts:17 的 FILE_REFERENCE_PROMPT 是稳定的一句话模型指引，由具体 provider 在被寻址 agent 拥有 read 工具时安装成 system-prompt section——接缝只提供文本，安装动作归 provider。grammar.ts 是共享语法：activeAtToken（grammar.ts:26）用两个锚定正则识别光标前的 @\"...\"（引号形式）或 @token，@ 前必须是行首或空白，所以邮箱地址里的 @ 不触发补全；formatFileMention（grammar.ts:45）负责反向渲染——含空白用引号形式，目录保持尾部斜杠且引号不闭合以继续下钻一层，含控制字符或内嵌引号这类语法表示不了的路径返回 undefined。types.ts 只有 FileReferenceCandidate {path, kind: file|directory}——纯路径，无内容无元数据。",
+    "boundary": "它管：服务契约、mention 语法、选中项的 prompt 拼写、给模型的那句指引文本。它不管：候选从哪来、排序与缓存、失效时机（全部推给 provider 包 file-reference-local 或未来的远程 provider），更不管文件内容（那是 read 工具的事）。划线依据：接缝要 browser-safe 且 wire-neutral——语法能在任何前端跑，服务不绑定任何执行世界，所以它连 IO 都不写。",
+    "tour": [
+      { "file": "packages/context/file-reference/src/index.ts", "line": 26, "sym": "FileReferenceService", "note": "接缝本体：Cordis 抽象 Service 注册为 ctx.fileReferences，唯一抽象方法 list，provider 靠继承它接管实现。" },
+      { "file": "packages/context/file-reference/src/index.ts", "line": 17, "sym": "FILE_REFERENCE_PROMPT", "note": "一句话模型指引作为常量共享：接缝提供文本，provider 决定何时装进 system prompt，职责切分在此可见。" },
+      { "file": "packages/context/file-reference/src/grammar.ts", "line": 26, "sym": "activeAtToken", "note": "补全触发的判定核心：@ 前必须是行首或空白，邮箱里的 @ 不触发；引号形式与非引号形式分别识别。" },
+      { "file": "packages/context/file-reference/src/grammar.ts", "line": 45, "sym": "formatFileMention", "note": "选中项回填的拼写规则：目录尾部斜杠且引号保持打开以继续下钻，表示不了的路径显式拒绝。" }
+    ],
+    "gotchas": "路径候选是 advisory 的：接缝不保证模型后续的 read 工具能访问同一命名空间，部署必须让 provider 与生效的 read 实现对齐。没有 provider 时 UI 得到空补全面。选中的文件始终是普通 prompt 文本，不存在文件内容引用对象——模型声称已查看前必须真的调用 read。",
+    "analogy": "像一排标准插座面板：它只规定插口的形状和电压标注（语法与服务契约），自己不发电；谁来供电（本地电网还是发电机）由插在后面的 provider 决定，电器（UI）完全不关心。"
+  },
+  {
+    "group": "context",
+    "dir": "file-reference-local",
+    "short": "file-reference-local",
+    "oneLiner": "本地文件系统的 @file 补全 provider：有界模糊索引加后台重建",
+    "why": "接缝 dsh-file-reference 只是契约，本地部署需要有人真的去扫磁盘。不加载这个包，@file 补全是空面——UI 能识别 @token 却永远列不出候选。它的存在还定义了性能底线：大仓库下补全不能卡输入光标，所以首次查询等待一次有界遍历（maxEntries 50000 封顶、15 个构建产物目录默认排除），之后索引用旧答题、后台重建，工具调用后只标脏不阻塞。",
+    "position": "继承 dsh-file-reference 的 FileReferenceService，作为 Cordis Service 注册接管 ctx.fileReferences；static inject = ['agents']。上游是调用 list() 的 UI 与 Session Controller Remote；横向依赖 dsh-system-prompt 与 dsh-tools（给有 read 工具的 agent 装 FILE_REFERENCE_PROMPT section）、dsh-agent 的 agent/created、agent/disposed、session/event 事件。数据流：list(agent, query) → 按 agent 取或建 WorkspaceFileSearch（根为 session cwd）→ 索引或实时目录列举 → 排序截断返回。",
+    "inside": "index.ts 142 行 + search.ts 388 行。LocalFileReferenceService（index.ts:44）构造时对 ctx.agents.list() 里每个 agent 调 installPrompt：用 agent.ctx.inject(['systemPrompt','tools'], ...)（index.ts:69）开一根 fiber 注册 name 为 context:file-reference 的 section，text() 是惰性求值——agent 没有 read 工具就返回空串，read 可见性变化自动反映。index.ts:98 监听 session/event 的 tool/result，把对应 agent 的索引 invalidate；agent/disposed 释放索引与 prompt fiber。search.ts 的 WorkspaceFileSearch（search.ts:84）是核心：带斜杠的查询走 listDirectory 实时读目录（resolveDisplayDirectory 逐段校验防目录穿越），裸查询走 indexFor——首个查询等待 scanWorkspace 的一次 BFS 遍历（maxEntries 截断，根不可读时抛错而不是发布空索引），之后 invalidated 计数器大于 settled.startedAt 就后台 ensureIndex 重建、旧索引继续作答（search.ts:159）。invalidate()（search.ts:139）只递增计数器，从不丢数据。排序 rankCandidates 按精确、前缀、子串、子序列得分加目录加分，确定性排序取 maxResults 20 条。",
+    "boundary": "它管：本地命名空间的发现、排序、有界缓存、tool/result 触发的失效、与 read 工具可见性联动的指引 section。它不管：文件内容（模型要内容仍走 read 工具）、远程或虚拟命名空间（那些需要部署另写一个 provider 对接同一条接缝）。划线依据：索引必须与生效 read 工具在同一个执行世界里，这是接缝文档明说的配对约束。",
+    "tour": [
+      { "file": "packages/context/file-reference-local/src/index.ts", "line": 44, "sym": "LocalFileReferenceService", "note": "接缝的本地实现入口：继承抽象 Service 接管 ctx.fileReferences，static inject 声明对 agents 注册表的依赖。" },
+      { "file": "packages/context/file-reference-local/src/index.ts", "line": 69, "sym": "installPrompt: agent.ctx.inject", "note": "模型指引的安装方式：fiber 注入 systemPrompt section，text() 惰性检查 read 工具可见性，read 消失指引自动变空。" },
+      { "file": "packages/context/file-reference-local/src/index.ts", "line": 98, "sym": "ctx.on('session/event')", "note": "失效触发点：任何 tool/result 都让该 agent 的索引变脏，补全因此能跟上模型自己的文件改动。" },
+      { "file": "packages/context/file-reference-local/src/search.ts", "line": 84, "sym": "WorkspaceFileSearch", "note": "每 agent 一个的可复用索引：目录查询走实时列举、裸查询走共享有界遍历，两条路径的选择逻辑在这里分岔。" },
+      { "file": "packages/context/file-reference-local/src/search.ts", "line": 139, "sym": "invalidate", "note": "失效只递增计数器不丢数据：旧索引继续答题、后台重建，这是补全永不卡光标的关键设计。" }
+    ],
+    "gotchas": "maxEntries 50000 之外的路径直接不存在于索引；排除表只按目录 basename，没有 .gitignore 语义；lib 故意不在默认排除表（Ruby/很多 npm 包的源码在 lib），构建进 lib 的工作区要自己加。一次失效延迟：tool/result 后的第一个裸查询仍按旧索引作答，下一个查询才见新树。索引是 advisory 缓存，无声截断。",
+    "analogy": "像图书馆门口的索引卡片柜：读者随到随查永远不等（旧卡片照常用），管理员发现有人动过书架就在后台悄悄重排卡片；只收录前五万张卡片，仓库、购物袋和垃圾桶（node_modules、dist 之类）一律不进柜子。"
+  },
+  {
+    "group": "context",
+    "dir": "session-reference",
+    "short": "session-reference",
+    "oneLiner": "把跨会话引用变成有界、不可信、不可变的快照上下文",
+    "why": "用户经常想让新会话接着旧会话干。没有这个包，唯一手段是手动复制粘贴或让模型去读别的会话日志——前者丢上下文，后者把别的会话内容当可信输入，注入风险直接进主对话。这个包把引用做成一次性的只读快照：捕获后不可变、按模型上下文窗口定字节预算、带固定警告禁止执行其中的指示与工具请求，溢出部分可选落盘留存。删掉它，跨会话协作塌回复制粘贴，且没有防注入护栏。",
+    "position": "SessionReferenceResolver（index.ts:85）extends TypertRemoteService，注册为 ctx.sessionReferenceResolver 并带 @Remote('candidates') 远程面；static inject = ['sessionQuery']。上游：宿主 UI 经 remote 面拿候选与 canonical mention，agent/pre-step 管道触发准备。下游：ctx.sessionQuery.readSurface 读源会话表面、llm.resolveModelInfo 定预算、spillStore 存截断全文、sessions/sessionProjections/sessionProjectionCache 出标签。数据流：pre-step 解析 user 消息里的 dsh-session: mention → prepare 并行读各源 → 字节保留 → 渲染 <referenced-sessions> JSON → 返回 [改写后的直发消息, 快照消息] 两条 user 消息。",
+    "inside": "构造器装两个 prepend listener：system-prompt/assemble（index.ts:127）在每个 agent 装配完成后记录 {provider, model} 到 WeakMap，供预算取上下文窗口；agent/pre-step（index.ts:135）把 decision.messages 逐条过 prepareDirectMessages——只对 source.kind 为 user 的消息 parseSessionReferenceText 提取引用并改写成可读 @label，然后紧跟一条快照消息。prepare（index.ts:299）是主流程：normalizeReferences 拒自引用、去重、限 maxReferences（≤3）；并行 readSurface 每个源一次；retainReferencedSession 只保留 direct-user 文本、assistant 文本、带 compaction marker 的 user checkpoint（工具与推理不跨会话，防递归引用）；referenceBudget（index.ts:360）用 max(65536, contextWindow×4×0.2) 定每源字节；截断的引用经 prepareReferenceOmission 把完整 projection 存到 spillStore（归属目标会话）并生成 omission notice。renderPrompt 用 stringifyTagSafeJson 把所有 < 转义成 \\u003c，源文本永远拼不出 <referenced-sessions> 框架标签。listCandidates（index.ts:190）按 cwd 亲和排序，标签只从投影快照取（attached 走 live registry、冷会话走 projection cache），绝不读日志——这个调用在每次补全按键下面。",
+    "boundary": "它管：canonical URI 与 mention 语法、快照捕获与不可变性、字节预算与保留、防框架逃逸的转义、候选发现。它不管：候选不搜正文（只搜 id/cwd/标题）、不传播非文本块、不提供实时链接（快照不是 fork/resume/订阅）、也不是模型可调的搜索工具——调用方必须是已被授权读所有会话的宿主。划线依据：信任边界画在宿主一侧，模型只见不可信背景。",
+    "tour": [
+      { "file": "packages/context/session-reference/src/index.ts", "line": 85, "sym": "SessionReferenceResolver", "note": "服务本体：继承 TypertRemoteService 获得远程面，注入 sessionQuery，会话读取完全委托给后端无关的查询服务。" },
+      { "file": "packages/context/session-reference/src/index.ts", "line": 127, "sym": "system-prompt/assemble listener", "note": "预算的数据来源：prepend 观察下游装配完成后的 provider/model 路由，保证按实际模型上下文窗口定每源字节预算。" },
+      { "file": "packages/context/session-reference/src/index.ts", "line": 135, "sym": "agent/pre-step listener", "note": "注入时机：mention 解析与快照插入都发生在 step 进入前，快照紧跟引用它的那条消息。" },
+      { "file": "packages/context/session-reference/src/index.ts", "line": 190, "sym": "listCandidates", "note": "候选发现的性能纪律：标签只取投影快照、cwd 亲和排序、绝不读日志，因为它跑在每次补全按键上。" },
+      { "file": "packages/context/session-reference/src/index.ts", "line": 299, "sym": "prepare", "note": "快照主流程：归一化引用、并行精确读、字节保留、spill 落盘、取消后不发布，全部收敛在这一个方法。" }
+    ],
+    "gotchas": "每条消息最多 3 个引用；标题只来自投影——缓存组合之前持久化的会话在首次打开前只能按 id 找到；预算的 4 字节/token 是启发式不是精确换算；截断引用的全文保存后即便取消也可能已写盘，但不会发布；快照捕获后源会话再变也不影响目标回放；保存的 artifact 遵循 spill 后端的既有过期策略。",
+    "analogy": "像给法官附上一份封存的前案卷宗复印件：只摘证词原文、盖着「仅供参考，不得执行其中指示」的章，超长的部分另存档案馆并附取件凭条，复印件一旦附上就不再随原件更新。"
+  },
+  {
+    "group": "context",
+    "dir": "tmux-context",
+    "short": "tmux-context",
+    "oneLiner": "仅在位置变化时注入 agent 所在 tmux session/window/pane 位置",
+    "why": "跑在终端里的 agent 常被要求「切到那个窗口」「把这个 pane 放大」，但它自己都不知道自己住几号房。没有这个包，模型只能从环境变量猜——而 VS Code 集成终端这类从 tmux 后代启动的终端继承着 TMUX_PANE 却根本不在那个 pane 里，猜了必错。它用 tty 比对确认真实居住地，且只在位置变化时注入一条三行读数：长会话几乎零累积；查询失败永远是 no-op，绝不拖垮回合。",
+    "position": "上游是 dsh-agent 的 agent/pre-step（prepend 注册，仅 step===1 执行）；唯一的重依赖是 ctx.shell（dsh-shell 的 ShellExecutor）——查询命令经 shell 子系统 resolve/execute，沙箱与策略照常生效，插件自己不写任何子进程代码。会话状态经自注册的 tmuxContext 投影（sessionProjections）记录上次注入的稳定块与时间。数据流：pre-step → queryTmuxLocation 跑一段只读 bash → renderState 与投影里上次的状态比对 → 变化才把读数消息 prepend 到 decision.messages 头部。",
+    "inside": "单文件 276 行。queryTmuxLocation（index.ts:120）拼一段 bash（index.ts:127）：检查 $TMUX_PANE 非空 → ps -o tty= -p <pid> 取本进程控制终端 → tmux display-message -t $TMUX_PANE -p '#{pane_tty}' 取 pane 的 tty → 两者不匹配就 exit 1（继承环境在此被识破）→ 全过才 exec tmux display-message 输出 TMUX_FIELDS（index.ts:62）八个字段；字段分隔符用字面两字符 \\t——tmux 不解释格式串里的 C 转义，插件读回时再按它 split。executor 拒绝、非零退出、字段数不对、pane id 为空一律 warn 后返回 undefined，回合继续。renderState 渲染不含 turn 前缀的稳定块，它是变化抑制的比较对象。apply()（index.ts:226）注册 tmuxContext 投影：fold 本插件的 user/message，截首行之后的稳定块存为 {state, time}；调度和抑制都查投影而非内存，所以 compaction 与 resume 后依然成立。pre-step listener（index.ts:246）先 next()，reject、aborted、step!==1、shell 缺失都直接返回；refreshIntervalMs 节流后查询、比对、仅在状态变化时把 renderReading（带 tmux location (turn N) 前缀）的消息放在批次最前面。",
+    "boundary": "它管：本进程所在 pane 的身份与布局快照、基于 tty 的真伪 tmux 判定、变化抑制与间隔调度。它不管：兄弟 pane 的可见内容（永远不采集）、像素尺寸（只给 layout 树和 active 标志）、回合中途的 pane 移动（下一步的回合才反映）。与 time-context 是同一模式的双胞胎：prepend pre-step + 持久快照消息 + 投影调度；差别只在变化驱动还是间隔驱动。划线依据：读数是外部 tmux 状态的回合级快照，插件不拥有任何常驻子进程。",
+    "tour": [
+      { "file": "packages/context/tmux-context/src/index.ts", "line": 120, "sym": "queryTmuxLocation", "note": "探测入口：失败全部降级为 warn+undefined，位置是可选上下文，绝不把回合拖垮。" },
+      { "file": "packages/context/tmux-context/src/index.ts", "line": 127, "sym": "command construction", "note": "四步 bash 自证链：检查环境变量、取自身 tty、比对 pane_tty，把继承环境与真实 pane 区分开。" },
+      { "file": "packages/context/tmux-context/src/index.ts", "line": 62, "sym": "TMUX_FIELDS", "note": "八个 tmux 格式字段与 \\t 分隔符：tmux 不解释 C 转义所以用字面序列，读回再 split，像素尺寸刻意缺席。" },
+      { "file": "packages/context/tmux-context/src/index.ts", "line": 226, "sym": "apply", "note": "装配处：投影注册、间隔校验、prepend pre-step 一气呵成，单文件插件的典型形态。" },
+      { "file": "packages/context/tmux-context/src/index.ts", "line": 246, "sym": "apply: pre-step listener", "note": "执行序：先 next()、只认 step 1、节流查投影、状态没变就静默，最后才 prepend 消息。" }
+    ],
+    "gotchas": "VS Code 集成终端等继承了 TMUX/TMUX_PANE 的终端被刻意排除——进程控制终端不等于 pane tty 就读作不在 tmux。窗口名若含字面 \\t 两字符会拆错字段被整条跳过。pane 在回合中途移动或缩放要到下一回合才可见。没有 ctx.shell、环境缺失、查询失败都是静默 no-op，模型不会收到任何「我在 tmux 里但没有读数」的解释。",
+    "analogy": "像工位门牌打卡：每天早上上班瞥一眼自己工位的门牌号和楼层平面图，只在换座位时才在群里说一声新位置；看错了工位（继承的工牌）就当自己没搬进来，什么都不说。"
+  },
+  {
+    "group": "skill",
+    "dir": "skill",
+    "short": "skill",
+    "oneLiner": "ctx.skills：合并多来源技能目录、按名加载正文的提供者注册表",
+    "why": "技能可能来自项目磁盘、插件内存、远程服务——sources 天然是多元的，而消费端（模型目录、/命令、宿主代码）需要的是一份排好序、重名可预期、失效即刷新的合并目录。没有这个注册表，每个消费端都要自己遍历来源、解决重名、处理 provider 失败；磁盘 provider 和模型工具也将失去共同的挂载点。删掉它，dsh-skill-filesystem 无处注册，dsh-tool-skill 无目录可读，整个技能子系统塌成一个空名词。",
+    "position": "SkillRegistry（index.ts:356）extends Cordis Service 注册为 ctx.skills（declare module 扩展）。上游两类写入方：provider 经 registerProvider 注册（filesystem、dsh-badge 等），插件代码经 register() 贡献 runtime 技能；下游是消费端 dsh-tool-skill（目录快照 + 按名加载）与宿主命令。分层依赖 dsh-scope 的 ScopedLayers/scopeOf——注册落进调用 ctx 的 scope 层。数据流：读路径 list()/snapshot() 逐层 collect → provider.list() 校验合并排序；写路径 get(name) → 找胜者 candidate → provider.get(candidate) 回读正文。",
+    "inside": "单文件 869 行，三块机制。一是分层注册：SkillLayer 持 providers（NamedEntries 同名即抛）与 runtime Map；registerProvider（index.ts:390）同步注册，'runtime' 是保留名，返回精确 disposer，control.invalidate 仅当精确注册仍活跃才生效（迟到的回调动不了同名替代者）；register()（index.ts:439）的 runtime 技能同层同名 first-wins 加 warn。二是目录收集：collect（index.ts:519）的缓存键是 {cwd, scope 链 id, revision}——链在键里而不是假设稳定；revision 变了最多重试两次，仍不稳定就返回 cacheable:false 的未完成观察（消费端保留 last-good）；listLayerCandidates 里 runtime 先行、provider 顺序 await，单个 provider 抛错只 warn 并把本次观察标为不可缓存；层内 compareIndexedCandidates 按 rank→providerOrder→localOrder 定序，同名高优先级隐藏低优先级；跨层 merge 时近层直接遮蔽远层。三是加载与失效：get（index.ts:500）先 isSkillName 校验、胜者选择后重查 abort、provider.get 结果过 validateDefinition、definition.name 与 candidate 不符就 invalidateEntry（缓存里这个目录可能已过期）；注册表没有 TTL——只有 provider 主动 invalidate() 或注册增删才 revision+1、清缓存、发无过滤的 skills/change 事件。index.ts:170 的 renderSkillContent 是两条加载路径（工具结果与用户 /name 注入）共用的统一 <skill_content> 渲染。",
+    "boundary": "它管：合并、胜者解析、候选与定义校验、按 cwd/scope/revision 的缓存与失效、统一渲染。它不管：技能从哪来（provider 契约只有 list/get 两个函数加一个 name）、谁把目录呈现给模型（tool-skill 的职责）、调用面过滤（modelInvocable/userInvocable 只是元数据，过滤发生在消费端边界）。划线依据：注册表只做「名词与正文的中转」，对技能内容只验语义字段、从不理解正文。",
+    "tour": [
+      { "file": "packages/skill/skill/src/index.ts", "line": 356, "sym": "SkillRegistry", "note": "服务本体：ScopedLayers 分层结构，注册落调用方 scope 层，读时全局层加 scope 链合并，近层遮蔽远层。" },
+      { "file": "packages/skill/skill/src/index.ts", "line": 390, "sym": "registerProvider", "note": "provider 注册契约：同步注册进调用层、runtime 名保留、invalidate 仅对仍活跃的精确注册生效，迟到的失效动不了替代者。" },
+      { "file": "packages/skill/skill/src/index.ts", "line": 519, "sym": "collect", "note": "缓存与一致性核心：键含 cwd/scope 链/revision，修订变化重试两次，未完成观察永不入缓存以保住消费端 last-good。" },
+      { "file": "packages/skill/skill/src/index.ts", "line": 500, "sym": "get", "note": "按需加载：名字语法校验、选胜者后重查取消、返回定义再校验，名字漂移直接作废缓存目录。" },
+      { "file": "packages/skill/skill/src/index.ts", "line": 170, "sym": "renderSkillContent", "note": "两条加载路径共用的统一渲染：resourceBase 四种提示加 <skill_instructions> 正文，模型只见一种 <skill_content> 形状。" }
+    ],
+    "gotchas": "provider 是串行 await 的：一个慢 provider 拖住所有排在后面的 provider，取消只能停住调用方的等待，停不住不配合的 provider 自己的活。失效是 provider 驱动的，没有 TTL——远程源变了但 provider 忘了调 invalidate，目录就停在旧貌。未完成观察不被保留，注册表不存 last-good 也不存 per-provider 诊断。同层重名低优先级候选被静默隐藏，近层遮蔽远层也没有 API 可查被遮住了什么。",
+    "analogy": "像人才市场的总登记处：各中介（provider）把候选人名单交来，它负责排重、定级、合并成一本总名册；用人单位按名字要档案时，它去找对应的中介调原件，自己从不复印存底——中介说名单更新了，它才重印名册并广播一声。"
+  },
+  {
+    "group": "skill",
+    "dir": "skill-filesystem",
+    "short": "skill-filesystem",
+    "oneLiner": "从项目、自定义与用户目录发现 SKILL.md 技能并 watch 的 provider",
+    "why": "技能要像代码一样可版本控制、可随手编辑才有生命力。不加载这个包，ctx.skills 里只剩 runtime 和 bundled 技能，磁盘上的 .dsh/skills、.agents/skills 永远不会出现在会话目录里，用户写的每个技能都只能改成插件代码。它还负责让磁盘状态活着：watch 让新建、改名、删除的技能免重启进入下一个目录，第一方 write/edit 经 fs/observed 直通失效让模型立刻看见自己刚写的技能。",
+    "position": "apply()（index.ts:134）通过 ctx.skills.registerProvider 把 FileSystemSkillProvider 注册到 ctx.skills（provider 名默认 filesystem），inject = ['skills']。读路径可选走 ctx.fs（有 provider 且非 bundled 根时），否则回退 Node IO；根解析依赖 dsh-home-paths 的 resolveDshHome；监听 dsh-fs 的 fs/observed 事件识别第一方 write/edit actor。数据流：roots(cwd) 按 rank 组装根列表 → watchManager.observeRoots 附加 watcher → discoverRoot 列目录项 → parseSkillFile 解析 frontmatter → 带 rank/source/locator 的 SkillCandidate 交注册表合并；get() 每次经 locator 重新读文件。",
+    "inside": "单文件 1050 行，两大件。FileSystemSkillProvider（index.ts:150）：list()（index.ts:186）先 roots() 组装五类根（rank 100-600：project .dsh/.agents/skills、custom、user dsh/agents、bundled env 根），watch 附加失败返回 {candidates, complete:false} 的未完成观察让注册表保住 last-good；discoverRoot（index.ts:723）只扫根的直接条目——目录 bundle <name>/SKILL.md 或平铺 <name>.md，嵌套刻意不发现；parseSkillFile（index.ts:797）用 parseFrontmatter（index.ts:917）切 YAML 头，name 必须 kebab-case、description 必填，parseInvocationPolicy（index.ts:1000）按严格布尔语法解析 disable-model-invocation 与 user-invocable（出现 legacy 键名直接抛错弃整条技能）；get() 每次重新 parseSkillFile，正文永远当前，无需失效协议。SkillWatchManager（index.ts:288）：存在的根用 chokidar depth 1 watch（openRootWatcher，index.ts:491，atomic+awaitWriteFinish 平滑）；不存在的根由 resolveRootWatchMode 找最近存在祖先、用 fs.watchFile 轮询下一段路径（openAncestorWatcher），一段一段跟进直到根出现；isRelevantWatchEvent 只认一层平铺 .md 增删与直接 SKILL.md 增删改，资源子树变化被忽略；queueInvalidation 把一批事件合并成每个 microtask 批一次 invalidate；observeRoots 按 projectRoot 分组共享 watcher，项目数超 watchMaxProjects 128 时淘汰最老项目；observeHostMutation 检查 fs/observed 的目标是否可能是技能路径后直通失效。",
+    "boundary": "它管：本地根的发现顺序与解析、frontmatter 布尔语法、watch 与失效、正文按需重读。它不管：多 provider 合并与重名仲裁（注册表的事）、目录如何呈现给模型或用户（tool-skill 的事）、远程或内嵌技能来源（那是别的 provider）。划线依据：发现与 watching 分离——list() 扫描走 ctx.fs 以贴合同一执行世界，watcher 只属于宿主进程且有自己的边界（maxProjects、teardown 全收）。",
+    "tour": [
+      { "file": "packages/skill/skill-filesystem/src/index.ts", "line": 134, "sym": "apply", "note": "装配三件事：registerProvider 挂 provider、effect 保证 watcher 随插件销毁、fs/observed 把第一方 write/edit 直通成失效。" },
+      { "file": "packages/skill/skill-filesystem/src/index.ts", "line": 186, "sym": "FileSystemSkillProvider.list", "note": "发现主流程：根组装、watch 附加失败降级为未完成观察而不是清空目录，保住注册表侧的 last-good。" },
+      { "file": "packages/skill/skill-filesystem/src/index.ts", "line": 288, "sym": "SkillWatchManager", "note": "watch 资源的拥有者：按项目分组的 watcher 池、淘汰上限、teardown 全收，发现与 watching 的分离落在这层。" },
+      { "file": "packages/skill/skill-filesystem/src/index.ts", "line": 491, "sym": "openRootWatcher", "note": "chokidar depth 1 的参数细节：atomic 与 awaitWriteFinish 处理编辑器原子写，ignoreInitial 避免开机全量事件。" },
+      { "file": "packages/skill/skill-filesystem/src/index.ts", "line": 797, "sym": "parseSkillFile", "note": "目录与正文的分界：发现只解析 frontmatter 进目录项，正文每次 get 重读，所以改正文不需要任何失效。" }
+    ],
+    "gotchas": "只发现一层：嵌套 **/SKILL.md 与包内技能刻意忽略。项目根是最近的 .git 祖先，没有就退 cwd。格式错的技能只是 warn 后消失，模型目录无法区分「不存在」与「存在但坏了」；意外 IO 失败反而保 last-good。启动时不存在的根靠 watchFile 轮询一段一段追，检测有界延迟。正文没有版本协议：旧工具结果里的正文是历史事实，后来的编辑只影响之后的调用。TODO 注释计划把 chokidar 抽成 Cordis file-watch service。",
+    "analogy": "像社区布告栏管理员：定期巡看各楼层告示板（项目、自定义、用户目录），新贴的、撕掉的告示上报总登记处；有人要看全文时现场再抄一份最新的（每次 get 重读文件）；文件柜还没搬来的楼层，就先盯着走廊看它什么时候到。"
+  },
+  {
+    "group": "skill",
+    "dir": "skill-badge",
+    "short": "skill-badge",
+    "oneLiner": "捆绑的 dsh-badge 归因技能 provider：单一不可变候选",
+    "why": "用 dsh 产出的内容理应带上官方「powered by dsh」徽章，但让每个部署自己往磁盘写一份 badge 技能既累又容易过期。这个包把徽章技能随安装打包分发：启用后 dsh-badge 就出现在技能目录，带 Markdown 片段和一张打包 PNG（远程图不可用的场景用）。它是注册表接缝的最小验证案例——61 行就完成一个 provider，也证明 runtime 技能、磁盘技能、捆绑技能走的是同一条加载通路。",
+    "position": "inject = ['skills']，唯一的对外动作是 apply() 里一行 ctx.skills.registerProvider(() => provider)。上游是 ctx.skills 注册表：provider 名 dsh-badge，rank 用 BUNDLED_SKILL_RANK（600），source 标 bundled；下游是 dsh-tool-skill 呈现目录与加载正文。数据流极短：list() 恒返回模块级 CANDIDATE；get() 经 import.meta.url 定位打包 assets/dsh-badge.md 读当前文件体；resourceBase 指向 assets/ 目录让正文里的相对路径有解释基准。",
+    "inside": "模块级常量构成全部状态：CANDIDATE（index.ts:25）是一个不可变 SkillCandidate——name dsh-badge、描述写明何时使用（创建 PR/MR 或用户要徽章时）、locator 指向打包的 dsh-badge.md URL；provider（index.ts:36）实现 SkillProvider 的两个方法：list() 返回 [CANDIDATE]，get() 每次 readFile 读当前文件体并回填 description/invocation/resourceBase。apply()（index.ts:58）就是 registerProvider 一行——没有配置 schema、没有 watch、没有失效需求，因为来源不可变，发现永远恰好返回一个技能。资源是打包文件不是补全面：PNG（726×120 源、渲染 121×20）供无法可靠拉远程图的系统使用。",
+    "boundary": "它管：一个固定技能的目录项与正文加载、资源基准目录。它不管：其它任何技能、徽章变体定制（README 明说要别的变体就自己写技能）、注册表的合并与呈现。划线依据：它是 provider 契约的最低要求示范——两个函数、一个名字、零配置，其余一切归注册表与消费端。",
+    "tour": [
+      { "file": "packages/skill/skill-badge/src/index.ts", "line": 36, "sym": "provider", "note": "SkillProvider 契约的最小实现：list 恒返回同一候选，get 每次重读打包文件，零状态零失效。" },
+      { "file": "packages/skill/skill-badge/src/index.ts", "line": 25, "sym": "CANDIDATE", "note": "不可变候选的构造：rank 用注册表导出的 BUNDLED_SKILL_RANK 600，source 标 bundled，locator 指向打包正文。" },
+      { "file": "packages/skill/skill-badge/src/index.ts", "line": 58, "sym": "apply", "note": "整个插件就一行注册：证明 provider 接缝的最小接入成本，适合作为自写 provider 的起点样例。" }
+    ],
+    "gotchas": "CLI 发行组合里这一行默认 disabled: true，要用必须显式启用。远程 Markdown 徽章嵌的是 Shields.io 图片，目标环境拉不到远程图时用打包 PNG。要别的徽章变体（别的措辞、别的尺寸）没有运行时定制入口，只能自写技能。",
+    "analogy": "像预装在系统里的官方贴纸包：不用自己下载，翻出来就能把「powered by dsh」贴纸贴在文档和 PR 上；系统默认把它收在抽屉里（disabled），要用得自己拿出来。"
+  },
+  {
+    "group": "skill",
+    "dir": "tool-skill",
+    "short": "tool-skill",
+    "oneLiner": "把技能目录与 skill 加载工具呈现给模型的消费端",
+    "why": "注册表是进程内接口，模型看不见。不加载这个包：provider 和注册表照常工作，但模型永远不知道有技能存在、没有可调用的加载工具，用户敲 /name 也没有任何落地——整个技能子系统对模型等于不存在。它还守着关键的正确性线：目录是持久投影、按条目摘要 diff、变化追加完整替换（包括空目录退役旧名字）；加载正文只有 <skill_content> 一种形状，模型不会因加载路径不同而看到两种格式。",
+    "position": "inject = ['agents','tools','skills']。上游是模型（skill 工具调用）与用户（/name 手势）；横向从 ctx.skills 读快照与正文、向 ctx.tools 注册工具、消费自己发出的 agent/pre-step 瀑布。数据流有三条：①pre-step 里 snapshot + digest 对比历史，目录变化以持久 user 消息进入批次；②工具 execute 调 ctx.skills.get，结果经 renderSkillContent 渲染成保留的 tool 历史；③/name 扫描 claimed user 消息，注入 <skill_content> 的 user 消息到批次尾部。",
+    "inside": "apply() 顺序注册三件事，顺序即语义。其一，skill 工具（index.ts:81）：defineTool 参数只有 name，execute 里 isSkillName 校验 → ctx.skills.list 确认存在且 modelInvocable → ctx.skills.get 拿正文，错误文案三态固定（invalid name / unknown / not available for model invocation）；output.render 用 dsh-skill 共享的 renderSkillContent，工具结果与用户注入从此同形。其二，/name 手势 listener（index.ts:177）：SKILL_GESTURE 正则（index.ts:409）要求空白边界内的 kebab-case token（/usr/bin 和 5/8 不会误中），只扫 source.kind 为 user 的消息——外部文本无法伪造手势；对每个名字 get 并用 isUserInvocable 过滤（判定在加载后的定义上），命中就注入 renderSkillContent 的 user 消息（source kind skill-invocation、form instructions）追加到 decision.messages 尾部——这是 disable-model-invocation 技能唯一的入口。其三，目录 listener（index.ts:213）：index.ts:220 用 ctx.tools.get('skill', agent) === skillTool 的精确身份校验防同名 scoped 遮蔽搭车；toolVisible 才 snapshot，过滤 modelInvocable，catalogSourceEntries 生成 {name, description(截断至 catalogDescriptionMaxLength 500)} 列表，digestCatalogEntries（index.ts:328）对条目 JSON 行做 sha256——摘要基于条目而非渲染文本，框架永远不触发重发；catalogHistory（index.ts:361）回扫会话事件里最新可见 skill-catalog 消息算可见摘要；digest 变化追加 renderCatalogMessage（首次）或 renderCatalogUpdate（替换，含空目录退役文案），snapshot.complete 为 false 时什么都不发以保住 last-good。",
+    "boundary": "它管：目录的发布与替换生命周期、模型加载工具、用户显式调用注入、模型可见错误文案。它不管：技能的发现与合并（registry 与 providers）、正文大小限制（README 明说 loaded bodies 无上限，只有目录描述被截断）、resourceBase 指向的资源的实际获取（资源只是指引不是附件）。划线依据：它是唯一的模型面 owner——注册表刻意保持 invocation-neutral，过滤发生在消费端操作性边界上。",
+    "tour": [
+      { "file": "packages/skill/tool-skill/src/index.ts", "line": 81, "sym": "defineTool skill", "note": "加载工具的完整定义：参数只有名字，execute 先查目录再取正文，渲染走共享的 renderSkillContent。" },
+      { "file": "packages/skill/tool-skill/src/index.ts", "line": 177, "sym": "gesture pre-step listener", "note": "/name 注入路径：只扫直接用户消息、判定落在加载后的定义上，disable-model-invocation 技能仅此入口。" },
+      { "file": "packages/skill/tool-skill/src/index.ts", "line": 220, "sym": "toolVisible check", "note": "精确身份比较而非按名查找：同名 scoped 遮蔽会同时移除 schema 和目录，防止替身工具继承目录。" },
+      { "file": "packages/skill/tool-skill/src/index.ts", "line": 328, "sym": "digestCatalogEntries", "note": "目录 diff 的身份定义：sha256 作用于条目 JSON 行而非渲染文本，<system-reminder> 框架永远不触发重发。" },
+      { "file": "packages/skill/tool-skill/src/index.ts", "line": 409, "sym": "SKILL_GESTURE", "note": "手势语法：空白边界加 kebab-case，第二个斜杠即断——文件路径与分数不会误触技能加载。" }
+    ],
+    "gotchas": "目录替换是整表重发：改一个名字或描述就追加全部可见条目，成本正比于目录大小——这是让旧名字退役保持显式的代价。正文没有大小上限，provider 可以返回一个吃掉大量下一步上下文的技能。目录只列 name 与截断描述，whenToUse 和来源元数据不渲染。正文不版本化：只改正文不改 frontmatter 不触发目录更新，旧工具结果保持历史原样。",
+    "analogy": "像培训师把公司技能手册的目录贴在墙上，并配一个「领取手册」窗口：手册更新了就整页换新目录（旧页码作废）；学员喊「我要 xx 手册」时窗口递上全文；某些内部门册只有前台签字（/name）才能拿到，窗口永远不对外开。"
+  },
+  {
+    "group": "lsp",
+    "dir": "lsp",
+    "short": "lsp",
+    "oneLiner": "ctx.lsp：按扩展名路由的语言服务接缝与四操作封闭词汇",
+    "why": "语义级代码导航（同名函数区分、别名跟入、接口到实现、推断类型）文本搜索给不了，但语言服务后端五花八门。没有这条接缝，模型工具就得绑死某个 server 实现，换后端等于换工具；有了它，provider 只需实现「按扩展名应答四个只读操作」这一个契约，工具与 provider 可以独立替换。删掉它，dsh-lsp-stdio 无处注册、dsh-tool-lsp 无服务可查，代码导航整块塌掉。",
+    "position": "Lsp（index.ts:82）extends Cordis Service 注册为 ctx.lsp（declare module 扩展）。上游两个：dsh-tool-lsp 调 query()，dsh-lsp-stdio 等 provider 调 registerProvider()。下游是 provider 自己——接缝不做任何 IO。数据流：query(request) → finalExtension 取文件最终扩展名 → routes 表查 Route{provider, languageId} → 无路由抛 LSP_UNAVAILABLE → 有则补上 languageId 转发 provider.query。结果类型是封闭 union（locations 或 hover），从不透传原始协议载荷。",
+    "inside": "159 行接缝，全部机制在三个函数。finalExtension（index.ts:60）按最后出现的 / 或 \\ 切 basename，取最后一个点之后的部分并小写；dot <= 0 同时覆盖「没有点」和「.bashrc 这类前导点文件」——两者都返回空串，永不匹配任何路由。registerProvider（index.ts:90）是原子注册的范本：先完成全部校验与冲突检查（id 非空、id 重复抛 LSP_CONFLICT、扩展名过 EXTENSION_PATTERN 正则、languageId 非空、provider 内部 .TS 与 .ts 这类重复也先抓出来、再查跨 provider 扩展冲突），全部通过才进 ctx.effect 一次性发布 id 加全部扩展——无效或冲突的注册什么都没发布（fail-loud、all-or-nothing），disposer 把 id 与每个扩展一起释放。query（index.ts:143）只做路由：扩展名查表、补 languageId、转发；语言 id 只用于同步瞬态文档，从不参与选择。LspError（index.ts:50）extends HarnessError 带稳定 code（LSP_INVALID_PROVIDER、LSP_CONFLICT、LSP_UNAVAILABLE、LSP_DISPOSED、LSP_UNSUPPORTED_OPERATION、LSP_MALFORMED_RESPONSE），调用方按 code 路由而不是解析 message。types.ts 定义封闭的四操作 union 与 LspProvider 契约——加操作是跨接缝、provider、工具的编译期改动，没有 JSON-RPC 逃生门。",
+    "boundary": "它管：扩展名路由、注册原子性、错误分类、请求与结果的归一化词汇。它不管：server 进程怎么起（lsp-stdio）、JSON-RPC 怎么翻译（lsp-stdio）、模型界面长什么样（tool-lsp）、诊断与重命名等写操作（刻意排除——诊断需要独立的新鲜度规则，变更类操作需要权限与预览集成）。划线依据：接缝保持 provider-neutral 与操作封闭——后端可换而模型所见不变，这是「服务定义」角色的本分。",
+    "tour": [
+      { "file": "packages/lsp/lsp/src/index.ts", "line": 82, "sym": "Lsp", "note": "接缝本体：providerIds 与 routes 两张表同生死，路由永远指向活着的 provider。" },
+      { "file": "packages/lsp/lsp/src/index.ts", "line": 90, "sym": "registerProvider", "note": "原子注册范本：全部校验与冲突检查先行，通过才 ctx.effect 一次性发布，disposer 成组释放。" },
+      { "file": "packages/lsp/lsp/src/index.ts", "line": 60, "sym": "finalExtension", "note": "路由键的归一化：双路径分隔符切分、小写、前导点文件返回空串，选择与注册顺序无关。" },
+      { "file": "packages/lsp/lsp/src/index.ts", "line": 143, "sym": "query", "note": "接缝的全部运行时行为就是查表转发：扩展名无路由抛 LSP_UNAVAILABLE，语言 id 只随请求补发。" },
+      { "file": "packages/lsp/lsp/src/index.ts", "line": 50, "sym": "LspError", "note": "稳定错误码分类：调用方按 code 路由而非解析 message，工具层据此把失败变成模型可读的错误结果。" }
+    ],
+    "gotchas": "扩展名独占：同一 runtime 内两个 provider 不能都认 .ts，即便 language id 不同——重叠直接注册失败；想放宽要靠部署层的上层选择器（尚未实现）。没有观察 API：可用性只能靠实际 query 并捕获 LspError code。只有四个只读操作：符号列表、调用层级、诊断、rename/格式化都被刻意排除，各有独立的 schema 或权限问题。",
+    "analogy": "像医院分诊台：按症状（文件扩展名）把病人指到对应科室（provider），病历格式全院统一（归一化请求与结果）；一个科室一个expert（扩展名独占），挂错号分诊台直接退回并说明原因（结构化错误码）。"
+  },
+  {
+    "group": "lsp",
+    "dir": "lsp-stdio",
+    "short": "lsp-stdio",
+    "oneLiner": "通用 stdio 语言服务 provider：JSON-RPC 翻译加每工作区单进程池",
+    "why": "语言服务器成百上千，但它们说同一种方言：stdio 上的 Content-Length 分帧 JSON-RPC。用「一个通用 host 加配置表」覆盖所有语言，而不是每种语言写一个 provider 包——新增语言只是配置里加一行 command 与 extensionToLanguage。删掉这个包，ctx.lsp 接缝没有任何实现者，模型工具查什么都得 LSP_UNAVAILABLE；而自研专用 provider 则要重写握手、分帧、取消、teardown 这几百行协议机器。",
+    "position": "inject = ['fs','lsp','subprocess']——三个依赖就是设计声明：源码经 ctx.fs 读（与 read 工具同世界）、进程经 ctx.subprocess 起且凭证清洗后 resolveExecutable、provider 注册进 ctx.lsp。上游是 ctx.lsp.query 按扩展名路由进来的请求；下游是配置的语言服务器子进程。数据流：query → canonicalizeWorkspace（fs.resolve+stat 确认目录）→ enqueue(workspaceKey) 串行 → readHostSource（contains 防越界、maxDocumentBytes 封顶）→ LspInstance.query（didOpen→请求→didClose）→ translate.ts 归一化为封闭结果 union。",
+    "inside": "八个文件两层结构。index.ts 的 apply（index.ts:126）先校验每项配置（timer 预算正整数且不超 Node 上限、字节上限为正——非正的 stderr cap 会让 slice(-0) 保留全部），经 subprocess.resolveExecutable 把所有可执行文件在 load 时解析完，任何一项失败就 abort setup 且不注册任何 provider；然后 LocalLspProvider（index.ts:217）逐个 registerProvider，disposer 先摘路由再等全部实例排空。LocalLspProvider 是池化层：instances Map<WorkspaceKey, LspInstance> 每 canonical 工作区一个进程、按需懒起；queues Map 用 abortable 链把读源→打开→查询→关闭整个生命周期按工作区串行（enqueue，index.ts:318，tail 跟随实际前作，调用方中止等待不打乱队列）；query（index.ts:260）里源读取发生在 spawn 之前——排队中的查询轮到时读到当前字节，无效源也不会留一个空闲进程在池里；查询失败若是传输层失败（instance.dead + isTransportFailure）则先排空死实例再换新实例透明重试一次。instance.ts 的 LspInstance 是单进程层：构造即 initialize（index.ts/instance.ts:110）——processId: null 防止另一个 PID namespace 里的 server 监视宿主、CLIENT_CAPABILITIES 宣告 utf-16 编码与 linkSupport、服务端 positionEncoding 缺省按 utf-16 否则拒绝；runQuery（instance.ts:127）先 supportsOperation 与 supportsTransientOpen 双检，再 didOpen（version 1 全文）→ sendRequest（findReferences 硬编码 includeDeclaration: true）→ 归一化，finally didClose——瞬态打开让 server 永远看到当前字节且无文档状态残留；raceAbort 在取消时发 $/cancelRequest 并给 killGraceMs 窗口，server 不理就 teardown 整个实例防止请求跨队列泄漏；answerServerRequest 静态回答 workspace/configuration、吞掉生命周期请求、拒绝 workspace/applyEdit（此 host 永不执行编辑）；tearDown 走 gracefulShutdown（shutdown/exit，shutdownTimeoutMs 5s）再 forceTerminate 等待 managed range 静默。connection.ts 管 JSON-RPC id 关联与 stderr 尾巴上限，framing.ts 管 Content-Length 分帧，translate.ts 管能力检查与 Location/LocationLink/hover 归一化。",
+    "boundary": "它管：进程池与单飞、协议握手与分帧、瞬态打开同步、取消与有界 teardown、归一化。它不管：安装 server（部署自己装 typescript-language-server 之类）、沙箱与隔离（信任配置的 server，README 明说 no confinement policy）、模型可见的呈现与提示（tool-lsp 的事）。与接缝的划线：接缝定义「问什么与答什么」，这里实现「怎么让任意 stdio server 听懂」。",
+    "tour": [
+      { "file": "packages/lsp/lsp-stdio/src/index.ts", "line": 126, "sym": "apply", "note": "通用 host 的装配纪律：所有可执行文件先解析、任一失败整表不注册，坏配置在 load 期 fail-loud。" },
+      { "file": "packages/lsp/lsp-stdio/src/index.ts", "line": 217, "sym": "LocalLspProvider", "note": "池化层：每 canonical 工作区一个实例、每工作区一条串行队列，不同工作区天然并行。" },
+      { "file": "packages/lsp/lsp-stdio/src/index.ts", "line": 318, "sym": "enqueue", "note": "按工作区串行的实现：abortable 链让等待可取消但 tail 跟随实际前作，一个调用方中止不打乱队列。" },
+      { "file": "packages/lsp/lsp-stdio/src/instance.ts", "line": 110, "sym": "initialize", "note": "握手安全细节：processId 置 null 防跨 PID namespace 监视，positionEncoding 只接受缺省 utf-16。" },
+      { "file": "packages/lsp/lsp-stdio/src/instance.ts", "line": 127, "sym": "runQuery", "note": "瞬态打开核心：didOpen 全文→请求→didClose 的兼容性地板，无文档缓存无版本管理，server 永远看到当前字节。" }
+    ],
+    "gotchas": "没有沙箱：server 拿到所挂执行世界的全部文件与进程权限，受限部署要自己包一层。initialize.processId 为 null 意味着硬杀 harness 会留下孤儿 server 自己跑完——只有优雅 disposal 才清理。查询按 server×工作区串行，并行 agent 共享同一工作区时要排队。transient open 是兼容性地板：不同步开放/关闭能力的 server 一律不支持， pinned 的 TypeScript e2e 只是一个下限不是全语言承诺。",
+    "analogy": "像一位万能翻译司机：部署方告诉他去哪家工厂（command）和客人说什么语言（extensionToLanguage）；每个工厂派一辆专车（每工作区一进程），客人上车递文件、办完事把文件收回（transient open），工厂罢工了就换一辆车重跑一趟（传输失败重试一次），收工时按规程熄火锁门（有界 teardown）。"
+  },
+  {
+    "group": "lsp",
+    "dir": "tool-lsp",
+    "short": "tool-lsp",
+    "oneLiner": "模型唯一的 lsp 只读工具：四操作、一基坐标、有界渲染",
+    "why": "ctx.lsp 接缝和 stdio provider 都没有模型界面。不加载这个包，provider 装得再多模型也无从调用，语义导航这块能力对模型等于零——代码理解塌回 search/read 的文本匹配，同名符号、别名导入、接口实现这些关系全都分不清。它还把安全与成本线画死：无会话工作区直接 LSP_WORKSPACE_REQUIRED 拒绝、结果先按条数再按字符数双重封顶、60 秒超时预算交给 timeout policy 而不暴露给模型。",
+    "position": "inject = ['tools','lsp','systemPrompt']——消费端三件套：向 ctx.tools 注册 lsp 工具、向 systemPrompt 挂定位 section、调用 ctx.lsp.query。上游是模型；下游是接缝（不 import 任何 provider）。数据流：模型给 1 基坐标 → parseLspArgs 转 0 基 → sessionCwd 取 header.cwd（无则抛）→ ctx.lsp.query → 接缝封闭 union 原样透传 → output.render 用 formatLocations/formatHover 渲染，maxLocations 100 先截条数、maxResultChars 16000 再封总长。",
+    "inside": "三个文件分工干净。index.ts 的 apply（index.ts:97）先校验配置再装两样：ctx.systemPrompt.section（index.ts:103，name tool:lsp、order TOOL_LSP）挂着 LSP_PROMPT_TEXT——定位语明确「普通导航用 search/read，lsp 用于文本匹配歧义或改动前需要精确定义/实现/引用的时刻」，把 lsp 定位成精密仪器而非日常工具；defineTool（index.ts:109）的 schema 四参数（operation 枚举、file_path、line、character），execute（index.ts:183）做坐标转换与工作区检查后把请求交给接缝，结果 union 原样返回不加工——原生渲染器能直接检查每个 location 与 0 基 range。render.ts 全是纯函数：parseLspArgs（render.ts:46）验证正整数 1 基坐标并各减一（模型数 1、协议数 0）；formatLocations（render.ts:85）用 renderUri 把 file: URI 对 provider 的 canonical workspace 解析——工作区内变相对路径、区外变 URI 绝对路径、非 file: 原样保留——再按文件分组输出 path:line:character（转回 1 基），截断时追加省略标记且标记算进总字符帽；formatHover 对 null 输出 No hover information. 与空结果区分；presentLspCall 产出 generic search 卡片给 UI 跟随。session-cwd.ts 18 行：工作区根只来自 header.cwd，没有 fallback。timeoutMs 60000 挂在工具上由 dsh-tool-call-timeout-policy 执行，覆盖排队、打开、查询、关闭全程。",
+    "boundary": "它管：模型 schema 与提示语、1 基到 0 基的坐标转换、工作区必需性检查、结果渲染与双重上限、UI 呈现卡片。它不管：provider 选择与路由（接缝）、协议与进程（stdio provider）、诊断或 rename 等写操作（接缝层就没有）。划线依据：它是 seam 的唯一消费者——工具运行时只注入 tools/lsp/systemPrompt 三个服务、只传 exec.signal 给接缝，保持接缝 provider-neutral 的承诺不被模型面污染。",
+    "tour": [
+      { "file": "packages/lsp/tool-lsp/src/index.ts", "line": 103, "sym": "systemPrompt.section", "note": "定位语的安装：把 lsp 定位为歧义时的精密仪器，引导模型日常继续用 search/read，控制工具滥用。" },
+      { "file": "packages/lsp/tool-lsp/src/index.ts", "line": 109, "sym": "defineTool lsp", "note": "模型面的完整 schema：operation 枚举封闭四操作，timeoutMs 挂工具不进模型输入。" },
+      { "file": "packages/lsp/tool-lsp/src/index.ts", "line": 183, "sym": "execute", "note": "执行链：坐标转换、workspace 必需检查（LSP_WORKSPACE_REQUIRED 无 fallback）、union 原样透传给渲染层。" },
+      { "file": "packages/lsp/tool-lsp/src/render.ts", "line": 46, "sym": "parseLspArgs", "note": "坐标契约的转换点：1 基正整数校验后各减一，模型计数习惯与 LSP 协议的 0 基在此换轨。" },
+      { "file": "packages/lsp/tool-lsp/src/render.ts", "line": 85, "sym": "formatLocations", "note": "有界渲染：URI 对 canonical workspace 解析、按文件分组转回 1 基、maxLocations 与 maxResultChars 双帽含标记。" }
+    ],
+    "gotchas": "坐标是 UTF-16 列：对模型来说数非 BMP 字符（emoji 等）很容易数错，off-symbol 位置可能返回空结果——提示语解释了约定但不鼓励滥用。没有跨 server 的完备性承诺：server 未索引完就可能返回空或部分结果。工作区缺失直接失败，没有进程目录 fallback。上限只影响呈现不影响规范结果值。",
+    "analogy": "像实验室里的显微镜操作台：日常用肉眼（search/read）就够；需要看清细胞结构时才上显微镜（lsp）——台子只负责调焦（坐标转换）、控制亮度（结果封顶）和递给你看（渲染），镜片本身（provider）与标本制作（server 配置）都不归它管。"
+  }
+]

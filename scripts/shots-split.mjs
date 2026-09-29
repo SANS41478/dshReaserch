@@ -1,5 +1,7 @@
 /* 分屏功能的视觉截图：宽屏分屏 / 文件树定位 / 窄屏覆盖 / 全屏模式 */
-import { chromium } from 'playwright'
+import { createRequire } from 'node:module'
+const require = createRequire(import.meta.url)
+const { chromium } = require('C:/Users/admin/.workbuddy/binaries/node/workspace/node_modules/playwright/index.js')
 
 const BASE = 'http://127.0.0.1:5319/'
 const browser = await chromium.launch()

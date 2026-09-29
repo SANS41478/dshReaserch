@@ -12,6 +12,7 @@ const bundle = {
   bundles: read('bundles.json'),
   layers: read('layers.json'),
   code: read('code.json'),
+  deep: read('deep.json'),
 }
 
 writeFileSync(
