@@ -3,7 +3,7 @@ path: packages/client/ui-workspace
 desc: Workspace picker plugin: one WorkspacePicker registered into the sidebar and empty-state workspace slots
 deps: -
 peers: @deepseek-ai/cordis
-srcFiles: 12  srcLoc: 3487
+srcFiles: 20  srcLoc: 5661
 
 ## README.md (229 行)
 ---
@@ -45,7 +45,7 @@ Pinned Sessions lead ordinary Sessions in both grouped and flat views. **Last up
 
 Pinning moves the Session to the front of its complete saved sequence without changing the selected mode. It leads the pinned partition in Manual but need not lead it in Last updated. Unpinning leaves the saved position unchanged. Dragging either a pinned or ordinary row edits that same complete sequence and selects Manual; hidden archived members are retained. Missing pinned members prepend in pin-array order. New ordinary forks precede their sources in the complete sequence without inheriting pin membership; visible pins still lead ordinary rows. Other missing members append by recency with missing archives last. Supplementation stays in memory until a Session-order write records the complete result. Archive filtering alone changes neither saved positions nor account membership.
 
-The selected blank **New Session** retains its provisional first slot and cannot be dragged; after its first prompt it becomes an ordinary draggable row, retaining that position in Manual or following its current timestamp in Last updated. A collapsed-group drag uses the target Session identity and keeps the source visible. Session display orders for real Workspaces, Ungrouped, and the flat list are browser-local; Workspace group drag order remains Host-durable. The [Session pinning and archive decision](../../../.agents/notes/implemented/feature/2026-09-18-session-pin-and-sidebar-archive.md) records the ordering and recovery rules.
+The selected blank **New Session** retains its provisional first slot and cannot be dragged; after its first prompt it becomes an ordinary draggable row, retaining that position in Manual or following its current timestamp in Last updated. A collapsed-group drag uses the target Session identity and keeps the source visible. Session display orders for real Workspaces, Ungrouped, and the flat list are browser-local; Workspace group drag order remains Host-durable.
 
 ### Workspace hierarchy
 
@@ -65,7 +65,7 @@ Archive commits without a confirmation dialog for a quiet Session and retains th
 
 Session update times use the tertiary label color, including on archived rows. A Session title wider than its row is clipped with an ellipsis at rest. Hovering the row scrolls the title to its far edge — the incremented title of a fork, for example — and reveals it without the ellipsis; leaving the row returns the title to its start.
 
-The keyboard reference exposes New Session, Search sessions, Add workspace, Rename session, Fork session, and Archive session. Desktop defaults use the platform's primary modifier, with Mod+K for search; Windows and macOS Web use the [shortcut service’s platform defaults](../shortcuts/README.md); Linux Web leaves these commands unbound until configured. Button tooltips and Session row menus display the effective bindings. Clicking a menu item targets that row; pressing its shortcut targets the main Session. Windows and macOS Desktop bindings also execute from terminal input and modal dialogs; other environments follow the command's region and modal restrictions. Search and rename requests belong to this package; input drafts remain in the browser. The directory picker rejects another open while selection or Workspace adoption is pending. Fork captures the source Session and uses the row action's Host operation to select its last completed turn, without loading older Client history. Missing or blank Sessions are unavailable; the Host rejects a source with no completed turn. A rejected shortcut fork preserves the current selection, displays a localized notification, and can be retried; unexpected failures also retain diagnostic logging.
+The keyboard reference exposes New Session, Search sessions, Add workspace, Rename session, Fork session, and Archive session. Desktop defaults use the platform's primary modifier, with Mod+K for search; Windows and macOS Web use the [shortcut service’s platform defaults](../shortcuts/README.md); Linux Web leaves these commands unbound until configured. Button tooltips and Session row menus display the effective bindings. Clicking a menu item targets that row; pressing its shortcut targets the main Session. Desktop and Windows/macOS Web rename use Mod+Alt+G, leaving Mod+Shift+R to browser reload. Rename requires a nonblank main Conversation with no modal obscuring it; a retained Session behind another main panel is unavailable. Other Windows and macOS Desktop bindings also execute from terminal input and modal dialogs; other environments follow the command's region and modal restrictions. Search and rename requests belong to this package; input drafts remain in the browser. The directory picker rejects another open while selection or Workspace adoption is pending. Fork captures the source Session and uses the row action's Host operation to select its last completed turn, without loading older Client history. Missing or blank Sessions are unavailable; the Host rejects a source with no completed turn. A rejected shortcut fork preserves the current selection, displays a localized notification, and can be retried; unexpected failures also retain diagnostic logging.
 
 ### Pending interactions
 
@@ -96,6 +96,8 @@ The first-use directory name and its stored title are fixed, so neither follows 
 The package is one composition: both target slots are declared by other plugins, so `apply` uses `slots.inject()` to register for each declaration lifetime and re-register after a declaring slot is restored.
 
 The browser entry also declares two root-scoped `list` child seats on each Session row: `sidebar.session.row.leading`, rendered only while that row's primary status is idle and left blank on an archived row, and `sidebar.session.row.hover`, mounted only while that row's hover card is open. Both take the row's Session identity and nothing else, so an occupant reads its own data by that id; a Session-scoped seat would force a Session binding, which would activate and retain every listed Session.
+
+Client callers can pass `prompt` and `clearPreviousDraft` in the second argument to `uiWorkspace.startSession`. A prompt is plain text; structured drafts are handled internally during restoration and Workspace transfer. Without clearing, existing text or attachments are preserved; explicit clearing replaces only the target Session's text and inline references, leaving attachments intact. Option values are captured before asynchronous creation and applied to the exact retained binding before navigation commits. Superseded navigation does not write content; a submission-blocked input refuses preparation and keeps the previous selection. Calls without options retain the normal New Session flow. The [draft initialization decision](../../../.agents/notes/implemented/architecture/2026-09-30-structured-draft-initialization.md) describes the input owner's data flow.
 
 ### The directory-flow hole
 
@@ -233,8 +235,6 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. This is a pure-consumer plugin that registers presentational components into two host-declared slots and registers its locale dictionaries; its inject face consists of stateless RPC wrappers plus a create-and-open call. It emits no Cordis events and owns no cross-plugin mutable state.
-
 
 ## 源文件与导出符号
 
@@ -281,16 +281,17 @@ None.
   96	const	inject
   106	fn	apply
 
-### packages/client/ui-workspace/src/client/locales.ts  (241 行)
+### packages/client/ui-workspace/src/client/locales.ts  (245 行)
   8	const	zh
-  124	type	WorkspaceKey
-  127	const	en
+  126	type	WorkspaceKey
+  129	const	en
 
-### packages/client/ui-workspace/src/client/navigation.ts  (451 行)
+### packages/client/ui-workspace/src/client/navigation.ts  (480 行)
   declare module: declare module '@deepseek-ai/cordis' {
-  29	iface	UiWorkspace
-  117	class	DirectoryBrowseError
-      members: L121 constructor, L143 constructor, L164 connectWorkspace, L179 reuseOrCreateBlank, L191 reuseBlank, L200 openSession, L204 openWorkspace, L219 forkSession, L223 startSession, L243 archiveSession, L248 unarchiveSession, L252 pinSession, L262 unpinSession, L266 pickDirectory, L272 listDirectory, L278 createDirectory, L284 watchNavigation, L318 restoreSelection, L349 initializeDefaultWorkspace, L359 clearArchivedCurrent, L367 clearMain, L375 replaceMain, L424 if, L435 for
+  31	type	StartSessionOptions
+  34	iface	UiWorkspace
+  123	class	DirectoryBrowseError
+      members: L127 constructor, L149 constructor, L170 connectWorkspace, L185 reuseOrCreateBlank, L197 reuseBlank, L206 openSession, L210 openWorkspace, L225 forkSession, L229 startSession, L260 prepareDraft, L266 draftPreparationFailed, L272 archiveSession, L277 unarchiveSession, L281 pinSession, L291 unpinSession, L295 pickDirectory, L301 listDirectory, L307 createDirectory, L313 watchNavigation, L347 restoreSelection, L378 initializeDefaultWorkspace, L388 clearArchivedCurrent, L396 clearMain, L404 replaceMain, L453 if, L464 for
 
 ### packages/client/ui-workspace/src/client/pin-order.ts  (52 行)
   13	iface	PinOrderSource
@@ -332,10 +333,10 @@ None.
 ### packages/client/ui-workspace/src/client/session-actions/derived.ts  (27 行)
   12	fn	derive
 
-### packages/client/ui-workspace/src/client/shortcuts.ts  (123 行)
+### packages/client/ui-workspace/src/client/shortcuts.ts  (125 行)
   11	iface	WorkspaceShortcutState
   35	fn	createWorkspaceShortcutControls
-  65	fn	installWorkspaceShortcuts
+  66	fn	installWorkspaceShortcuts
 
 ### packages/client/ui-workspace/src/client/stores.ts  (134 行)
   14	const	FLAT_SESSION_ORDER_KEY
@@ -379,7 +380,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-client-ui-workspace",
   "description": "Workspace picker plugin: one WorkspacePicker registered into the sidebar and empty-state workspace slots",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -438,4 +439,4 @@ None.
     "@deepseek-ai/dsh-client-connection": "workspace:*",
     "@deepseek-ai/dsh-client-locale": "workspace:*",
     "@deepseek-ai/dsh-client-store": "workspace:*",
-    "@d
+    

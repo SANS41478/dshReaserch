@@ -1,9 +1,7 @@
 // Enrich package data with curated deep-dive content for the ~40 spine packages,
 // plus auto-extract key code excerpts from the source tree.
 import { readFileSync, writeFileSync } from 'node:fs'
-
-const ROOT = 'D:/下载的软件在这里！/deepseek-harness源码/deepseek-harness'
-const OUT = 'D:/临时/dsh研究/data'
+import { REPO as ROOT, DATA as OUT } from './_paths.mjs'
 const read = p => { try { return readFileSync(p, 'utf8') } catch { return '' } }
 
 // ---------- curated layer knowledge ----------
@@ -28,7 +26,7 @@ const LAYERS = [
       { mode: 'serial', awaited: '是', order: '按注册顺序', ret: '有', use: '需要严格顺序的终局检查' },
       { mode: 'bail', awaited: '否', order: '顺序执行直到有人返回非空', ret: '有', use: '第一个能处理的赢' },
     ],
-    codeRefs: ['vendor/cordis/src/index.ts'],
+    codeRefs: ['vendor/cordis/src/context.ts'],
   },
   {
     id: 'composition', title: '组合层', en: 'Profiles & Bundles',
@@ -282,7 +280,7 @@ const EXCERPTS = [
   { file: 'packages/core/tools/src/index.ts', label: 'ToolRuntime 服务', sig: 'export class ToolRuntime', lines: 30 },
   { file: 'packages/shell/shell/src/index.ts', label: 'ShellExecutor 抽象类', sig: 'export abstract class ShellExecutor', lines: 30 },
   { file: 'packages/core/agent/src/types.ts', label: 'Agent 公开接口', sig: 'interface Agent {', lines: 20 },
-  { file: 'vendor/cordis/src/index.ts', label: 'Cordis 核心', sig: 'export class Context', lines: 24 },
+  { file: 'vendor/cordis/src/context.ts', label: 'Cordis 核心', sig: 'export class Context', lines: 24 },
 ]
 
 function excerpt(file, sig, maxLines) {

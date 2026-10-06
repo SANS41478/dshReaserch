@@ -3,9 +3,9 @@ path: packages/context/agent-instructions
 desc: Workspace context loader for AGENTS.md/CLAUDE.md instruction files
 deps: @deepseek-ai/dsh-util-values, @deepseek-ai/schemastery
 peers: @deepseek-ai/cordis, @deepseek-ai/dsh-agent, @deepseek-ai/dsh-fs, @deepseek-ai/dsh-home-paths, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-session, @deepseek-ai/dsh-session-projection, @deepseek-ai/dsh-tools
-srcFiles: 6  srcLoc: 1839
+srcFiles: 6  srcLoc: 1838
 
-## README.md (230 行)
+## README.md (229 行)
 ---
 description: "Workspace-instruction context for users and maintainers enabling, sizing, or debugging AGENTS.md/CLAUDE.md loading and refresh."
 kind: "package-reference"
@@ -43,7 +43,7 @@ The first request includes one durable baseline message with the user-global `$D
 
 The defaults suit a typical checkout: `.git` marks the project root, `AGENTS.md` and `CLAUDE.md` are the base candidates, and `AGENTS.local.md` and `CLAUDE.local.md` are additive local overlays. Only `maxBytes` is required — it caps the complete rendered baseline so each deployment chooses its prompt budget explicitly.
 
-Root discovery climbs only when a marker probe confirms that the marker is absent. A permission or I/O failure stops discovery and surfaces the host or filesystem-provider error instead of selecting an ancestor project. The [root-marker metadata decision](../../../.agents/notes/implemented/bug-fix/2026-09-03-root-marker-metadata-failures.md) records why discovery fails instead of substituting another root.
+Root discovery climbs only when a marker probe confirms that the marker is absent. A permission or I/O failure stops discovery and surfaces the host or filesystem-provider error instead of selecting an ancestor project. The [historical root-marker metadata decision](../../../.agents/notes/archived/bug-fix/2026-09-03-root-marker-metadata-failures.md) records why discovery fails instead of substituting another root.
 
 ```yaml
 - name: '@deepseek-ai/dsh-agent-instructions'
@@ -103,7 +103,6 @@ The plugin is built on one principle: workspace instructions are durable convers
 | [`src/render.ts`](src/render.ts) | Instruction rendering, budget truncation, change records |
 | [`src/state.ts`](src/state.ts) | Durable message sources, version/digest cache, reconciliation |
 | [`src/digest.ts`](src/digest.ts) | SHA-1 content identity and per-directory duplicate keys |
-| — | No runtime invariant companion is published; replay intentionally tolerates unknown or malformed workspace sources, while focused pipeline tests own its private pending/cache state transitions. |
 
 ### Main flow
 
@@ -273,7 +272,7 @@ None.
   34	const	inject
   84	fn	apply
 
-### packages/context/agent-instructions/src/render.ts  (362 行)
+### packages/context/agent-instructions/src/render.ts  (358 行)
   22	iface	TruncatedInstruction
   29	iface	RenderedAgentInstructions
   47	iface	AgentInstructionChange
@@ -285,8 +284,8 @@ None.
   132	fn	instructionScopeKey
   141	fn	decodeScopeKey
   192	fn	renderInstructionChanges
-  341	fn	renderAgentInstructionSet
-  356	fn	renderAgentInstructions
+  337	fn	renderAgentInstructionSet
+  352	fn	renderAgentInstructions
 
 ### packages/context/agent-instructions/src/state.ts  (435 行)
   declare module: declare module '@deepseek-ai/dsh-llm' {
@@ -308,7 +307,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-agent-instructions",
   "description": "Workspace context loader for AGENTS.md/CLAUDE.md instruction files",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -362,4 +361,4 @@ None.
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-session-projection": "workspace:*",
     "@deepseek-ai/dsh-system-prompt": "workspace:*",
-    "@deepseek-ai/dsh-tool-
+    "@deepseek-ai/dsh-to

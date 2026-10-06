@@ -1,0 +1,219 @@
+# @deepseek-ai/dsh-client-ui-sidebar-terminal
+path: packages/client/ui-sidebar-terminal
+desc: Interactive shell tabs for the right Sidebar
+deps: -
+peers: @deepseek-ai/cordis
+srcFiles: 14  srcLoc: 776
+
+## README.md (89 行)
+---
+description: "Open, recover and control interactive shell tabs in the Web right sidebar."
+kind: "package-reference"
+---
+
+# @deepseek-ai/dsh-client-ui-sidebar-terminal
+
+English | [中文](README.zh.md)
+
+## Summary
+
+Choose an installed shell from the right sidebar's Start page to run commands in the Session workspace. Rename terminals in their tabs and recover retained processes after reloading the page. Collapse the sidebar to keep commands running; close a terminal tab to request process termination. Tab completion follows the shell configuration. Commands use the execution environment’s system-user permissions independently of Agent permissions; see [user-terminal execution](../../api/terminal-controller/README.md#use-this-package).
+
+## Table of Contents
+
+- [Use this package](#use-this-package)
+- [Understand the implementation](#understand-the-implementation)
+- [Further Exploration](#further-exploration)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="use-this-package"></a>
+## Use this package
+
+The `terminal.new` command creates a separate terminal in the focused dock pane, replacing a guide and retaining existing content pages. From the conversation or a floating content page, it uses the active dock pane. The guide card right-aligns the current effective shortcut as unboxed text without a duplicate tooltip. Windows and macOS Web use the [shortcut service’s platform defaults](../shortcuts/README.md); Linux Web leaves the command unbound by default.
+
+Open the right sidebar and click **New terminal** to open the remembered available shell immediately. The separate arrow beside the title opens the installed-shell menu; selecting an item remembers it and opens that shell directly. Discovery runs when the menu opens and does not allocate a terminal. A failed lookup offers Retry in the menu. Use **New tab** to return to the guide and open another terminal.
+
+Double-click the terminal's tab title to rename it. **Take control** makes the current attachment writable when another page owns input. A temporary disconnect preserves the screen and offers **Reconnect**, without exposing transport diagnostics. An exited shell remains visible with its exit code and offers **New terminal**; it never restarts automatically. Exited terminals count toward the Session limit; close unused tabs when the limit is reached.
+
+Closing or replacing a terminal tab removes it immediately and ends its process in the background. Cleanup failures have no notification or manual retry action; saved unfinished close requests are retried when the Client plugin starts. Collapsing, switching tabs or Sessions, floating and fullscreen presentation preserve the process.
+
+After reload, the [sidebar restores its layout](../../client/ui-sidebar-right/README.md#state) and each terminal reconnects to its saved Host identity in the original tab. Collapsed and inactive tabs do not create recovery duplicates or change selection. Host terminals absent from the saved layout do not reopen automatically and have no UI recovery entry; they remain subject to the controller's unattended idle reclamation and Session/Host disposal. A missing saved process shows a localized unavailable panel with **New terminal**. Clicking it replaces the unavailable tab in place with a fresh terminal; recovery never creates that replacement automatically.
+
+The terminal background, default text, cursor, and selection follow the DSH theme, including system preference and theme-token overrides. Theme changes preserve the running shell, output, and application OSC color overrides. Reset commands restore colors to the current DSH defaults. xterm adjusts text toward 4.5:1 contrast; the cursor keeps at least 3:1 contrast against its cell background, including Vim colorschemes.
+
+<a id="understand-the-implementation"></a>
+## Understand the implementation
+
+<details>
+<summary>Implementation internals — click to expand</summary>
+
+This plugin registers the `terminal` type and body/title seats with the right sidebar. The guide reuses the Plugins page’s blue terminal artwork; tab titles use the line glyph. The React-free terminal model belongs to `api-terminal-controller`; keyed framework hooks expose its state. `ui-primitives` Menu and Button provide the shell picker and startup controls, including keyboard navigation and the selected-item marker. The body loads its package-local `client.terminal.js` chunk when a terminal view mounts, keeping xterm.js and FitAddon out of the startup `client.js`; they then render the screen and measure the viewport. The body reserves an 8px gap below the tab strip within the pane height. Input, including Tab and control characters, travels unchanged to the PTY.
+
+The terminal controller saves each globally unique content identity's Host association independently and owns content recovery; the sidebar owns layout persistence. A recovered view cannot allocate a replacement process. The sidebar's close handler schedules cleanup through the [terminal controller](../../api/terminal-controller/README.md#understand-the-implementation) and returns synchronously. Browser component cleanup and the tab's abort signal only detach browser work.
+
+At plugin startup, terminal-kind entries in the sidebar's complete open-tab inventory retain matching saved Host identities, including dormant Sessions. This window hold remains independent of React mounts and screen subscriptions. Removing the last matching occurrence releases it; collapsing or switching views does not. The [terminal controller](../../api/terminal-controller/README.md#use-this-package) owns unattended idle reclamation and long-command protection.
+
+</details>
+
+<a id="further-exploration"></a>
+## Further Exploration
+
+- [Subprocess](../../subprocess/subprocess/README.md)
+- [Right Sidebar](../../client/ui-sidebar-right/README.md)
+- [Web terminal decision](../../../.agents/notes/implemented/feature/2026-09-09-web-sidebar-terminal.md)
+
+<a id="model-experience"></a>
+## Model Experience
+
+None, as this package handles user terminal interaction without adding model input.
+
+#### KV Cache effect
+
+None; terminal output travels only between the browser and Host.
+
+## Known Limitations and Deferred Work
+
+<a id="known-limitations-and-deferred-work"></a>
+
+- Shell discovery or native PTY startup can fail. The tab reports the failure without launching a different shell.
+- Completion menus and inline suggestions depend on shell configuration. The Web UI adds no independent completion engine.
+- Application OSC color overrides are retained by the mounted renderer; a newly opened renderer cannot recover them from the Host screen snapshot.
+- Terminal history is bounded. The feature does not send terminal output to the Agent, provide split terminal panes inside a tab, or restore processes after Host restart.
+- A failed terminal chunk load requires a page reload because React caches a rejected lazy import for the page lifetime.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>
+
+
+## 源文件与导出符号
+
+### packages/client/ui-sidebar-terminal/src/client/LazyTerminalBody.tsx  (15 行)
+  12	fn	LazyTerminalBody
+
+### packages/client/ui-sidebar-terminal/src/client/TerminalCleanup.tsx  (30 行)
+  11	iface	TerminalCleanupInjected
+  22	fn	TerminalCleanup
+
+### packages/client/ui-sidebar-terminal/src/client/TerminalGuide.tsx  (84 行)
+  13	iface	TerminalGuideInjected
+  22	type	TerminalGuideProps
+  32	fn	TerminalGuide
+
+### packages/client/ui-sidebar-terminal/src/client/TerminalIcon.tsx  (14 行)
+  8	fn	TerminalIcon
+
+### packages/client/ui-sidebar-terminal/src/client/TerminalRecovery.tsx  (30 行)
+  8	iface	TerminalRecoveryInjected
+  18	fn	TerminalRecovery
+
+### packages/client/ui-sidebar-terminal/src/client/TerminalTitle.tsx  (61 行)
+  14	fn	TerminalTitle
+
+### packages/client/ui-sidebar-terminal/src/client/face.ts  (26 行)
+  declare module: declare module '@deepseek-ai/dsh-client-ui-sidebar-right/client' {
+  8	iface	TerminalInjected
+  16	iface	TerminalBodyInjected
+
+### packages/client/ui-sidebar-terminal/src/client/index.ts  (131 行)
+  23	const	inject
+  29	fn	apply
+
+### packages/client/ui-sidebar-terminal/src/client/locales.ts  (45 行)
+  declare module: declare module '@deepseek-ai/dsh-client-ui-slots' {
+  11	const	zh
+  29	const	en
+
+### packages/client/ui-sidebar-terminal/src/client/terminal-cursor.ts  (62 行)
+  13	fn	observeTerminalCursor
+
+### packages/client/ui-sidebar-terminal/src/client/terminal-theme.ts  (105 行)
+  9	class	TerminalTheme
+      members: L19 constructor, L57 update, L67 cursor, L70 dispose, L72 apply, L90 if
+
+### packages/client/ui-sidebar-terminal/src/client/terminal.tsx  (161 行)
+  17	type	TerminalBodyProps
+  24	fn	TerminalBody
+
+### packages/client/ui-sidebar-terminal/src/css-modules.d.ts  (7 行)
+  declare module: declare module '*.module.css' { | declare module '*.css'
+
+### packages/client/ui-sidebar-terminal/src/index.ts  (5 行)
+  4	fn	apply
+
+## 其它关键文件
+
+### package.json
+{
+  "name": "@deepseek-ai/dsh-client-ui-sidebar-terminal",
+  "description": "Interactive shell tabs for the right Sidebar",
+  "version": "0.2.1-alpha.1",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/client/ui-sidebar-terminal"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-api-terminal-controller",
+        "@deepseek-ai/dsh-client-ui-sidebar-right",
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-ui-theme",
+        "@deepseek-ai/dsh-client-shortcuts"
+      ],
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "bundle": "tsdown",
+    "watch": "tsdown --watch"
+  },
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:~"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/dsh-api-remotes": "workspace:*",
+    "@deepseek-ai/dsh-client-locale": "workspace:*",
+    "@deepseek-ai/dsh-client-store": "workspace:*",
+    "@deepseek-ai/dsh-client-test-runtime": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-dockkit": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-primitives": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-renderer": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-session": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-sidebar-right": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-slots": "workspace:*",
+    "@deepseek-ai/dsh-session": "workspace:*",
+    "@testing-library/react": "^16.1.0",
+    "@types/react": "~18.3.1",
+    "@types/react-dom": "~18.

@@ -1,11 +1,11 @@
 # @deepseek-ai/dsh-tool-fs
 path: packages/fs/tool-fs
 desc: Model-facing filesystem tools (read, write, edit) over the DeepSeek Harness filesystem seam (ctx.fs)
-deps: @deepseek-ai/schemastery
+deps: @deepseek-ai/schemastery, @deepseek-ai/dsh-util-code-language
 peers: @deepseek-ai/dsh-attachment, @deepseek-ai/dsh-fs, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-sandbox, @deepseek-ai/dsh-sandbox-policy, @deepseek-ai/dsh-session, @deepseek-ai/dsh-system-prompt, @deepseek-ai/dsh-tools, @deepseek-ai/dsh-user-approval, @deepseek-ai/cordis
-srcFiles: 11  srcLoc: 1558
+srcFiles: 11  srcLoc: 1538
 
-## README.md (260 行)
+## README.md (258 行)
 ---
 description: "The model-facing read, read_image, write, and edit tools for users and maintainers composing or debugging filesystem access for agents."
 kind: "package-reference"
@@ -56,7 +56,7 @@ The policy plugin is optional: without it the tools run against the bare provide
 | `write` | `file_path`, `content` | Creates or fully replaces a file; with the policy plugin, overwriting requires a prior `read` at the unchanged version, creating does not |
 | `edit` | `file_path`, `old_string`, `new_string`, `replace_all?` | Literal replacement requiring a unique match unless `replace_all` is true; with the policy plugin, requires a prior `read` and an unchanged file |
 
-Field names are snake_case to match Claude Code and existing harness tool schemas. Successes return compact envelopes — a read window, an image reference, or a `Created file`/`Updated file` confirmation — and `write`/`edit` derive replayable diff-card metadata for UI presentation.
+Field names are snake_case to match Claude Code and existing harness tool schemas. The `write` and `edit` path descriptions ask the model to emit `file_path` before the content or replacement strings; this guides streaming presentation but does not enforce JSON member order. Successes return compact envelopes — a read window, an image reference, or a `Created file`/`Updated file` confirmation — and `write`/`edit` derive replayable diff-card metadata for UI presentation.
 
 ### Configuration
 
@@ -264,8 +264,6 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. This model-facing adapter has no independent lifecycle stream; execution relations are owned by the capability seam it calls.
-
 
 ## 源文件与导出符号
 
@@ -275,7 +273,7 @@ None.
   35	fn	computeHunkDiffs
   76	fn	diffsFromMeta
 
-### packages/fs/tool-fs/src/edit.ts  (169 行)
+### packages/fs/tool-fs/src/edit.ts  (173 行)
   46	fn	parseEditArgs
   64	fn	formatEditOutput
   75	fn	applyEditTool
@@ -331,7 +329,7 @@ None.
   17	fn	sessionCwd
   27	fn	sessionResolveOptions
 
-### packages/fs/tool-fs/src/write.ts  (154 行)
+### packages/fs/tool-fs/src/write.ts  (158 行)
   24	fn	parseWriteArgs
   35	fn	formatWriteOutput
   61	fn	applyWriteTool
@@ -342,7 +340,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-tool-fs",
   "description": "Model-facing filesystem tools (read, write, edit) over the DeepSeek Harness filesystem seam (ctx.fs)",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -396,4 +394,4 @@ None.
     "@deepseek-ai/dsh-llm-deepseek": "workspace:*",
     "@deepseek-ai/dsh-llm-deepseek-api-key": "workspace:*",
     "@deepseek-ai/dsh-sandbox": "workspace:*",
-    "@deepseek-ai/dsh-sandbox-polic
+    "@deepseek-ai/dsh-sandbox-po

@@ -3,9 +3,9 @@ path: packages/extensions/cordis-host-runner
 desc: Dynamic package definition registry, host-half sandbox lifecycle, and invoke handler table for model-mounted dual-half packages
 deps: @deepseek-ai/dsh-util-values, @deepseek-ai/schemastery
 peers: @deepseek-ai/cordis, @deepseek-ai/dsh-agent, @deepseek-ai/dsh-brand, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-scope, @deepseek-ai/dsh-session, @deepseek-ai/dsh-tools, @deepseek-ai/dsh-typert-protocol
-srcFiles: 7  srcLoc: 3362
+srcFiles: 7  srcLoc: 3388
 
-## README.md (147 行)
+## README.md (153 行)
 ---
 description: "Host half of dynamic Cordis packages for agents and maintainers choosing, composing, or debugging the registry, sandbox, and run round trip."
 kind: "package-reference"
@@ -46,8 +46,16 @@ Mount this plugin for the inspection registry or programmatic dynamic-package li
 | Field | Default | Meaning |
 |---|---|---|
 | `vmTimeoutMs` | `5000` | Milliseconds the synchronous portion of a host half may run in the vm before evaluation is aborted |
+| `clientInspectTimeoutMs` | `10000` | Maximum wait for a valid Client inspect response; an integer from 1 to 2147483647 milliseconds |
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-cordis-host-runner) is the exhaustive source for every accepted field.
+
+<a id="client-inspection"></a>
+### Client inspection
+
+When Gateway is mounted, a Client query with no live event stream fails before dispatch. This check does not subscribe to disconnections: queries already dispatched retain their original deadline. Standalone event transports without Gateway retain the same timeout behavior.
+
+Client queries accept the first valid page response within `clientInspectTimeoutMs`. A failed page does not prevent another page from answering successfully. If no valid result arrives, the query rejects with the first Client failure or output-validation diagnostic; when no page answers, it asks the caller to open or reconnect the Harness page and retry. Cancellation and registry disposal also end pending queries. Reconnecting a page does not replay a missed request, so retry after the connection is restored. Host queries are unaffected by this timeout.
 
 ### What a run does
 
@@ -59,7 +67,7 @@ Definitions are session-scoped and process-local: other sessions read them as ab
 
 ### Trust stance
 
-The sandbox isolates globals but is not a security boundary: Node globals are absent or redirect to Cordis services (`ctx.fs`, `ctx.web`, `ctx.bash`, the timer helpers), and a host half receives a façade without framework internals, yet the services it declares reach the live runtime. Treat a dynamic package like bash access — see the [self-referential toolset Agent Note](../../../.agents/notes/implemented/feature/2026-07-08-self-referential-cordis-toolset.md).
+The sandbox isolates globals but is not a security boundary: Node globals are absent or redirect to Cordis services (`ctx.fs`, `ctx.web`, `ctx.bash`, the timer helpers), and a host half receives a façade without framework internals, yet the services it declares reach the live runtime. Treat a dynamic package like bash access — see the [self-referential toolset reference](README.md).
 
 -----
 
@@ -105,7 +113,7 @@ Read these pages when the package-level contract is not enough. They move from t
 - [UI package](../ui-cordis/README.md) — the panel users approve and operate runs with.
 - [Generated configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-cordis-host-runner) — every accepted config field.
 - [Extensions subsystem](../../../docs/subsystems/extensions.md) — the generated `ctx.cordisInspect` and `ctx.dynamicCordisRunner` API and `cordis/*` events.
-- [Self-referential Cordis toolset Agent Note](../../../.agents/notes/implemented/feature/2026-07-08-self-referential-cordis-toolset.md) — sandbox semantics, lifecycle, and composition rationale.
+- [historical Self-referential Cordis toolset Agent Note](../../../.agents/notes/archived/feature/2026-07-08-self-referential-cordis-toolset.md) — sandbox semantics, lifecycle, and composition rationale.
 
 -----
 
@@ -151,8 +159,6 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. The definition registry is process memory with no event stream to observe, and its one owned relation (a running definition owns a settled host-half fiber and its handler table) is established and unwound inside single awaited verbs, so package tests assert it directly.
-
 
 ## 源文件与导出符号
 
@@ -164,24 +170,24 @@ None.
   802	fn	guardedPlugin
   832	fn	pluginName
 
-### packages/extensions/cordis-host-runner/src/index.ts  (1277 行)
-  inject: L130 ['tools']
+### packages/extensions/cordis-host-runner/src/index.ts  (1281 行)
+  inject: L132 ['tools']
   declare module: declare module '@deepseek-ai/dsh-llm' { | declare module '@deepseek-ai/cordis' {
   54	fn	CordisDynamicPluginId
   63	fn	CordisDynamicPackageId
   72	fn	CordisDynamicPluginRunId
   81	fn	ApprovalRequestId
   93	iface	Config
-  101	iface	DynamicCordisSnapshotRow
-  129	class	DynamicCordisRunnerService
-      members: L144 constructor, L156 define, L215 undefine, L232 undefineFromPanel, L253 run, L330 runHostHalf, L389 getClientCode, L418 resolveRequestRun, L443 settleUserRun, L461 stop, L485 stopFromPanel, L503 syncInspectManifest, L516 resolveInspectQuery, L530 inventory, L556 snapshot, L587 reference, L615 listPlugins, L625 inspectPlugin, L649 inspectPackage, L689 reportRenderFailure, L723 reportClientGuardFailure, L746 invoke, L773 resolvePlan, L815 activate, L828 startFresh, L888 startHost, L922 settleActivation, L986 commitActivation, L999 runResponse, L1015 announceResolved, L1024 steerRunOutcome, L1054 steerRenderFailure, L1074 steerHostHandlerFailure, L1099 steerGuardFailure, L1122 claimRuntimeFailure, L1131 injectUserRunOutcome, L1152 injectUserContext, L1161 cancelPending, L1176 createAttempt, L1193 failAttempt
+  103	iface	DynamicCordisSnapshotRow
+  131	class	DynamicCordisRunnerService
+      members: L147 constructor, L159 define, L218 undefine, L235 undefineFromPanel, L256 run, L333 runHostHalf, L392 getClientCode, L421 resolveRequestRun, L446 settleUserRun, L464 stop, L488 stopFromPanel, L506 syncInspectManifest, L520 resolveInspectQuery, L534 inventory, L560 snapshot, L591 reference, L619 listPlugins, L629 inspectPlugin, L653 inspectPackage, L693 reportRenderFailure, L727 reportClientGuardFailure, L750 invoke, L777 resolvePlan, L819 activate, L832 startFresh, L892 startHost, L926 settleActivation, L990 commitActivation, L1003 runResponse, L1019 announceResolved, L1028 steerRunOutcome, L1058 steerRenderFailure, L1078 steerHostHandlerFailure, L1103 steerGuardFailure, L1126 claimRuntimeFailure, L1135 injectUserRunOutcome, L1156 injectUserContext, L1165 cancelPending, L1180 createAttempt, L1197 failAttempt
 
-### packages/extensions/cordis-host-runner/src/inspect-registry.ts  (248 行)
+### packages/extensions/cordis-host-runner/src/inspect-registry.ts  (293 行)
   declare module: declare module '@deepseek-ai/cordis' {
-  16	iface	HostCordisInspectQueryContext
-  24	iface	HostCordisInspectProviderRegistration
-  45	class	CordisInspectRegistryService
-      members: L52 constructor, L61 register, L75 syncClientManifest, L90 list, L107 query, L135 resolveClientQuery, L157 queryClient, L205 if, L206 if, L222 if, L233 if, L243 if, L245 if
+  17	iface	HostCordisInspectQueryContext
+  25	iface	HostCordisInspectProviderRegistration
+  47	class	CordisInspectRegistryService
+      members: L58 constructor, L72 register, L86 syncClientManifest, L101 list, L119 query, L147 resolveClientQuery, L172 queryClient, L250 if, L251 if, L267 if, L278 if, L288 if, L290 if
 
 ### packages/extensions/cordis-host-runner/src/lifecycle.ts  (58 行)
   22	fn	startHostHalf
@@ -208,7 +214,7 @@ None.
   184	fn	precheckCode
   226	fn	evaluateHostCode
 
-### packages/extensions/cordis-host-runner/src/types.ts  (401 行)
+### packages/extensions/cordis-host-runner/src/types.ts  (404 行)
   declare module: declare module '@deepseek-ai/cordis' {
   11	type	CordisDynamicPluginId
   14	type	CordisDynamicPackageId
@@ -223,28 +229,28 @@ None.
   71	type	CordisInspectQueryResolution
   80	iface	CordisInspectQueryResolved
   86	iface	CordisInspectResolveAck
-  92	type	CordisDynamicRunMode
-  95	type	RequestRunOutcome
-  98	iface	CordisErrorDetails
-  106	type	CordisRunStatus
-  118	iface	CordisHalfState
-  128	iface	CordisRunDiagnostic
-  144	iface	DynamicCordisRunAttempt
-  166	iface	DynamicCordisPackage
-  178	iface	DynamicCordisRunRequest
-  198	iface	DynamicCordisRequestResolved
-  206	iface	DynamicCordisRetracted
-  216	iface	DynamicCordisInventoryPackage
-  230	iface	DynamicCordisInventoryRow
-  251	type	DynamicCordisUndefineReceipt
-  256	iface	DynamicCordisRenderFailure
-  268	type	DynamicCordisRunResponse
-  305	type	DynamicCordisStopResponse
-  310	type	DynamicCordisHostHalfResult
-  323	iface	DynamicCordisClientSource
-  337	type	DynamicCordisRunResolution
-  351	iface	DynamicCordisResolveAck
-  357	type	DynamicCordisInvokeResult
+  95	type	CordisDynamicRunMode
+  98	type	RequestRunOutcome
+  101	iface	CordisErrorDetails
+  109	type	CordisRunStatus
+  121	iface	CordisHalfState
+  131	iface	CordisRunDiagnostic
+  147	iface	DynamicCordisRunAttempt
+  169	iface	DynamicCordisPackage
+  181	iface	DynamicCordisRunRequest
+  201	iface	DynamicCordisRequestResolved
+  209	iface	DynamicCordisRetracted
+  219	iface	DynamicCordisInventoryPackage
+  233	iface	DynamicCordisInventoryRow
+  254	type	DynamicCordisUndefineReceipt
+  259	iface	DynamicCordisRenderFailure
+  271	type	DynamicCordisRunResponse
+  308	type	DynamicCordisStopResponse
+  313	type	DynamicCordisHostHalfResult
+  326	iface	DynamicCordisClientSource
+  340	type	DynamicCordisRunResolution
+  354	iface	DynamicCordisResolveAck
+  360	type	DynamicCordisInvokeResult
 
 ## 其它关键文件
 
@@ -252,7 +258,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-cordis-host-runner",
   "description": "Dynamic package definition registry, host-half sandbox lifecycle, and invoke handler table for model-mounted dual-half packages",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -313,4 +319,4 @@ None.
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/cordis-plugin-timer": "workspace:~",
     "@deepseek-ai/dsh-agent": "workspace:*",
-    "@deepseek-ai/dsh-b
+    "@deepseek-ai/ds

@@ -1,9 +1,8 @@
 // Diagnose history-back behaviour in isolation.
-import { chromium } from 'playwright'
-import { pathToFileURL } from 'node:url'
+import { siteUrl, launchBrowser } from './_paths.mjs'
 
-const url = pathToFileURL('D:/临时/dsh研究/index.html').href
-const browser = await chromium.launch()
+const url = siteUrl()
+const browser = await launchBrowser()
 const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
 const errors = []
 page.on('console', m => { if (m.type() === 'error') errors.push(`[console] ${m.text()}`) })

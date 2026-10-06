@@ -1,13 +1,11 @@
 // Functional test: click-through traceability + search, starting from a dep-rich page.
-import { createRequire } from 'node:module'
-const require = createRequire(import.meta.url)
-const { chromium } = require('C:/Users/admin/.workbuddy/binaries/node/workspace/node_modules/playwright/index.js')
-import { pathToFileURL } from 'node:url'
+import { mkdirSync } from 'node:fs'
+import { SHOTS as OUT, siteUrl, launchBrowser } from './_paths.mjs'
 
-const url = pathToFileURL('D:/临时/dsh研究/index.html').href
-const OUT = 'D:/临时/dsh研究/.shots'
+const url = siteUrl()
+mkdirSync(OUT, { recursive: true })
 
-const browser = await chromium.launch()
+const browser = await launchBrowser()
 const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
 const errors = []
 page.on('console', m => { if (m.type() === 'error') errors.push(`[console] ${m.text()}`) })

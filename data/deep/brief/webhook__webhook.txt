@@ -2,8 +2,8 @@
 path: packages/webhook/webhook
 desc: Fire-and-forget webhook rule runtime that creates Workspace-backed DeepSeek Harness Sessions
 deps: @deepseek-ai/dsh-brand, @deepseek-ai/dsh-util-values
-peers: @deepseek-ai/cordis, @deepseek-ai/dsh-agent, @deepseek-ai/dsh-agent-default-model, @deepseek-ai/dsh-agent-presets, @deepseek-ai/dsh-invariants, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-permission-presets, @deepseek-ai/dsh-session, @deepseek-ai/dsh-session-title, @deepseek-ai/dsh-workspace
-srcFiles: 5  srcLoc: 533
+peers: @deepseek-ai/cordis, @deepseek-ai/dsh-agent, @deepseek-ai/dsh-agent-default-model, @deepseek-ai/dsh-agent-preset-registry, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-permission-presets, @deepseek-ai/dsh-session, @deepseek-ai/dsh-session-title, @deepseek-ai/dsh-workspace
+srcFiles: 4  srcLoc: 485
 
 ## README.md (87 行)
 ---
@@ -109,11 +109,6 @@ None.
   58	class	WebhookRuntime
       members: L72 constructor, L89 register, L126 dispatch, L136 startInvocation, L165 disposeRegistration
 
-### packages/webhook/webhook/src/invariant.ts  (49 行)
-  13	const	name
-  15	const	inject
-  47	const	apply
-
 ### packages/webhook/webhook/src/session.ts  (181 行)
   117	fn	createWebhookSession
 
@@ -132,7 +127,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-webhook",
   "description": "Fire-and-forget webhook rule runtime that creates Workspace-backed DeepSeek Harness Sessions",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -153,16 +148,11 @@ None.
       "types": "./lib/types/types.d.ts",
       "default": "./lib/types/types.js"
     },
-    "./invariant": {
-      "types": "./lib/types/invariant.d.ts",
-      "default": "./lib/invariant.js"
-    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
   "files": [
     "lib/index.js",
-    "lib/invariant.js",
     "lib/types/**/*.js",
     "lib/types/**/*.d.ts"
   ],
@@ -172,7 +162,6 @@ None.
     "@deepseek-ai/dsh-agent": "workspace:*",
     "@deepseek-ai/dsh-agent-default-model": "workspace:*",
     "@deepseek-ai/dsh-agent-preset-registry": "workspace:*",
-    "@deepseek-ai/dsh-invariants": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-permission-presets": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
@@ -186,6 +175,11 @@ None.
     "@deepseek-ai/dsh-agent": "workspace:*",
     "@deepseek-ai/dsh-agent-default-model": "workspace:*",
     "@deepseek-ai/dsh-agent-preset-registry": "workspace:*",
-    "@deepseek-ai/dsh-invariants": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
-    "@deepseek-ai/dsh-permission-pre
+    "@deepseek-ai/dsh-permission-presets": "workspace:*",
+    "@deepseek-ai/dsh-session": "workspace:*",
+    "@deepseek-ai/dsh-session-title": "workspace:*",
+    "@deepseek-ai/dsh-workspace": "workspace:*"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-brand": "worksp

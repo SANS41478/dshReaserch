@@ -5,7 +5,7 @@ deps: -
 peers: @deepseek-ai/cordis-plugin-loader, @deepseek-ai/cordis
 srcFiles: 1  srcLoc: 240
 
-## README.md (150 行)
+## README.md (149 行)
 ---
 description: "App-owned command lines for dsh app bins: your app parses its own flags, --help, and exit behavior from the launcher's remaining arguments."
 kind: "package-library"
@@ -105,7 +105,6 @@ The parse path is one small family with two owners: `provideCmdline` freezes the
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | `CmdlineArgs`/`AppExit` types, `provideCmdline`, `parseCmdline`, commander exit/output routing |
-| — | No runtime invariant companion is published; `cmdlineArgs` is an immutable launcher fact that any number of ordinary plugins may read. App-owned providers and consumers use normal Cordis service injection, whose missing dependencies are already reported by Loader settlement. |
 
 </details>
 
@@ -177,7 +176,7 @@ This Dev Note is working context for maintainers: open design questions and dire
 {
   "name": "@deepseek-ai/dsh-cmdline",
   "description": "Immutable command-line handoff from a dsh launcher to any app plugin that injects cmdlineArgs",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

@@ -3,9 +3,9 @@ path: packages/api/workspace-files
 desc: Workspace file service and Client resource provider: bounded reads, directory listing, and live metadata over the workspaceFiles Remote namespace
 deps: @deepseek-ai/dsh-deque, @deepseek-ai/dsh-typert-protocol, @deepseek-ai/schemastery
 peers: @deepseek-ai/cordis
-srcFiles: 8  srcLoc: 1346
+srcFiles: 8  srcLoc: 1393
 
-## README.md (160 行)
+## README.md (159 行)
 ---
 description: "Workspace file service for the web GUI: bounded reads and target-scoped filesystem watches, plus directory listing inside the Session workspace root."
 kind: "package-reference"
@@ -113,7 +113,6 @@ Complete-file reads delegate size enforcement to `fs.readBytes` and return raw b
 | [`src/types.ts`](src/types.ts) | Wire types and the `RemoteErrorDetailsMap` codes, published as `./types` for Client packages |
 | [`src/client/index.ts`](src/client/index.ts), [`provider.ts`](src/client/provider.ts), [`change-feed.ts`](src/client/change-feed.ts) | Browser plugin, file metadata, and per-target change feeds |
 | [`src/client/types.ts`](src/client/types.ts), [`remote.ts`](src/client/remote.ts) | Resource values, parameters, Client error codes, and generated Remote types |
-| — | No runtime invariant companion is published; every Host answer is derived from `ctx.fs` and the sandbox policy at call time. |
 
 Typert generates the Host and Client Remote artifacts exposed by `./typert` and `./remote`.
 
@@ -224,7 +223,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-api-workspace-files",
   "description": "Workspace file service and Client resource provider: bounded reads, directory listing, and live metadata over the workspaceFiles Remote namespace",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -289,4 +288,4 @@ None.
     "@deepseek-ai/dsh-client-connection": "workspace:*",
     "@deepseek-ai/dsh-client-resources": "workspace:*",
     "@deepseek-ai/dsh-client-ui-slots": "workspace:*",
-    "@deepseek-ai/dsh-fs": "wor
+    "@deepseek-ai/dsh-fs": "

@@ -1,5 +1,133 @@
 [
  {
+  "key": "hmr",
+  "desc": "Serialized module and configuration reloads",
+  "owners": [
+   "hmr"
+  ],
+  "definer": "hmr",
+  "providers": [],
+  "consumers": [
+   "app-boot"
+  ]
+ },
+ {
+  "key": "pluginRegistryProbe",
+  "desc": "Host registry response comparison",
+  "owners": [
+   "client-ui-plugin-manager"
+  ],
+  "definer": "client-ui-plugin-manager",
+  "providers": [],
+  "consumers": [
+   "client-ui-plugin-manager"
+  ]
+ },
+ {
+  "key": "pluginManager",
+  "desc": "Current-profile plugin and bundle management",
+  "owners": [
+   "plugin-manager"
+  ],
+  "definer": "plugin-manager",
+  "providers": [],
+  "consumers": [
+   "plugin-manager",
+   "ui-settings-plugin-inventory"
+  ]
+ },
+ {
+  "key": "profileContext",
+  "desc": "Launcher-owned profile data",
+  "owners": [
+   "app-boot"
+  ],
+  "definer": "app-boot",
+  "providers": [],
+  "consumers": [
+   "plugin-manager"
+  ]
+ },
+ {
+  "key": "connection",
+  "desc": "Authenticated browser transport",
+  "owners": [
+   "client-connection"
+  ],
+  "definer": "client-connection",
+  "providers": [],
+  "consumers": [
+   "api-gateway",
+   "host-frontend-static"
+  ]
+ },
+ {
+  "key": "mcpResources",
+  "desc": "Scoped MCP resource access",
+  "owners": [
+   "mcp-client",
+   "mcp-resources"
+  ],
+  "definer": "mcp-resources",
+  "providers": [
+   "mcp-client"
+  ],
+  "consumers": [
+   "mcp-resources"
+  ]
+ },
+ {
+  "key": "browserUse",
+  "desc": "Browser-use provider registration",
+  "owners": [
+   "browser-use",
+   "experimental-browser-use-chrome-devtools-mcp",
+   "experimental-browser-use-playwright-mcp",
+   "experimental-browser-use-stagehand-native"
+  ],
+  "definer": "browser-use",
+  "providers": [
+   "experimental-browser-use-chrome-devtools-mcp",
+   "experimental-browser-use-playwright-mcp",
+   "experimental-browser-use-stagehand-native"
+  ],
+  "consumers": [
+   "experimental-browser-use-chrome-devtools-mcp",
+   "experimental-browser-use-playwright-mcp",
+   "experimental-browser-use-stagehand-native"
+  ]
+ },
+ {
+  "key": "computerUse",
+  "desc": "Computer-use provider registration",
+  "owners": [
+   "computer-use",
+   "experimental-computer-use-cua-driver-mcp",
+   "experimental-computer-use-cua-driver-native"
+  ],
+  "definer": "computer-use",
+  "providers": [
+   "experimental-computer-use-cua-driver-mcp",
+   "experimental-computer-use-cua-driver-native"
+  ],
+  "consumers": [
+   "experimental-computer-use-cua-driver-mcp",
+   "experimental-computer-use-cua-driver-native"
+  ]
+ },
+ {
+  "key": "officeToPdf",
+  "desc": "Office to PDF conversion",
+  "owners": [
+   "office-to-pdf"
+  ],
+  "definer": "office-to-pdf",
+  "providers": [],
+  "consumers": [
+   "client-ui-sidebar-documentpreview"
+  ]
+ },
+ {
   "key": "attachments",
   "desc": "Durable binary attachment storage",
   "owners": [
@@ -101,13 +229,22 @@
   "consumers": [
    "agent",
    "agent-loop",
-   "invariants",
    "message-feedback",
    "session-persistence",
    "session-query",
    "session-query-sqlite",
    "subagent-in-process-driver"
   ]
+ },
+ {
+  "key": "speechController",
+  "desc": "Experimental transcription Remote",
+  "owners": [
+   "experimental-api-speech-to-text"
+  ],
+  "definer": "experimental-api-speech-to-text",
+  "providers": [],
+  "consumers": []
  },
  {
   "key": "sessionController",
@@ -136,6 +273,16 @@
    "api-session-controller"
   ],
   "definer": "api-session-controller",
+  "providers": [],
+  "consumers": []
+ },
+ {
+  "key": "jobController",
+  "desc": "Host job Remote controller",
+  "owners": [
+   "api-job-controller"
+  ],
+  "definer": "api-job-controller",
   "providers": [],
   "consumers": []
  },
@@ -170,6 +317,26 @@
   "consumers": []
  },
  {
+  "key": "workspaceChanges",
+  "desc": "Host per-turn changed-file summaries",
+  "owners": [
+   "workspace-changes"
+  ],
+  "definer": "workspace-changes",
+  "providers": [],
+  "consumers": []
+ },
+ {
+  "key": "terminalController",
+  "desc": "Session interactive terminal Remote controller",
+  "owners": [
+   "api-terminal-controller"
+  ],
+  "definer": "api-terminal-controller",
+  "providers": [],
+  "consumers": []
+ },
+ {
   "key": "workspaceController",
   "desc": "Host Workspace Remote controller",
   "owners": [
@@ -188,21 +355,6 @@
   "definer": "api-workspace-controller",
   "providers": [],
   "consumers": []
- },
- {
-  "key": "invariants",
-  "desc": "Package-owned invariant registry",
-  "owners": [
-   "invariants"
-  ],
-  "definer": "invariants",
-  "providers": [],
-  "consumers": [
-   "agent",
-   "agent-loop",
-   "scope",
-   "session"
-  ]
  },
  {
   "key": "typert",
@@ -249,20 +401,28 @@
   ]
  },
  {
-  "key": "settings",
-  "desc": "User-settings seam",
+  "key": "configEditor",
+  "desc": "Profile configuration edits",
   "owners": [
-   "settings",
-   "settings-file"
+   "config-editor"
+  ],
+  "definer": "config-editor",
+  "providers": [],
+  "consumers": [
+   "agent-default-model",
+   "settings"
+  ]
+ },
+ {
+  "key": "settings",
+  "desc": "Plugin configuration forms",
+  "owners": [
+   "settings"
   ],
   "definer": "settings",
-  "providers": [
-   "settings-file"
-  ],
+  "providers": [],
   "consumers": [
-   "api-settings-controller",
-   "llm-deepseek",
-   "llm-pi-ai"
+   "api-settings-controller"
   ]
  },
  {
@@ -295,6 +455,22 @@
   ]
  },
  {
+  "key": "deepseekAccount",
+  "desc": "DeepSeek account",
+  "owners": [
+   "deepseek-account",
+   "deepseek-account-platform"
+  ],
+  "definer": "deepseek-account",
+  "providers": [
+   "deepseek-account-platform"
+  ],
+  "consumers": [
+   "api-account-controller",
+   "llm-deepseek"
+  ]
+ },
+ {
   "key": "authorization",
   "desc": "Authorization flow registry",
   "owners": [
@@ -305,6 +481,39 @@
   "consumers": [
    "llm-pi-ai"
   ]
+ },
+ {
+  "key": "productAnalytics",
+  "desc": "Desktop interaction collection",
+  "owners": [
+   "client-product-analytics"
+  ],
+  "definer": "client-product-analytics",
+  "providers": [],
+  "consumers": []
+ },
+ {
+  "key": "otel",
+  "desc": "Shared OTel reporting channels",
+  "owners": [
+   "otel"
+  ],
+  "definer": "otel",
+  "providers": [],
+  "consumers": [
+   "host-product-telemetry-otel",
+   "session-telemetry-otel"
+  ]
+ },
+ {
+  "key": "productTelemetry",
+  "desc": "Product usage event sender",
+  "owners": [
+   "host-product-telemetry-otel"
+  ],
+  "definer": "host-product-telemetry-otel",
+  "providers": [],
+  "consumers": []
  },
  {
   "key": "sessionTelemetry",
@@ -355,6 +564,16 @@
    "message-feedback"
   ],
   "definer": "message-feedback",
+  "providers": [],
+  "consumers": []
+ },
+ {
+  "key": "sessionFeedback",
+  "desc": "Session-level feedback recorder",
+  "owners": [
+   "command-feedback"
+  ],
+  "definer": "command-feedback",
   "providers": [],
   "consumers": []
  },
@@ -490,9 +709,9 @@
   "key": "agentPresets",
   "desc": "Per-session agent composition",
   "owners": [
-   "agent-presets"
+   "agent-preset-registry"
   ],
-  "definer": "agent-presets",
+  "definer": "agent-preset-registry",
   "providers": [],
   "consumers": []
  },
@@ -531,22 +750,25 @@
   "consumers": [
    "api-session-controller",
    "session-query",
-   "session-reference",
-   "subagent"
+   "session-reference"
   ]
  },
  {
   "key": "skills",
   "desc": "Skill provider registry",
   "owners": [
+   "sandbox-windows-acl",
    "skill",
    "skill-badge",
-   "skill-filesystem"
+   "skill-filesystem",
+   "skill-office"
   ],
   "definer": "skill",
   "providers": [
+   "sandbox-windows-acl",
    "skill-badge",
-   "skill-filesystem"
+   "skill-filesystem",
+   "skill-office"
   ],
   "consumers": [
    "tool-skill"
@@ -593,6 +815,16 @@
   ]
  },
  {
+  "key": "schedule",
+  "desc": "Host scheduled messages",
+  "owners": [
+   "schedule"
+  ],
+  "definer": "schedule",
+  "providers": [],
+  "consumers": []
+ },
+ {
   "key": "goals",
   "desc": "Same-session goal domain",
   "owners": [
@@ -603,16 +835,17 @@
   "consumers": []
  },
  {
-  "key": "e2b",
-  "desc": "E2B sandbox lifecycle owner",
+  "key": "ssh",
+  "desc": "POSIX SSH connection owner",
   "owners": [
-   "e2b"
+   "ssh"
   ],
-  "definer": "e2b",
+  "definer": "ssh",
   "providers": [],
   "consumers": [
-   "fs-e2b",
-   "subprocess-e2b"
+   "fs-ssh",
+   "sandbox-ssh",
+   "subprocess-ssh"
   ]
  },
  {
@@ -620,13 +853,13 @@
   "desc": "Subprocess seam",
   "owners": [
    "subprocess",
-   "subprocess-e2b",
-   "subprocess-local"
+   "subprocess-local",
+   "subprocess-ssh"
   ],
   "definer": "subprocess",
   "providers": [
-   "subprocess-e2b",
-   "subprocess-local"
+   "subprocess-local",
+   "subprocess-ssh"
   ],
   "consumers": [
    "bash-local",
@@ -693,11 +926,13 @@
   "desc": "Process-sandbox seam",
   "owners": [
    "sandbox",
-   "sandbox-local"
+   "sandbox-local",
+   "sandbox-ssh"
   ],
   "definer": "sandbox",
   "providers": [
-   "sandbox-local"
+   "sandbox-local",
+   "sandbox-ssh"
   ],
   "consumers": [
    "bash-sandbox",
@@ -743,20 +978,21 @@
   "consumers": []
  },
  {
-  "key": "codeRuntime",
-  "desc": "Code-execution seam",
+  "key": "ptcRuntime",
+  "desc": "PTC execution seam",
   "owners": [
-   "code-runtime",
-   "code-runtime-worker-thread",
-   "experimental-code-runtime-python"
+   "experimental-ptc-runtime-python",
+   "ptc-runtime",
+   "ptc-runtime-node"
   ],
-  "definer": "code-runtime",
+  "definer": "ptc-runtime",
   "providers": [
-   "code-runtime-worker-thread",
-   "experimental-code-runtime-python"
+   "experimental-ptc-runtime-python",
+   "ptc-runtime-node"
   ],
   "consumers": [
-   "tools"
+   "tools",
+   "workflow-ptc"
   ]
  },
  {
@@ -764,15 +1000,15 @@
   "desc": "Filesystem provider seam",
   "owners": [
    "fs",
-   "fs-e2b",
    "fs-local",
-   "fs-sandbox"
+   "fs-sandbox",
+   "fs-ssh"
   ],
   "definer": "fs",
   "providers": [
-   "fs-e2b",
    "fs-local",
-   "fs-sandbox"
+   "fs-sandbox",
+   "fs-ssh"
   ],
   "consumers": [
    "tool-fs"
@@ -821,6 +1057,21 @@
   ]
  },
  {
+  "key": "speechToText",
+  "desc": "Experimental speech recognition providers",
+  "owners": [
+   "experimental-speech-to-text",
+   "experimental-speech-to-text-sensevoice"
+  ],
+  "definer": "experimental-speech-to-text",
+  "providers": [
+   "experimental-speech-to-text-sensevoice"
+  ],
+  "consumers": [
+   "experimental-api-speech-to-text"
+  ]
+ },
+ {
   "key": "agentTeams",
   "desc": "Agent Teams coordination domain",
   "owners": [
@@ -829,9 +1080,18 @@
   "definer": "experimental-agent-team",
   "providers": [],
   "consumers": [
-   "experimental-client-ui-agent-team",
    "experimental-tool-agent-team"
   ]
+ },
+ {
+  "key": "claudeCodeMods",
+  "desc": "Claude Code mods bridge",
+  "owners": [
+   "experimental-claude-code-mods"
+  ],
+  "definer": "experimental-claude-code-mods",
+  "providers": [],
+  "consumers": []
  },
  {
   "key": "inspector",
@@ -855,8 +1115,10 @@
    "jobs-local"
   ],
   "consumers": [
+   "api-job-controller",
    "tool-bash",
    "tool-jobs",
+   "tool-pwsh",
    "tool-subagent",
    "tool-terminal"
   ]
@@ -945,11 +1207,11 @@
   "desc": "Workflow script engine",
   "owners": [
    "workflow",
-   "workflow-worker-thread"
+   "workflow-ptc"
   ],
   "definer": "workflow",
   "providers": [
-   "workflow-worker-thread"
+   "workflow-ptc"
   ],
   "consumers": [
    "tool-ralph",

@@ -2,10 +2,10 @@
 path: packages/boot/app-boot
 desc: Shared boot glue for the app bins: .env loading, fail-loud Loader guards, snapshot-aware config resolution, and the Loader boot sequence
 deps: @deepseek-ai/dsh-atomic-write, @deepseek-ai/dsh-package-manifest
-peers: @deepseek-ai/cordis-plugin-group, @deepseek-ai/cordis-plugin-hmr, @deepseek-ai/cordis-plugin-include, @deepseek-ai/cordis-plugin-loader, @deepseek-ai/dsh-launch-environment, @deepseek-ai/dsh-home-paths, @deepseek-ai/dsh-system-prompt, @deepseek-ai/cordis
-srcFiles: 2  srcLoc: 1717
+peers: @deepseek-ai/cordis-plugin-group, @deepseek-ai/cordis-plugin-include, @deepseek-ai/cordis-plugin-loader, @deepseek-ai/dsh-launch-environment, @deepseek-ai/dsh-home-paths, @deepseek-ai/dsh-system-prompt, @deepseek-ai/cordis
+srcFiles: 20  srcLoc: 4958
 
-## README.md (220 行)
+## README.md (219 行)
 ---
 description: "Shared Loader boot support for dsh profiles and the temporary Python SDK runtime: environment layers, patches, diagnostics, and configuration preview."
 kind: "package-library"
@@ -90,7 +90,7 @@ The projector preserves native omission behavior by checking literal defaults ag
 
 ### Reading plugin display metadata
 
-Use `readPluginMeta(specifier, parentURL)` or `ctx.pluginPackages.metaOf(specifier, parentURL)` to read installed package display text without importing or activating the plugin. Lookup uses the complete package specifier and the caller's resolution base, respecting Node exports. File paths and file URLs return no metadata without resolving resources. Missing locale fields fall back to the accessible `package.json` at that address; malformed metadata returns an `error` diagnostic. Results retain translations for Client-side language selection. The reader also loads `package.json.icon` as an image data URL, even when locale text is complete; an icon error preserves valid text alongside the diagnostic. See [Plugin display metadata](../../../docs/cookbook/adding-a-package.md#plugin-display-metadata) for the author format.
+Use `readPluginMeta(specifier, parentURL)` or `ctx.pluginPackages.metaOf(specifier, parentURL)` to read installed package display text without importing or activating the plugin. Lookup uses the complete package specifier and the caller's resolution base, respecting Node exports. File paths and file URLs return no metadata without resolving resources. For a package-root specifier, missing locale fields fall back to the accessible `package.json`; a subpath specifier never reads a `package.json`. Malformed metadata returns an `error` diagnostic. Results retain translations for Client-side language selection. The reader also loads an image data URL, even when locale text is complete: a package root uses its manifest `icon`, or `<package>/icon` when that field is omitted; a subpath uses `<specifier>/icon`. An icon error preserves valid text alongside the diagnostic. See [Plugin display metadata](../../../docs/cookbook/adding-a-package.md#plugin-display-metadata) for the author format.
 
 <a id="startup-and-reload-failures"></a>
 ### Startup and reload failures
@@ -143,7 +143,7 @@ This section explains how the outcomes above are realized and points at the code
 - **Package metadata.** `ctx.pluginPackages.packageOf` locates the owning package without loading code or requiring an exported `package.json`; a subpath selects its package without validating that file. The installed runtime resolution owns selection even for a miss. Low-level embedders that install the service without one retain native lookup. Display metadata uses the separate entry-aware reader described above.
 - **Two Loader builtins.** `mountRootInclude` registers `cordis:include` and `cordis:group` as Loader builtins: a group row gives one `isolate` realm to a provider and its consumers together, and an agent preset outside this workspace cannot resolve `@deepseek-ai/cordis-plugin-group` by name. Both load through the ambient module pipeline rather than the included tree's own specifier resolution.
 - **Consumer-owned strictness.** Ordinary Loader groups keep successful siblings. App-boot applies the global required-entry policy after initial settlement; agent presets and dynamic multi-entry compositions own and dispose their separate Loader subtree when they require all-or-nothing setup. App-boot reads failed fibers to report their recorded errors and coalesces duplicate Loader rejection notifications through one process checkpoint.
-- **One runtime resolution.** The installation-first and ordered-bundle breadth-first traversal produces the runtime table. Runtime resolution creates no links; runtime resolution entries occupy their package names at `$DSH_HOME/profiles/node_modules`, and every other name sees that directory as an ordinary ancestor. Profile load removes the `.dsh-module-fallback` projections that link-backend releases wrote into a profile; pnpm-installed packages stay. External bare targets selected by package `imports` use the same package order, while Node retains mapping, conditions, and exact target resolution. A complete successor may add package names and update linked-root membership atomically within the existing package-mapping and local-name constraints.
+- **One runtime resolution.** The installation-first and ordered-bundle breadth-first traversal produces the runtime table. Runtime resolution creates no links; runtime resolution entries occupy their package names at `$DSH_HOME/profiles/node_modules`, and every other name sees that directory as an ordinary ancestor. Profile load removes the `.dsh-module-fallback` projections that link-backend releases wrote into a profile; pnpm-installed packages stay. External bare targets selected by package `imports` use the same package order, while Node retains mapping, conditions, and exact target resolution. A complete successor may add package names, remove profile-scoped mappings and profile-local names, and update linked-root membership atomically; retained mappings keep their normalized directory, version, and scope. Installation anchors remain fixed; a profile mapping may change its declarer. [Plugin Manager](../plugin-manager/README.md) publishes successors after package operations ([decision](../../../.agents/notes/implemented/architecture/2026-09-30-profile-package-refresh-and-manifest-invalidation.md)).
 - **Removing linked interception.** A successor may remove a linked root without restart. Directories outside all remaining roots use native lookup for subsequent requests, which may find a development copy or report a missing package. Existing module references and Node caches stay unchanged. Re-adding the same link name and target is allowed; pointing a previously published name at a different target is rejected even after removal ([generation rules](../../../.agents/notes/implemented/architecture/2026-09-09-profile-resolution-generations.md#immutable-generations)).
 - **Application-owned profiles.** Application-owned profiles use the same runtime resolution. Links within the active profile directory, including pnpm store links, are not external roots even when the profile is outside the shared profiles tree. Resolution does not modify their `node_modules`; pnpm owns installed packages.
 - **Owned Workers.** Worker build banners import `@deepseek-ai/dsh-app-boot/worker/profile-resolution-bootstrap` before bundled business code. Each Worker installs the structured-cloned runtime resolution in its own isolate. The bootstrap bundle has no static package imports. Source Worker entries retain their self-contained dependency closure, and third-party Workers receive no injection.
@@ -167,7 +167,6 @@ The exports each own one stage of the boot: config resolution and snapshot repla
 | [`src/profile-sanitize.ts`](src/profile-sanitize.ts) | Profile patch backup and recovery bundle activation |
 | [`src/config-schema/`](src/config-schema/) | Profile schema generation, discovery, native projection, and result types |
 | [`src/profile-resolution/`](src/profile-resolution/) | Runtime resolver, package-metadata service, and built Worker bootstrap |
-| — | No runtime invariant companion is published; one interception owns each runtime resolution. |
 
 </details>
 
@@ -185,7 +184,7 @@ Read these pages when the package-level contract is not enough. They move from t
 - [dsh-home-paths](../../util/home-paths/README.md) — the Harness-home resolver (`resolveDshHome`).
 - [Configuration source ownership](../../../.agents/notes/implemented/architecture/2026-08-04-configuration-source-ownership.md) — why a discovered file may not decide bootstrap behavior.
 - [Profile plugin bundles](../../../.agents/notes/implemented/architecture/2026-08-05-profile-plugin-bundles.md) — the profile and bundle composition design.
-- [User-patch HMR tests](../../../.agents/notes/implemented/testing/2026-09-09-user-patch-hmr-test-delivery.md) — ownership of live-patch behavior and native filesystem delivery.
+- [User-patch HMR tests](tests/user-patches.spec.ts) — ownership of live-patch behavior and native filesystem delivery.
 
 -----
 
@@ -262,31 +261,31 @@ This Dev Note is working context for maintainers: open design questions and dire
   63	iface	NativeConfigSchema
   93	iface	CollectedConfigEntry
 
-### packages/boot/app-boot/src/index.ts  (1067 行)
+### packages/boot/app-boot/src/index.ts  (1068 行)
   declare module: declare module '@deepseek-ai/cordis' {
-  100	fn	resolveConfigPath
-  117	fn	loadEnv
-  234	fn	loadLayeredEnv
-  273	fn	reconcileProfilePatches
-  315	fn	loadOptionalPatches
-  335	fn	loadOverlayPatches
-  391	iface	ConfigDumpLayer
-  430	fn	renderConfigDump
-  538	fn	mountRootInclude
-  588	type	FailLoudEvent
-  594	iface	FailLoudProcess
-  637	const	FAIL_LOUD_RELEASE_TIMEOUT_MS
-  679	fn	installFailLoud
-  801	class	StartupError
-      members: L809 constructor, L827 for, L860 if, L892 if, L899 if
-  925	fn	auditStartupEntries
-  972	fn	boot
-  1041	const	HARNESS_SOURCE_SECTION
-  1058	fn	addHarnessSourceSection
+  101	fn	resolveConfigPath
+  118	fn	loadEnv
+  235	fn	loadLayeredEnv
+  274	fn	reconcileProfilePatches
+  316	fn	loadOptionalPatches
+  336	fn	loadOverlayPatches
+  392	iface	ConfigDumpLayer
+  431	fn	renderConfigDump
+  539	fn	mountRootInclude
+  589	type	FailLoudEvent
+  595	iface	FailLoudProcess
+  638	const	FAIL_LOUD_RELEASE_TIMEOUT_MS
+  680	fn	installFailLoud
+  802	class	StartupError
+      members: L810 constructor, L828 for, L861 if, L893 if, L900 if
+  926	fn	auditStartupEntries
+  973	fn	boot
+  1042	const	HARNESS_SOURCE_SECTION
+  1059	fn	addHarnessSourceSection
 
-### packages/boot/app-boot/src/package-meta.ts  (173 行)
-  50	fn	resolvePluginResource
-  148	fn	readPluginMeta
+### packages/boot/app-boot/src/package-meta.ts  (200 行)
+  72	fn	resolvePluginResource
+  174	fn	readPluginMeta
 
 ### packages/boot/app-boot/src/plugin-compatibility.ts  (104 行)
   8	iface	PluginCompatibility
@@ -322,25 +321,25 @@ This Dev Note is working context for maintainers: open design questions and dire
 ### packages/boot/app-boot/src/profile-resolution/legacy-links.ts  (21 行)
   18	fn	realModuleDirectory
 
-### packages/boot/app-boot/src/profile-resolution/resolver.ts  (935 行)
+### packages/boot/app-boot/src/profile-resolution/resolver.ts  (934 行)
   117	iface	RuntimeInterception
-  143	fn	barePackageName
-  709	fn	installRuntimeInterception
-  928	fn	registerWorkerResolution
+  146	fn	barePackageName
+  708	fn	installRuntimeInterception
+  927	fn	registerWorkerResolution
 
-### packages/boot/app-boot/src/profile-resolution/service.ts  (126 行)
+### packages/boot/app-boot/src/profile-resolution/service.ts  (144 行)
   declare module: declare module '@deepseek-ai/cordis' {
   25	iface	PluginPackage
   39	iface	PluginPackagesConfig
   60	class	PluginPackages
-      members: L65 constructor, L82 replace, L96 packageOf, L114 metaOf, L120 for
+      members: L66 constructor, L86 replace, L101 refresh, L114 packageOf, L132 metaOf, L138 for
 
 ### packages/boot/app-boot/src/profile-resolution/worker-bootstrap.ts  (13 行)
 
 ### packages/boot/app-boot/src/profile-sanitize.ts  (35 行)
   18	fn	sanitizeProfile
 
-### packages/boot/app-boot/src/profile.ts  (739 行)
+### packages/boot/app-boot/src/profile.ts  (816 行)
   37	const	PROFILES_DIR
   40	const	PROFILE_PATCH_FILENAME
   43	iface	ProfileTemplate
@@ -356,18 +355,20 @@ This Dev Note is working context for maintainers: open design questions and dire
   150	iface	RuntimeResolution
   169	fn	resolveProfileDir
   179	const	PROFILE_TEMPLATES
-  203	const	DEFAULT_PROFILE_BUNDLES
-  213	const	OPTIONAL_BUNDLES
-  244	fn	initProfile
-  275	fn	removeLinkProjections
-  417	iface	RuntimeResolutionOptions
-  431	fn	createRuntimeResolution
-  545	fn	readProfileManifest
-  566	fn	writeProfileManifest
-  630	fn	resolveBundleDir
-  655	fn	loadProfileDirectory
-  704	fn	loadProfile
-  731	fn	composeEntries
+  213	const	DEFAULT_PROFILE_BUNDLES
+  223	const	OPTIONAL_BUNDLES
+  254	fn	initProfile
+  285	fn	removeLinkProjections
+  427	iface	RuntimeResolutionOptions
+  441	fn	createRuntimeResolution
+  487	class	ProfileRuntimeResolution
+      members: L499 constructor, L515 computeLatestResolution, L526 if, L537 if, L550 for, L593 for
+  603	fn	readProfileManifest
+  624	fn	writeProfileManifest
+  706	fn	resolveBundleDir
+  732	fn	loadProfileDirectory
+  781	fn	loadProfile
+  808	fn	composeEntries
 
 ## 其它关键文件
 
@@ -375,7 +376,7 @@ This Dev Note is working context for maintainers: open design questions and dire
 {
   "name": "@deepseek-ai/dsh-app-boot",
   "description": "Shared boot glue for the app bins: .env loading, fail-loud Loader guards, snapshot-aware config resolution, and the Loader boot sequence",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -429,4 +430,4 @@ This Dev Note is working context for maintainers: open design questions and dire
     "@deepseek-ai/cordis-plugin-group": "workspace:~",
     "@deepseek-ai/cordis-plugin-include": "workspace:~",
     "@deepseek-ai/cordis-plugin-loader": "workspace:~",
-    "@deepseek-ai/cordis-plug
+    "@deepseek-ai/cordis-p

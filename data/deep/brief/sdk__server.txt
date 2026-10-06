@@ -2,10 +2,10 @@
 path: packages/sdk/server
 desc: Stdio JSON-RPC server plugin for out-of-process DeepSeek Harness SDK clients
 deps: @deepseek-ai/dsh-brand, @deepseek-ai/schemastery
-peers: @deepseek-ai/cordis, @deepseek-ai/dsh-agent, @deepseek-ai/dsh-attachment, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-llm-deepseek, @deepseek-ai/dsh-scope, @deepseek-ai/dsh-sdk-protocol, @deepseek-ai/dsh-session, @deepseek-ai/dsh-subagent
-srcFiles: 2  srcLoc: 401
+peers: @deepseek-ai/cordis, @deepseek-ai/dsh-agent, @deepseek-ai/dsh-attachment, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-llm-deepseek-api-key, @deepseek-ai/dsh-scope, @deepseek-ai/dsh-sdk-protocol, @deepseek-ai/dsh-session, @deepseek-ai/dsh-subagent
+srcFiles: 2  srcLoc: 403
 
-## README.md (139 行)
+## README.md (138 行)
 ---
 description: "The stdio JSON-RPC serving plugin for deployments that let out-of-process SDK clients open sessions and drive agents in a DeepSeek Harness runtime."
 kind: "package-reference"
@@ -79,7 +79,6 @@ The plugin is a thin presentation adapter: [`HarnessSdkJsonRpcServer`](src/serve
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: `Config` schema, stdio wiring, request dispatch, shared shutdown/exit task |
 | [`src/server.ts`](src/server.ts) | `HarnessSdkJsonRpcServer`: protocol methods, per-session agent creation, lifecycle subscriptions, teardown |
-| — | No runtime invariant companion is published; this presentation adapter owns no durable package-local event stream; boundary and replay tests cover its protocol mapping. |
 
 ### Request flow
 
@@ -166,7 +165,7 @@ This Dev Note is working context for maintainers and is explicitly non-authorita
 {
   "name": "@deepseek-ai/dsh-sdk-jsonrpc-server",
   "description": "Stdio JSON-RPC server plugin for out-of-process DeepSeek Harness SDK clients",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -220,4 +219,4 @@ This Dev Note is working context for maintainers and is explicitly non-authorita
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-session-persistence-jsonl": "workspace:*",
     "@deepseek-ai/dsh-session-projection": "workspace:*",
-    "@deepse
+    "@dee

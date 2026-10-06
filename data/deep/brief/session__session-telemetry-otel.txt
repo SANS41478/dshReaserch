@@ -1,11 +1,11 @@
 # @deepseek-ai/dsh-session-telemetry-otel
 path: packages/session/session-telemetry-otel
-desc: OpenTelemetry backend for the DeepSeek Harness telemetry seam: hands captured session records to the OTel JS SDK's log pipeline
+desc: Feedback-authorized Session logs over byte-bounded OpenTelemetry HTTP requests
 deps: @deepseek-ai/schemastery
-peers: @deepseek-ai/dsh-command-feedback, @deepseek-ai/dsh-message-feedback, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-session, @deepseek-ai/dsh-session-telemetry, @deepseek-ai/dsh-anonymous-user-id, @deepseek-ai/cordis
-srcFiles: 1  srcLoc: 312
+peers: @deepseek-ai/dsh-command-feedback, @deepseek-ai/dsh-message-feedback, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-session, @deepseek-ai/dsh-session-telemetry, @deepseek-ai/dsh-anonymous-user-id, @deepseek-ai/cordis, @deepseek-ai/dsh-otel
+srcFiles: 1  srcLoc: 278
 
-## README.md (157 行)
+## README.md (155 行)
 ---
 description: "OpenTelemetry session-telemetry backend for deployments choosing a mode, configuring the exporter, or tracing what leaves the machine."
 kind: "package-reference"
@@ -161,8 +161,6 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. Mode selection changes capture handoff, SDK setup, and local diagnostics without mutating session or service state an independent companion can compare. Collector delivery cannot be inferred from local queue state.
-
 
 ## 源文件与导出符号
 
@@ -182,7 +180,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-session-telemetry-otel",
   "description": "Feedback-authorized Session logs over byte-bounded OpenTelemetry HTTP requests",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -234,4 +232,4 @@ None.
     "@deepseek-ai/dsh-loader-smoke": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-session-checkpoint-policy": "workspace:*",
-    "@deepseek-ai/dsh-session-persistence-jsonl": "works
+    "@deepseek-ai/dsh-session-persistence-jsonl": "wo

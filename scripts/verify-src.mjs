@@ -1,12 +1,11 @@
 // Verify the source browser: tree, file view, traceability, and click-through.
-import { createRequire } from 'node:module'
-const require = createRequire(import.meta.url)
-const { chromium } = require('C:/Users/admin/.workbuddy/binaries/node/workspace/node_modules/playwright/index.js')
+import { mkdirSync } from 'node:fs'
+import { PORT, SHOTS as OUT, siteUrl, launchBrowser } from './_paths.mjs'
 
-const BASE = 'http://127.0.0.1:5319/'
-const OUT = 'D:/临时/dsh研究/.shots'
+const BASE = `http://127.0.0.1:${PORT}/`
+mkdirSync(OUT, { recursive: true })
 
-const browser = await chromium.launch()
+const browser = await launchBrowser()
 const page = await browser.newPage({ viewport: { width: 1600, height: 1100 } })
 const errors = []
 page.on('console', m => { if (m.type() === 'error') errors.push(`[console] ${m.text()}`) })
@@ -28,7 +27,7 @@ const info = () => page.evaluate(() => ({
 
 console.log('=== 1. 离线兜底（用 file:// 打开，服务不可用）===')
 const filePage = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
-await filePage.goto('file:///D:/%E4%B8%B4%E6%97%B6/dsh%E7%A0%94%E7%A9%B6/index.html#/files', { waitUntil: 'load' })
+await filePage.goto(siteUrl('#/files'), { waitUntil: 'load' })
 await filePage.waitForTimeout(800)
 console.log('  #/files ->', await filePage.evaluate(() => document.querySelector('#content h1')?.textContent?.trim()))
 const offNote = await filePage.evaluate(() => !!document.querySelector('.note.warn'))

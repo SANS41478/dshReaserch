@@ -3,9 +3,9 @@ path: packages/session-query/session-query-sqlite
 desc: Concrete ctx.sessionQuery backend with SQLite FTS5 search
 deps: @deepseek-ai/schemastery
 peers: @deepseek-ai/dsh-session, @deepseek-ai/dsh-session-persistence, @deepseek-ai/dsh-session-query, @deepseek-ai/cordis
-srcFiles: 3  srcLoc: 1785
+srcFiles: 3  srcLoc: 1784
 
-## README.md (162 行)
+## README.md (161 行)
 ---
 description: "The SQLite FTS5 full-text search backend for session history, for deployments and maintainers choosing, configuring, or debugging full-text search over the query service."
 kind: "package-reference"
@@ -106,7 +106,6 @@ The design history lives in the [SQLite FTS5 session search note](../../../.agen
 | [`src/index.ts`](src/index.ts) | Service: config, openAt lifecycle, serialized reconciliation, query execution, cursors |
 | [`src/query.ts`](src/query.ts) | Request normalization, parameterized predicates, snippets, predicate and binding budgets |
 | [`src/schema.ts`](src/schema.ts) | Database schema, application-id ownership, in-place reset, owner-only file creation |
-| — | No runtime invariant companion is published; reconciliation, cursor generations, and derived-index ownership are validated at each serialized query boundary. |
 
 ### Index lifecycle
 
@@ -215,7 +214,7 @@ The `unicode61` tokenizer choice trades substring recall for index size and two-
 {
   "name": "@deepseek-ai/dsh-session-query-sqlite",
   "description": "Concrete ctx.sessionQuery backend with SQLite FTS5 search",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

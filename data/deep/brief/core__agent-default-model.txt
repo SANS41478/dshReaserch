@@ -1,11 +1,11 @@
 # @deepseek-ai/dsh-agent-default-model
 path: packages/core/agent-default-model
 desc: Default model selection shared by Agent entry points
-deps: @deepseek-ai/schemastery
-peers: @deepseek-ai/dsh-agent, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-settings, @deepseek-ai/cordis
-srcFiles: 1  srcLoc: 110
+deps: @deepseek-ai/schemastery, @deepseek-ai/dsh-config-editor
+peers: @deepseek-ai/dsh-agent, @deepseek-ai/dsh-llm, @deepseek-ai/cordis
+srcFiles: 1  srcLoc: 98
 
-## README.md (128 行)
+## README.md (127 行)
 ---
 description: "The deployment default model selection for users and maintainers choosing, configuring, or debugging which model freshly created agents start on."
 kind: "package-reference"
@@ -83,7 +83,6 @@ The service retains its validated Config references and samples them in `current
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Live default selection and profile-backed writes |
-| — | No invariant companion is published because Config references are the only owned values. |
 
 ### Behavior notes
 
@@ -149,7 +148,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-agent-default-model",
   "description": "Default model selection shared by Agent entry points",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

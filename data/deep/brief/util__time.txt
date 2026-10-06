@@ -5,7 +5,7 @@ deps: -
 peers: @deepseek-ai/cordis
 srcFiles: 1  srcLoc: 34
 
-## README.md (71 行)
+## README.md (69 行)
 ---
 description: "IANA time-zone validation and canonicalization for maintainers accepting a caller-reported zone at a wire boundary."
 kind: "package-library"
@@ -33,8 +33,6 @@ Zero-dependency zone vocabulary for the wire boundaries that accept a caller's t
 ## Use this package
 
 It is a **library, not a service or plugin**: no `ctx`, registers nothing, holds no state.
-
-No runtime invariant companion is published because this pure utility owns no event stream or mutable runtime data; unit tests verify zone canonicalization.
 
 Call it at the boundary that receives the zone, before the value reaches anything durable. An unusable name answers `undefined`, and the caller raises its own refusal — `session/invalid-time-zone` for the Session prompt, `subagent/invalid-time-zone` for a subagent continuation.
 
@@ -89,7 +87,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-util-time",
   "description": "Zero-dependency time vocabulary shared by wire boundaries: canonicalClientTimeZone (IANA zone validation and canonicalization only, no formatting)",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

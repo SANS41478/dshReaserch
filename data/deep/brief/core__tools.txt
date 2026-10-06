@@ -2,10 +2,10 @@
 path: packages/core/tools
 desc: Tool registry and execution pipeline for the DeepSeek Harness
 deps: @deepseek-ai/dsh-brand, @deepseek-ai/dsh-util-values, @deepseek-ai/schemastery
-peers: @deepseek-ai/cordis, @deepseek-ai/dsh-agent, @deepseek-ai/dsh-code-runtime, @deepseek-ai/dsh-invariants, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-scope, @deepseek-ai/dsh-session, @deepseek-ai/dsh-system-prompt, @deepseek-ai/dsh-user-approval
-srcFiles: 10  srcLoc: 5649
+peers: @deepseek-ai/cordis, @deepseek-ai/dsh-agent, @deepseek-ai/dsh-ptc-runtime, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-scope, @deepseek-ai/dsh-session, @deepseek-ai/dsh-system-prompt, @deepseek-ai/dsh-user-approval, @deepseek-ai/dsh-sandbox, @deepseek-ai/dsh-sandbox-policy
+srcFiles: 9  srcLoc: 5679
 
-## README.md (248 行)
+## README.md (249 行)
 ---
 description: "The tool registry and execution pipeline for tool authors and maintainers registering, restricting, presenting, or debugging model-facing tools."
 kind: "package-reference"
@@ -38,6 +38,8 @@ Mount `dsh-tools` wherever agents call tools: it provides `ctx.tools`, the regis
 ### Register a tool
 
 `defineTool` builds a typed tool definition: a model-facing name, description, and parameter schema, a canonical output declaration, and an `execute` body that returns only the declared JSON value. Model arguments are validated before execution; invalid input becomes a normal error result.
+
+Canonical values belong to execution; the Session records rendered content and optional presentation metadata instead. Replacing or redacting that content does not remove the canonical value available to a programmatic caller; a policy that must deny that access must block execution or replace the value.
 
 ```ts
 import { readFile } from 'node:fs/promises'
@@ -124,7 +126,6 @@ The registry holds typed `ToolDefinition`s in scoped layers and projects them on
 | [`src/ptc.ts`](src/ptc.ts) | PTC mode: SDK generation, `run_code` dispatch bridge, settlement |
 | [`src/ts-types.ts`](src/ts-types.ts) | TypeScript SDK type rendering |
 | [`src/py-types.ts`](src/py-types.ts) | Python SDK type rendering |
-| [`src/invariant.ts`](src/invariant.ts) | Invariant companion |
 
 ### Execution and cancellation
 
@@ -132,7 +133,7 @@ Each typed invocation materializes and freezes parsed arguments, assigns an opaq
 
 ### PTC mode
 
-Under `ptc` or `both`, the registry exposes the reserved `run_code` transport plus a deterministic SDK generated in the loaded runtime's language. Each SDK binding captures a frozen ToolSchema and passes it through the scheduler to its execution context. Before policy, a started call records only pairing ids, name, and normalized arguments; its settle event preserves the rendered result and optional structured error. Description and parameters remain transient and never enter Session events or SDK output. Calls are scheduled through a per-run pool that reuses the native concurrency contract. Under `ptc` alone, a model-direct call naming any other visible tool resolves to `UNKNOWN_TOOL` before policy — the announced surface and the callable surface stay the same. Intermediate binding values are execution-local; only the outer `run_code` result has a hard size cap. The [executor-collapse note](../../../.agents/notes/implemented/bug-fix/2026-08-07-ptc-executor-collapse.md) owns the collapse contract.
+Under `ptc` or `both`, the registry exposes the reserved `run_code` transport plus a deterministic SDK generated in the loaded runtime's language. Each SDK binding captures a frozen ToolSchema and passes it through the scheduler to its execution context. Before policy, a started call records only pairing ids, name, and normalized arguments; its settle event preserves the rendered result and optional structured error. Description and parameters remain transient and never enter Session events or SDK output. Calls are scheduled through a per-run pool that reuses the native concurrency contract. Under `ptc` alone, a model-direct call naming any other visible tool resolves to `UNKNOWN_TOOL` before policy — the announced surface and the callable surface stay the same. Intermediate binding values are execution-local; only the outer `run_code` result has a hard size cap.
 
 New sub-calls use `<parent>:ptc:<n>` ids. Consumers treat these ids as opaque and correlate events by exact equality; restored historical ids retain their original bytes. The [PTC mode decision](../../../.agents/notes/implemented/feature/2026-06-15-ptc.md) owns durable naming and restoration rules.
 
@@ -184,16 +185,16 @@ Prefix-stable while visible definitions and their order are unchanged. Registrat
 
 #### What the model sees
 
-PTC mode exposes the generated [`run_code` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tools), the SDK instructions below, and the generated exact SDK block for the loaded runtime's language. The TypeScript instructions identify generated declarations as program-only bindings. When the current `bash` parameter schema accepts the example arguments, they also show a complete `run_code` call around `tools.bash(...)`. The `tools:sdk` section uses first-party order 5000 and disables prompt-variable interpolation, preserving literal `{{…}}` text in tool descriptions and schemas for both runtime languages. `both` exposes normal schemas and this PTC mode API; under `ptc` the prompt also carries the `tools:ptc-only` rule earlier in the first-party order, so the model reads which tools it may call before it reads what each one is for.
+PTC mode exposes the generated [`run_code` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tools), the SDK instructions below, and the generated exact SDK block for the loaded runtime's language. Both runtime languages list `description` before `code` and request that generation order in the shared parameter description; this is guidance, not an enforced JSON member order. The TypeScript instructions identify generated declarations as program-only bindings. When the current `bash` parameter schema accepts the example arguments, they also show a complete `run_code` call around `tools.bash(...)`. The `tools:sdk` section uses first-party order 5000 and disables prompt-variable interpolation, preserving literal `{{…}}` text in tool descriptions and schemas for both runtime languages. `both` exposes normal schemas and this PTC mode API; under `ptc` the prompt also carries the `tools:ptc-only` rule earlier in the first-party order, so the model reads which tools it may call before it reads what each one is for.
 
 ##### TypeScript PTC mode SDK instructions with bash
 
 ```markdown
 ## Writing code for run_code
 
-`run_code` takes two required arguments: `code` — the body of an async TypeScript function (erasable syntax only — no `enum` or namespaces; type annotations are advisory, the code runs type-stripped) — and `description`, a short summary of what the program does. The declarations below are SDK bindings for this program. A declaration does not make its name a directly callable tool; only names supplied as separate tool schemas may be called directly. When no separate `bash` schema is supplied, invoke a declared `bash` binding inside `run_code`:
+`run_code` takes two required arguments: `description`, a short summary of what the program does, and `code` — the body of an async TypeScript function (erasable syntax only — no `enum` or namespaces; type annotations are advisory, the code runs type-stripped). The declarations below are SDK bindings for this program. A declaration does not make its name a directly callable tool; only names supplied as separate tool schemas may be called directly. When no separate `bash` schema is supplied, invoke a declared `bash` binding inside `run_code`:
 
-`run_code({ code: "return await tools.bash({ command: 'pwd', description: 'Show current directory' })", description: "Show current directory" })`
+`run_code({ description: "Show current directory", code: "return await tools.bash({ description: 'Show current directory', command: 'pwd' })" })`
 
 Inside the program:
 
@@ -294,11 +295,6 @@ None.
   807	class	ToolRuntime
       members: L848 constructor, L876 collapseSection, L896 sdkSection, L922 modeFor, L944 requirePtcTransport, L974 presentAs, L1008 wireSchemas, L1045 requirePtcRuntime, L1063 register, L1097 restrict, L1136 guard, L1145 guardReason, L1178 view, L1230 get, L1247 resolveExecution, L1260 schemas, L1265 sdkSchemas, L1282 schemaOf, L1303 executionMode, L1323 shapeDispatchLog, L1351 collapses, L1369 execute, L1373 completeScheduledExecution, L1391 createExecution, L1489 prepareScheduledExecution, L1493 prepareExecution, L1542 callerCancelled, L1550 cancellationResult, L1564 dispatchToolBody, L1601 dispatchScheduledExecution, L1641 finalizeScheduledExecution, L1669 finishScheduledExecution, L1687 applyFinalContent, L1695 notifyResult, L1727 serviceAsk, L1781 postExecute, L1826 markCanonical, L1832 createSuccessResult, L1865 normalizeDispatchResult, L1886 materializeFinalResult
 
-### packages/core/tools/src/invariant.ts  (130 行)
-  11	const	name
-  13	const	inject
-  128	const	apply
-
 ### packages/core/tools/src/json-schema.ts  (657 行)
   18	type	JsonSchemaScalar
   21	type	JsonSchemaType
@@ -337,14 +333,14 @@ None.
   355	iface	WebSearchResultView
   374	iface	WebFetchResultView
 
-### packages/core/tools/src/ptc.ts  (771 行)
+### packages/core/tools/src/ptc.ts  (772 行)
   declare module: declare module '@deepseek-ai/dsh-llm' {
   30	const	RUN_CODE_NAME
   89	type	PtcSdkLanguage
-  174	class	CodeRunFailedError
-      members: L175 constructor, L193 if, L198 if, L223 for
-  302	iface	RunCodeBridgeOptions
-  333	fn	createRunCodeTool
+  175	class	CodeRunFailedError
+      members: L176 constructor, L194 if, L199 if, L224 for
+  303	iface	RunCodeBridgeOptions
+  334	fn	createRunCodeTool
 
 ### packages/core/tools/src/py-types.ts  (819 行)
   726	fn	jsonSchemaToPy
@@ -395,7 +391,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-tools",
   "description": "Tool registry and execution pipeline for the DeepSeek Harness",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -412,10 +408,6 @@ None.
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
-    "./invariant": {
-      "types": "./lib/types/invariant.d.ts",
-      "default": "./lib/invariant.js"
-    },
     "./types": {
       "types": "./lib/types/types.d.ts",
       "default": "./lib/types/types.js"
@@ -429,7 +421,6 @@ None.
   },
   "files": [
     "lib/index.js",
-    "lib/invariant.js",
     "lib/types/**/*.js",
     "lib/types/**/*.d.ts"
   ],
@@ -438,7 +429,6 @@ None.
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/dsh-agent": "workspace:*",
     "@deepseek-ai/dsh-ptc-runtime": "workspace:*",
-    "@deepseek-ai/dsh-invariants": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-scope": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
@@ -456,4 +446,8 @@ None.
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/dsh-agent": "workspace:*",
     "@deepseek-ai/dsh-ptc-runtime": "workspace:*",
-    "@deepseek-ai/dsh-invariants"
+    "@deepseek-ai/dsh-llm": "workspace:*",
+    "@deepseek-ai/dsh-scope": "workspace:*",
+    "@deepseek-ai/dsh-session": "workspace:*",
+    "@deepseek-ai/dsh-session-projection": "workspace:*",
+    "@deepseek-ai/dsh-

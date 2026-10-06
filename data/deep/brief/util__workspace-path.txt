@@ -3,9 +3,9 @@ path: packages/util/workspace-path
 desc: Browser-safe Workspace path and display helpers
 deps: -
 peers: @deepseek-ai/cordis
-srcFiles: 2  srcLoc: 198
+srcFiles: 2  srcLoc: 238
 
-## README.md (52 行)
+## README.md (50 行)
 ---
 description: "Browser-safe Workspace path helpers for joining relative paths, abbreviating POSIX homes, and deriving display titles."
 kind: "package-library"
@@ -56,8 +56,6 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. This utility owns no mutable runtime relationship.
-
 
 ## 源文件与导出符号
 
@@ -83,7 +81,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-util-workspace-path",
   "description": "Browser-safe Workspace path and display helpers",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

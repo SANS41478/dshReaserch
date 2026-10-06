@@ -3,9 +3,9 @@ path: packages/test-support/loader-smoke
 desc: Shared subprocess and direct-agent harness for keyless real-Loader example smoke tests
 deps: -
 peers: @deepseek-ai/cordis, @deepseek-ai/dsh-agent, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-session, @deepseek-ai/dsh-http-proxy
-srcFiles: 2  srcLoc: 345
+srcFiles: 2  srcLoc: 377
 
-## README.md (132 行)
+## README.md (131 行)
 ---
 description: "Shared subprocess and direct-agent harness for keyless example smoke tests, for test authors booting real Loader compositions."
 kind: "package-library"
@@ -89,7 +89,6 @@ The harness is built on one separation: the smoke runs in a child process under 
 |---|---|
 | [`src/index.ts`](src/index.ts) | Mode resolver, `runLoaderSmoke` subprocess harness, options and result types |
 | [`src/agent-turn.ts`](src/agent-turn.ts) | `runFixtureTurn` direct-agent driver and result envelope |
-| — | No runtime invariant companion is published; this test-support package owns no production event stream or mutable data; consuming test suites exercise its behavior. |
 | [`tests/fixtures/production-profile.ts`](tests/fixtures/production-profile.ts) | Repository-only shipped-profile composition helper for integration fixtures |
 
 </details>
@@ -164,7 +163,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-loader-smoke",
   "description": "Shared subprocess and direct-agent harness for keyless real-Loader example smoke tests",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

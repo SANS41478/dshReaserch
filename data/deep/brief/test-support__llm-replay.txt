@@ -3,9 +3,9 @@ path: packages/test-support/llm-replay
 desc: Replay LLM plugin: short-circuits llm/stream with model chunks reconstructed from a recorded session JSONL (keyless snapshot tests)
 deps: @deepseek-ai/dsh-session-format-catalog, @deepseek-ai/dsh-util-values
 peers: @deepseek-ai/cordis, @deepseek-ai/dsh-compaction, @deepseek-ai/dsh-deepseek-llm-api-extensions, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-session
-srcFiles: 1  srcLoc: 1197
+srcFiles: 1  srcLoc: 1210
 
-## README.md (160 行)
+## README.md (159 行)
 ---
 description: "Keyless LLM replay plugin for snapshot tests, for test authors booting the real agent against recorded model transcripts."
 kind: "package-reference"
@@ -115,7 +115,6 @@ The [committed-corpus test](tests/session-format-corpus.spec.ts) restores each v
 |---|---|
 | [`src/index.ts`](src/index.ts) | Types, fixture derivation, override validation, placeholder resolution, session binding, `installLlmReplay`, and the plugin export |
 | [`tests/session-format-corpus.spec.ts`](tests/session-format-corpus.spec.ts) | Committed-generation restoration and exact historical refusal checks |
-| — | No runtime invariant companion is published; this test-only adapter consumes a fixed replay script; its stream grammar is checked by the LLM companion and fixture derivation tests. |
 
 ### Binding and stream flow
 
@@ -197,7 +196,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-llm-replay",
   "description": "Replay LLM plugin: short-circuits llm/stream with model chunks reconstructed from a recorded session JSONL (keyless snapshot tests)",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

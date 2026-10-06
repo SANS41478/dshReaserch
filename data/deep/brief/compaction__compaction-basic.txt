@@ -3,9 +3,9 @@ path: packages/compaction/compaction-basic
 desc: Token-meter-driven compaction policy and LLM summarization backend for the DeepSeek Harness
 deps: @deepseek-ai/dsh-util-values, @deepseek-ai/schemastery
 peers: @deepseek-ai/cordis, @deepseek-ai/dsh-agent, @deepseek-ai/dsh-commands, @deepseek-ai/dsh-compaction, @deepseek-ai/dsh-compaction-tool-result-pruner, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-session, @deepseek-ai/dsh-token-meter
-srcFiles: 5  srcLoc: 1626
+srcFiles: 5  srcLoc: 1720
 
-## README.md (262 行)
+## README.md (261 行)
 ---
 description: "Automatic conversation condensation for deployments choosing, tuning, or debugging how older history is summarized as token pressure builds."
 kind: "package-reference"
@@ -145,7 +145,6 @@ The transaction validates the surface span and the durable lock, appends `compac
 | [`src/summarizer.ts`](src/summarizer.ts) | Default `ctx.llm.stream()` summarization, checkpoint framing, safe-summary projection |
 | [`src/config.ts`](src/config.ts) | Load-time validation and routed-model policy resolution |
 | [`src/types.ts`](src/types.ts) | `BasicCompactionConfig` and resolved policy vocabulary |
-| — | No runtime invariant companion is published; this package exposes no independent event sequence or mutable data relation beyond contracts enforced at its owning seam. The durable bracket remains observable in the session log. |
 
 </details>
 
@@ -309,7 +308,7 @@ This Dev Note is working context for maintainers and is explicitly non-authorita
 {
   "name": "@deepseek-ai/dsh-compaction-basic",
   "description": "Token-meter-driven compaction policy and LLM summarization backend for the DeepSeek Harness",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -363,5 +362,5 @@ This Dev Note is working context for maintainers and is explicitly non-authorita
     "@deepseek-ai/dsh-commands": "workspace:*",
     "@deepseek-ai/dsh-compaction": "workspace:*",
     "@deepseek-ai/dsh-compaction-tool-result-pruner": "workspace:*",
-    "@deepseek-ai/dsh-invariants": "workspace:*",
-    "@deepseek-ai/dsh-llm": "workspace:*"
+    "@deepseek-ai/dsh-llm": "workspace:*",
+    "@deepseek-ai/dsh-llm-retry": "workspace:

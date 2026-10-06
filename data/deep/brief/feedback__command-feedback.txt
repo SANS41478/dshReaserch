@@ -1,11 +1,11 @@
 # @deepseek-ai/dsh-command-feedback
 path: packages/feedback/command-feedback
-desc: Log-only session feedback producer and human-facing slash command
+desc: Log-only session feedback: the record event, the sessionFeedback Host Remote, and the human-facing slash command
 deps: -
-peers: @deepseek-ai/dsh-commands, @deepseek-ai/dsh-session, @deepseek-ai/dsh-anonymous-user-id, @deepseek-ai/cordis
-srcFiles: 1  srcLoc: 69
+peers: @deepseek-ai/dsh-commands, @deepseek-ai/dsh-session, @deepseek-ai/dsh-anonymous-user-id, @deepseek-ai/cordis, @deepseek-ai/dsh-typert-protocol
+srcFiles: 2  srcLoc: 198
 
-## README.md (158 行)
+## README.md (157 行)
 ---
 description: "Session feedback: the `/feedback` command, the `sessionFeedback` Host Remote behind the Web feedback dialog, and the fixed category taxonomy; for users and maintainers choosing, composing, or debugging feedback capture."
 kind: "package-reference"
@@ -100,7 +100,6 @@ The producer trims the text, records blank text as absent, and writes one event 
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: `recordFeedback` producer, the `sessionFeedback` Remote service, `/feedback` command registration |
 | [`src/types.ts`](src/types.ts) | `feedback/record` event declaration, the category taxonomy, and the Remote request and result types |
-| — | No runtime invariant companion is published; each `feedback/record` is an independent append-only fact with no cross-event or mutable-data relationship. |
 
 </details>
 
@@ -193,7 +192,7 @@ This Dev Note is working context for maintainers; it is explicitly non-authorita
 {
   "name": "@deepseek-ai/dsh-command-feedback",
   "description": "Log-only session feedback: the record event, the sessionFeedback Host Remote, and the human-facing slash command",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -253,4 +252,4 @@ This Dev Note is working context for maintainers; it is explicitly non-authorita
     "@deepseek-ai/dsh-commands": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
-    "@deepseek-ai/dsh-anonymous-user-id": "works
+    "@deepseek-ai/dsh-anonymous-user-id": "wo

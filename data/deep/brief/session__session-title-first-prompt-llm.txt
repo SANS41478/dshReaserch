@@ -5,7 +5,7 @@ deps: @deepseek-ai/schemastery
 peers: @deepseek-ai/dsh-llm, @deepseek-ai/dsh-session, @deepseek-ai/dsh-session-title, @deepseek-ai/dsh-session-title-llm, @deepseek-ai/cordis
 srcFiles: 1  srcLoc: 41
 
-## README.md (120 行)
+## README.md (118 行)
 ---
 description: "First-message LLM session-title provider for users and maintainers choosing a title strategy or debugging automatic title generation."
 kind: "package-reference"
@@ -124,8 +124,6 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. This thin provider delegates request and result validation to the shared title service and LLM helper and retains no independent mutable state.
-
 
 ## 源文件与导出符号
 
@@ -142,7 +140,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-session-title-first-prompt-llm",
   "description": "First-message LLM provider plugin for DeepSeek Harness session titles",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

@@ -5,7 +5,7 @@ deps: -
 peers: @deepseek-ai/cordis
 srcFiles: 1  srcLoc: 40
 
-## README.md (109 行)
+## README.md (108 行)
 ---
 description: "Nominal string and number types with stateless constructors for packages that own confusable domain values."
 kind: "package-library"
@@ -80,7 +80,6 @@ The package defines two intersection types, `string & { readonly [BRAND]: B }` a
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Branded string and number types with stateless constructors |
-| — | No runtime invariant companion is published; this pure utility owns no event stream or mutable runtime data; its value algebra is enforced by unit tests. |
 
 ### How values stay portable
 
@@ -130,7 +129,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-brand",
   "description": "Stateless branded primitive types for the DeepSeek Harness",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

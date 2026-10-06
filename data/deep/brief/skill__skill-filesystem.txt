@@ -3,9 +3,9 @@ path: packages/skill/skill-filesystem
 desc: Local filesystem skill provider for the DeepSeek Harness
 deps: @deepseek-ai/schemastery
 peers: @deepseek-ai/dsh-fs, @deepseek-ai/dsh-home-paths, @deepseek-ai/dsh-skill, @deepseek-ai/cordis
-srcFiles: 1  srcLoc: 1042
+srcFiles: 1  srcLoc: 1050
 
-## README.md (163 行)
+## README.md (162 行)
 ---
 description: "The local filesystem skill provider for users and maintainers authoring local skills or configuring how project, custom, and user skill roots are discovered and watched."
 kind: "package-reference"
@@ -111,7 +111,6 @@ The provider is built on two separations. First, catalog versus body: discovery 
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry, provider, root resolution, frontmatter parsing, watch manager |
-| — | No runtime invariant companion is published; this package exposes no independent event sequence or mutable data relation beyond contracts enforced at its owning seam. |
 
 ### Discovery flow
 
@@ -187,7 +186,7 @@ This Dev Note is working context for maintainers and is explicitly non-authorita
 {
   "name": "@deepseek-ai/dsh-skill-filesystem",
   "description": "Local filesystem skill provider for the DeepSeek Harness",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

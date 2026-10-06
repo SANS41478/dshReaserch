@@ -3,9 +3,9 @@ path: packages/client/ui-conversation
 desc: Target-neutral Conversation assembly, shell, composer, queue, and view navigation
 deps: @deepseek-ai/schemastery
 peers: @deepseek-ai/cordis
-srcFiles: 56  srcLoc: 10714
+srcFiles: 72  srcLoc: 13016
 
-## README.md (173 行)
+## README.md (181 行)
 ---
 description: "Target-neutral conversation assembly and browser shell: event and view registries, per-session bindings, input state, slots, and temporary composer takeovers."
 kind: "package-reference"
@@ -41,6 +41,14 @@ Desktop product events use the optional [product analytics service](../product-a
 
 The adapter passes each `SessionEventLikeEntry` directly to the assembler. Its outer `type` distinguishes durable events from Client-only transient events, while its inner `event` always exposes `type`, `seq`, `time`, and `data`; Definitions receive that inner `SessionEventLike`. Replacement windows may include both entry variants, while historical prepends carry durable entries and live appends may carry either. Definitions use the same match/start/update interface for durable and transient events. The earliest loaded start initializes State; every later Match, including another start for that identity, updates it. Definitions that do not consume Assistant deltas return `null` for `assistant/live-chunk`. Replacement windows and revision gaps rebuild from the complete loaded window; contiguous append, prepend, and Assistant-settlement revisions use incremental assembly. Settlement removes only the named attempt's transient matches, applies its optional durable entry, and recomputes the affected Contexts from their remaining earliest start, refreshing predecessor indexes and dependents without replacing unrelated target nodes. A Context with no remaining start has no State. Its key and previously published nodes remain available to later evidence until a full window rebuild; the owning Definition may hide those nodes. The assembler owns Context matching, Turn/Step locations, target node materialization, target activity, and stable target sources. `ConversationSnapshot` contains only target-neutral views and active-target facts; Session lifecycle state remains in `SessionSnapshot`.
 
+Definitions may share the same read-only Match and Location for one input and lifecycle role. Each Definition keeps its own Context, State, and ordered Match list; Match objects are not reused across assembler instances.
+
+Registration accepts the existing callable `match` or a read-only event-type-to-handler table. The Registry copies table entries and precomputes ordered candidate Sets on registration changes. Function-form Definitions keep their callable API and receive every event; table handlers receive only their declared types. Changing a table requires unregistering and registering again. Legacy assembler adapters with only `entries()` and `fallbackEntry()` retain their original dispatch path.
+
+All accepted Matches update State in order. Repeated updates to one Context are coalesced between flushes. A Context retains its key while kind and id match; Definition-facing Context snapshots remain distinct objects. The fallback handles only inputs not claimed by an ordinary Definition for its target.
+
+Location lookup indexes Steps by Turn and Step number, so a non-boundary append does not scan the Turn's Step array. Each input's numeric coordinates and resolved Location share one private index record; published Location values remain immutable. Boundary updates, replacement, and prepend keep the indexes aligned with the current timeline.
+
 A target becomes active when shell selection resolves it or when its source receives a first subscriber. The assembler replaces that target from current Contexts once and keeps it active for later incremental flushes; creating a source does not activate it and unsubscription does not deactivate it.
 
 `UiConversation.groups` registers one optional business Group Definition per existing target. It consumes projected Node changes, changed Turns, and indexed target positions after Node materialization, including first activation, and owns all segmentation and group data. Indexed Turn reads preserve interruptions from neighbouring Nodes, allowing business updates to stay within affected Turns and groups. The assembler validates and installs root references and keyed group snapshots before publishing Node, Group, and Location data sources. Ungrouped targets retain their original path. [Grouping](../../../docs/subsystems/conversation.md#group-definitions) defines input lifetime, typed registration, atomic updates, and renderer responsibilities.
@@ -64,9 +72,11 @@ The composer registers the File command action and owns its label, availability,
 
 `SessionInputShell` owns one Lexical editor per Session through its private [DraftEditorRuntime](src/client/input/editor/runtime.ts), while retaining submission, attachment selection, and recovery decisions. [DraftEditor](src/client/input/editor/DraftEditor.tsx) renders the borrowed editor; InputBar retains its Hooks and refs and installs DOM behavior through [view-binding](src/client/input/editor/view-binding.ts). Editor-facing types live in [draft-editor.ts](src/client/contract/draft-editor.ts), with shared input and submission types in [input.ts](src/client/contract/input.ts). Background editor updates retain the draft selection without changing the document selection or reclaiming focus from another control; explicit Composer focus restores its selection. This separation does not support simultaneous editable roots for one Session; [the two-stage isolation proposal](../../../.agents/notes/proposed/architecture/2026-09-14-composer-model-and-draft-editor.md) defines the remaining work.
 
+Drafts retain plain text and file, folder, and Session reference chips across Session switching and reload. Public input methods accept text; internal restoration and Workspace transfer preserve structured references. The input model imports saved content before its first published read; React only mounts that editor and binds the existing Conversation store writer. The original storage key accepts legacy strings and writes semantic snapshots without runtime node IDs. A pending skill catalog does not block editing: slash names remain ordinary text until a matching catalog entry arrives. Arrival rematches the current text without changing chips, selection, or Undo history. Browser-owned attachment File objects are not persisted by this mechanism. The [draft initialization decision](../../../.agents/notes/implemented/architecture/2026-09-30-structured-draft-initialization.md) defines ownership and restoration.
+
 Claimed commands retain their identity and highlight when only their arguments and trailing separator are deleted; editing the command name releases the claim. The same rules apply to every command and locale, including `/goal`, `/目标`, `/plan`, and `/计划`. Command hints and ordinary placeholders remain hidden throughout IME composition and reappear only after the editor commits the final text and the corresponding input is empty.
 
-Workspace selection uses `uiWorkspace.openWorkspace` to prepare the target and commit navigation. Draft text and attachments move in its synchronous preparation callback only while that request is current; later navigation or owner disposal leaves the original draft intact.
+Workspace selection uses `uiWorkspace.openWorkspace` to prepare the target and commit navigation. Draft content, including structured references, and attachments move in its synchronous preparation callback only while that request is current; later navigation or owner disposal leaves the original draft intact.
 
 The package occupies the root-scoped `main` key `conversation`. Its `main.conversation` shell keeps the resident `conversation.header` outside the optional-Session `conversation.content` Component Factory. The header hosts root-scoped navigation without a selected Session; titles, actions, and View tabs remain in its strict Session child. The Factory owns the shared body and Composer, reads the current Session through its standard Hook, and exposes strict-Session `views` plus root-scoped `widthControls` local positions. Its default adapter renders the existing `conversation.session` entry, while the main occurrence selects the width handles; an embedded occurrence can replace `views` and omit those handles without rendering the main Header. The shared body and Composer register the queue and Todo docks. The Todo dock uses the shared panel elevation above the composer; its rows use the shared idle, ongoing, and done markers for pending, in-progress, and completed items. `ctx.uiSession.provide()` materializes the Conversation and input sources from the same Session binding and supplies `inputActions` as a stable standard prop.
 
@@ -80,7 +90,7 @@ Active transcripts in the main occurrence expose content-width drag handles in t
 
 The width-handle indicator follows the pointer only during a captured drag; ordinary hover leaves its position unchanged.
 
-The resident composer survives no-Session and Session transitions. Whitespace hides its placeholder; a whitespace-only draft without attachments cannot be sent. The no-Session state keeps the same composer surface mounted but inert while the Workspace picker connects a blank Session. The surface is a shell-owned Lexical editor: reference chips are atomic decorator nodes carrying the owner's serialization identity (submission expands them through the owner codec), claimed slash commands stay styled leading text, folder text references carry the folder glyph as an icon prefix, and the draft's clipboard projection is mirrored into the per-Session Conversation store. QueueDock reads `next-turn` from the Session `inbox` projection, including cold recovered messages, and excludes only requestIds still owned by local transcript submissions. Other queued rows retain their normal display and actions. Queue operations address exact queue occurrences through the scoped `ctx.conversation` service; queue previews render sent text through the shared inline reference projection from `ui-primitives` (wire session forms fold to their label) and show local or durable images and files in original attachment order. Images use thumbnails; files use compact name-and-size cards. An edit exposes the literal sent text in a textarea that grows with its content, so line breaks survive re-editing; Enter saves, Shift+Enter breaks the line, and Escape cancels. Durable thumbnails resolve through the session image URL cache. Busy Enter behavior is stored in the Host-backed `ui-conversation` settings namespace. The composer keymap arbitrates the trigger menu's keys through the slash pipeline — Tab settles the highlighted completion (or drills a drillable one), Escape and Shift+Tab leave the menu without settling — and leaves every other key to the editor. An overlay that takes the keyboard hands it back through `SessionInput.focus()`, which rides Lexical's own focus so the caret returns where the draft left it rather than at the start.
+The resident composer survives no-Session and Session transitions. Whitespace hides its placeholder; a whitespace-only draft without attachments cannot be sent. The no-Session state keeps the same composer surface mounted but inert while the Workspace picker connects a blank Session. The surface is a shell-owned Lexical editor: reference chips are atomic decorator nodes carrying the owner's serialization identity (submission expands them through the owner codec), claimed slash commands stay styled leading text, folder text references carry the folder glyph as an icon prefix, and the draft's text and semantic references are persisted by the per-Session Conversation store. QueueDock reads `next-turn` from the Session `inbox` projection, including cold recovered messages, and excludes only requestIds still owned by local transcript submissions. Other queued rows retain their normal display and actions. Queue operations address exact queue occurrences through the scoped `ctx.conversation` service; queue previews render sent text through the shared inline reference projection from `ui-primitives` (wire session forms fold to their label) and show local or durable images and files in original attachment order. Images use thumbnails; files use compact name-and-size cards. An edit exposes the literal sent text in the ui-primitives `InlineEditor`, so line breaks survive re-editing. Durable thumbnails resolve through the session image URL cache. Busy Enter behavior is stored in the Host-backed `ui-conversation` settings namespace. The composer keymap arbitrates the trigger menu's keys through the slash pipeline — Tab settles the highlighted completion (or drills a drillable one), Escape and Shift+Tab leave the menu without settling — and leaves every other key to the editor. An overlay that takes the keyboard hands it back through `SessionInput.focus()`, which rides Lexical's own focus so the caret returns where the draft left it rather than at the start.
 
 Plain Enter uses the configured delivery mode, exactly Ctrl+Enter or Cmd+Enter uses its complement, and Shift+Enter inserts a line break. Enter with Alt, AltGraph, both Ctrl and Cmd, or Shift plus Ctrl/Cmd leaves the draft and command menu unchanged and keeps the DOM event available to application shortcuts. The Conversation plugin registers the fixed send, newline, complementary-delivery, command-menu, and reference-menu rows and reserves their bindings until it unloads.
 
@@ -90,7 +100,7 @@ Default sends commit optimistically: Enter clears the draft, occurrence table, a
 
 Queued submission echoes show “Sending…” beside disabled edit, remove, and steer buttons; a collapsed dock keeps the sending status in its header. A matching Host queue row replaces the echo and enables each action according to its normal text-content and running-state requirements. Prompt acknowledgement alone does not enable queue actions. A failed submission removes its echo and displays an error; the composer restores the failed draft when it is empty or still contains the previous automatic restoration, preserving subsequently typed text.
 
-Disabled Send and Stop buttons suppress their tooltips, including a Stop button that becomes a disabled Send button when the turn ends. While a normal composer is running, its primary pointer action remains Stop when the draft is empty or input is unavailable. Actionable text or attachments switch the same seat to Send; clearing or successfully submitting the draft restores Stop. The busy-Enter setting selects the Queue or Steer delivery for ordinary Sessions and continuable children, and the running Send button delivers through the same mode plain Enter resolves to; while it is enabled (no upload pending) over a plain message draft its label names that mode (Queue message or Steer message), so the setting governs Enter and the button together while Cmd/Ctrl+Enter still uses the other mode, and idle sessions, empty drafts, and `/` command lines keep the plain Send label ([decision](../../../.agents/notes/implemented/bug-fix/2026-09-04-busy-send-button-follows-enter-setting.md)). Their QueueDock rows share Edit, Remove, and Steer, and an empty draft shares the steer-all chord. One-shot children remain read-only. Plan mode and active goals do not change attachment intake. Continuable children keep separate Send and Stop actions but expose no File row, paste, or drop intake; if their parent is offline, Send and the composer gestures lock while QueueDock controls for the live inbox remain available ([decisions](../../../.agents/notes/archived/bug-fix/2026-08-20-running-draft-primary-send.md), [inbox controls](../../../.agents/notes/implemented/feature/2026-08-27-continuable-subagent-human-inbox-control.md)).
+Disabled Send and Stop buttons suppress their tooltips, including a Stop button that becomes a disabled Send button when the turn ends. While a normal composer is running, its primary pointer action remains Stop when the draft is empty or input is unavailable. Actionable text or attachments switch the same seat to Send; clearing or successfully submitting the draft restores Stop. The busy-Enter setting selects the Queue or Steer delivery for ordinary Sessions and continuable children, and the running Send button delivers through the same mode plain Enter resolves to; while it is enabled (no upload pending) over a plain message draft its label names that mode (Queue message or Steer message), so the setting governs Enter and the button together while Cmd/Ctrl+Enter still uses the other mode, and idle sessions, empty drafts, and `/` command lines keep the plain Send label. Their QueueDock rows share Edit, Remove, and Steer, and an empty draft shares the steer-all chord. One-shot children remain read-only. Plan mode and active goals do not change attachment intake. Continuable children keep separate Send and Stop actions but expose no File row, paste, or drop intake; if their parent is offline, Send and the composer gestures lock while QueueDock controls for the live inbox remain available ([decisions](../../../.agents/notes/archived/bug-fix/2026-08-20-running-draft-primary-send.md), [inbox controls](../../subagent/subagent/README.md)).
 
 File chips and editable skill references share a whole-reference hover background and follow the composer's line height and text baseline. The first click delegates preview opening to the registered reference source immediately, including the first click of a double-click sequence. Subsequent clicks retain native text selection; an existing noncollapsed selection suppresses pointer preview activation. Previewing does not change the draft, its clipboard projection, or submission.
 
@@ -177,8 +187,6 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. Conversation Definitions, target builders, and Views are already validated by their owning registries and the Slot ledger.
-
 
 ## 源文件与导出符号
 
@@ -208,7 +216,7 @@ None.
   14	iface	ContextProducerView
   31	type	KnownContextForm
 
-### packages/client/ui-conversation/src/client/contract/conversation.ts  (321 行)
+### packages/client/ui-conversation/src/client/contract/conversation.ts  (334 行)
   8	iface	ConversationMatchResult
   14	iface	ConversationTurnDataMap
   17	iface	ConversationStepDataMap
@@ -228,20 +236,25 @@ None.
   179	iface	ConversationContextReader
   190	type	ConversationPublication
   193	type	ConversationLocationDataScope
-  196	iface	ConversationNodeDefinition
-  259	iface	ConversationTimelineSnapshot
-  265	iface	ConversationViewBuilder
-  294	iface	ConversationViewDefinition
-  318	fn	conversationContextKey
+  200	type	ConversationMatchHandler
+  203	iface	ConversationNodeDefinition
+  266	type	ConversationNodeDefinitionInput
+  272	iface	ConversationTimelineSnapshot
+  278	iface	ConversationViewBuilder
+  307	iface	ConversationViewDefinition
+  331	fn	conversationContextKey
 
-### packages/client/ui-conversation/src/client/contract/draft-editor.ts  (106 行)
+### packages/client/ui-conversation/src/client/contract/draft-editor.ts  (121 行)
   7	iface	TokenSpan
   14	iface	ReferenceInsert
-  23	type	ArbitrateKey
-  26	type	ArbitrateOutcome
-  37	iface	ComposerKeyboard
-  73	iface	EditSelection
-  86	iface	Occurrence
+  23	type	DraftReference
+  29	iface	DraftSnapshot
+  35	type	DraftInput
+  38	type	ArbitrateKey
+  41	type	ArbitrateOutcome
+  52	iface	ComposerKeyboard
+  88	iface	EditSelection
+  101	iface	Occurrence
 
 ### packages/client/ui-conversation/src/client/contract/groups.ts  (135 行)
   7	type	NodeKey
@@ -260,53 +273,56 @@ None.
   122	type	ConversationGroupData
   126	iface	ConversationGroupedView
 
-### packages/client/ui-conversation/src/client/contract/input.ts  (335 行)
+### packages/client/ui-conversation/src/client/contract/input.ts  (355 行)
   declare module: declare module '@deepseek-ai/cordis' {
-  17	type	SubmitAttachment
-  27	iface	DraftAttachmentSerializationResult
-  32	iface	SubmitOutcome
-  38	iface	CommandClaim
-  56	type	PickOutcome
-  64	iface	BeginCommandRequest
-  70	iface	InsertReferenceRequest
-  76	iface	ConsumeTokenRequest
-  83	iface	InsertTextRequest
-  90	iface	InputTriggerHit
-  99	iface	InputTriggerController
-  161	type	DraftAttachmentId
-  168	iface	InputTarget
-  176	iface	SessionInput
-  211	iface	SessionInputResolver
-  222	iface	InputActions
-  245	iface	InputNotice
-  252	type	ConsumeTokenGuard
-  255	iface	InputState
-  279	iface	SubmitAttempt
-  295	type	InputEvent
-  316	type	InputEffect
+  18	type	SubmitAttachment
+  28	iface	DraftAttachmentSerializationResult
+  33	iface	SubmitOutcome
+  39	iface	CommandClaim
+  57	type	PickOutcome
+  65	iface	BeginCommandRequest
+  71	iface	InsertReferenceRequest
+  77	iface	ConsumeTokenRequest
+  84	iface	InsertTextRequest
+  91	iface	InputTriggerHit
+  100	iface	InputTriggerController
+  162	type	DraftAttachmentId
+  169	iface	InputTarget
+  177	iface	SessionInput
+  212	iface	SessionInputResolver
+  226	iface	DraftInitializationOptions
+  232	type	DraftInitializationResult
+  240	iface	InputActions
+  265	iface	InputNotice
+  272	type	ConsumeTokenGuard
+  275	iface	InputState
+  299	iface	SubmitAttempt
+  315	type	InputEvent
+  336	type	InputEffect
 
-### packages/client/ui-conversation/src/client/contract/records.ts  (297 行)
-  15	iface	AssistantRequestConfig
-  27	iface	AssistantProviderMetadataView
-  33	type	AssistantBlock
-  41	iface	UserMessageNode
-  51	iface	AssistantTiming
-  61	iface	AssistantMessageNode
-  87	iface	SteeringMessageNode
-  99	iface	ContextMessageNode
-  113	type	ModelRetryNode
-  129	iface	TurnErrorNode
-  144	iface	TurnMaxTokensNode
-  155	iface	ToolResultNode
-  182	iface	CompactionSummaryNode
-  204	iface	UnknownSurfaceNode
-  222	iface	CommandNode
-  247	type	ConversationNode
-  275	iface	PreparingToolCall
-  280	iface	StartedToolCall
-  286	type	RunningToolCall
-  289	type	ToolCallBlock
-  292	iface	PartialAssistant
+### packages/client/ui-conversation/src/client/contract/records.ts  (316 行)
+  16	iface	AssistantRequestConfig
+  28	iface	AssistantProviderMetadataView
+  34	type	AssistantBlock
+  42	iface	UserMessageNode
+  52	iface	AssistantTiming
+  62	iface	AssistantMessageNode
+  88	iface	SteeringMessageNode
+  100	iface	ContextMessageNode
+  114	type	ModelRetryNode
+  130	iface	TurnErrorNode
+  145	iface	TurnMaxTokensNode
+  156	iface	ToolResultNode
+  187	iface	CompactionSummaryNode
+  209	iface	UnknownSurfaceNode
+  227	iface	CommandNode
+  252	type	ConversationNode
+  291	type	ToolArgs
+  294	iface	PreparingToolCall
+  299	iface	StartedToolCall
+  305	type	RunningToolCall
+  308	type	ToolCallBlock
+  311	iface	PartialAssistant
 
 ### packages/client/ui-conversation/src/client/contract/request-inspection.ts  (182 行)
   16	iface	ConversationPromptSnapshot
@@ -374,17 +390,17 @@ None.
   28	type	SystemPromptInspector
   38	fn	inspectSystemPrompt
 
-### packages/client/ui-conversation/src/client/contract/views.ts  (26 行)
-  7	iface	ViewTab
-  10	iface	ConversationViewRequest
-  18	iface	ConversationStoreState
+### packages/client/ui-conversation/src/client/contract/views.ts  (27 行)
+  8	iface	ViewTab
+  11	iface	ConversationViewRequest
+  19	iface	ConversationStoreState
 
-### packages/client/ui-conversation/src/client/conversation/assembler.ts  (1043 行)
-  146	iface	ConversationEventDefinitions
-  154	iface	ConversationViewDefinitions
-  160	iface	ConversationGroupDefinitions
-  173	class	ConversationNodeAssembler
-      members: L197 constructor, L209 openTurn, L222 replaceWindow, L250 append, L282 settleAssistant, L323 prepend, L354 rebuildRegistry, L363 flush, L408 activateTarget, L424 snapshot, L428 get, L434 grouped, L444 activityTargets, L454 sortedInputs, L458 matchInput, L463 collectInput, L481 dispatchInput, L509 createContext, L533 acceptMatch, L577 applyPendingMatches, L603 replayContexts, L620 refreshStarts, L640 replayContext, L673 indexTargetContext, L681 markDirty, L690 replaceDependencies, L706 replayRevisedDependents, L722 readerFor, L750 previousContext, L761 indexStartedContext, L771 indexStartedContexts, L793 replayDependencies, L821 refreshMatchLocations, L847 buildNode, L860 replaceView, L864 updateView, L902 publishViews, L912 buildTargetNodes, L925 buildTargetUpserts, L944 buildLocationData
+### packages/client/ui-conversation/src/client/conversation/assembler.ts  (1079 行)
+  147	iface	ConversationEventDefinitions
+  155	iface	ConversationViewDefinitions
+  161	iface	ConversationGroupDefinitions
+  174	class	ConversationNodeAssembler
+      members: L198 constructor, L210 openTurn, L223 replaceWindow, L251 append, L283 settleAssistant, L324 prepend, L355 rebuildRegistry, L364 flush, L409 activateTarget, L425 snapshot, L429 get, L435 grouped, L445 activityTargets, L455 sortedInputs, L459 matchInput, L464 collectInput, L477 dispatchInput, L539 createContext, L563 acceptMatch, L605 applyPendingMatches, L634 replayContexts, L651 refreshStarts, L671 replayContext, L704 indexTargetContext, L712 markDirty, L725 replaceDependencies, L741 replayRevisedDependents, L758 readerFor, L786 previousContext, L797 indexStartedContext, L807 indexStartedContexts, L829 replayDependencies, L857 refreshMatchLocations, L883 buildNode, L896 replaceView, L900 updateView, L938 publishViews, L948 buildTargetNodes, L961 buildTargetUpserts, L980 buildLocationData
 
 ### packages/client/ui-conversation/src/client/conversation/assembly.ts  (331 行)
   29	iface	ConversationBinding
@@ -395,9 +411,10 @@ None.
   5	class	ConversationDefinitionRegistry
       members: L11 constructor, L21 entries, L30 subscribe, L43 registerDefinition, L64 refresh
 
-### packages/client/ui-conversation/src/client/conversation/event-registry.ts  (61 行)
-  5	class	ConversationEventRegistry
-      members: L13 register, L28 registerFallback, L49 fallbackEntry, L55 if
+### packages/client/ui-conversation/src/client/conversation/event-registry.ts  (118 行)
+  7	iface	ConversationEventRoute
+  13	class	ConversationEventRegistry
+      members: L24 register, L39 registerFallback, L61 fallbackEntry, L70 forEvent, L74 resolve, L85 refresh, L112 if
 
 ### packages/client/ui-conversation/src/client/conversation/group-registry.ts  (49 行)
   11	class	ConversationGroupRegistry
@@ -411,27 +428,32 @@ None.
   16	class	HistoricalImageCache
       members: L26 constructor, L36 resolve, L61 peek, L75 seed, L103 loadCanonical, L133 assertLive, L140 bindScope, L154 release, L162 releaseUrl, L167 dispose, L180 if
 
-### packages/client/ui-conversation/src/client/conversation/location-index.ts  (633 行)
+### packages/client/ui-conversation/src/client/conversation/location-index.ts  (656 行)
   18	iface	ConversationLocationDataChange
-  178	class	ConversationLocationIndex
-      members: L194 snapshot, L202 takeChangedTurns, L213 replaceData, L243 applyData, L259 publishData, L270 locationOf, L279 rebuild, L431 appendBoundary, L521 appendNonBoundary, L547 removeAssistantTransients, L564 insertAssistantSettlement, L575 indexTurnSeq, L581 turnData, L585 stepData, L589 mutableTurnData, L595 mutableStepData, L601 createDataStore, L608 storeFor, L614 resolve, L630 if
+  184	class	ConversationLocationIndex
+      members: L200 snapshot, L208 takeChangedTurns, L219 replaceData, L249 applyData, L265 publishData, L276 locationOf, L285 rebuild, L444 appendBoundary, L539 appendNonBoundary, L566 removeAssistantTransients, L582 insertAssistantSettlement, L595 indexTurnSeq, L604 turnData, L608 stepData, L612 mutableTurnData, L618 mutableStepData, L624 createDataStore, L631 storeFor, L637 resolve, L653 if
 
 ### packages/client/ui-conversation/src/client/conversation/view-registry.ts  (21 行)
   5	class	ConversationViewRegistry
       members: L12 register
 
+### packages/client/ui-conversation/src/client/draft.ts  (83 行)
+  34	fn	resolveDraftInput
+  44	fn	parseStoredDraft
+  64	fn	snapshotDraft
+
 ### packages/client/ui-conversation/src/client/image-labels.ts  (60 行)
   12	fn	imageSizeText
   28	fn	attachmentErrorText
 
-### packages/client/ui-conversation/src/client/index.ts  (89 行)
+### packages/client/ui-conversation/src/client/index.ts  (90 行)
   declare module: declare module '@deepseek-ai/cordis' {
 
 ### packages/client/ui-conversation/src/client/input/blocks.ts  (45 行)
   20	class	ComposerBlockRegistry
       members: L24 set, L32 storeFor, L41 forget
 
-### packages/client/ui-conversation/src/client/input/decorations.ts  (73 行)
+### packages/client/ui-conversation/src/client/input/decorations.ts  (71 行)
   17	iface	TextRefRange
   43	fn	scanTextRefs
 
@@ -479,9 +501,9 @@ None.
 ### packages/client/ui-conversation/src/client/input/editor/reference-activation.ts  (34 行)
   17	fn	registerReferenceActivation
 
-### packages/client/ui-conversation/src/client/input/editor/runtime.ts  (348 行)
+### packages/client/ui-conversation/src/client/input/editor/runtime.ts  (352 行)
   45	class	DraftEditorRuntime
-      members: L56 constructor, L68 register, L101 projection, L114 applyEdit, L131 ensureLexiconSubscription, L142 refreshProjection, L150 occurrenceIdOf, L164 setDraft, L186 paste, L209 caretSpan, L221 replaceText, L235 insertAsyncText, L249 insertReference, L265 insertFileReferences, L280 refreshClaimDecoration, L288 clearCommittedDraft, L309 restoreDraft, L344 clearHistory
+      members: L57 constructor, L69 register, L106 projection, L119 applyEdit, L134 refreshLexiconSubscription, L147 refreshProjection, L154 occurrenceIdOf, L168 setDraft, L190 paste, L213 caretSpan, L225 replaceText, L239 insertAsyncText, L253 insertReference, L269 insertFileReferences, L284 refreshClaimDecoration, L292 clearCommittedDraft, L313 restoreDraft, L348 clearHistory
 
 ### packages/client/ui-conversation/src/client/input/editor/span-map.ts  (120 行)
   15	iface	DetectSpan
@@ -504,15 +526,15 @@ None.
   106	fn	installDraftKeymap
   152	fn	keepDraftFocus
 
-### packages/client/ui-conversation/src/client/input/facade.ts  (861 行)
-  31	iface	PopupDismissFace
+### packages/client/ui-conversation/src/client/input/facade.ts  (903 行)
+  32	iface	PopupDismissFace
   41	iface	SessionInputDeps
   113	class	SessionInputShell
-      members: L119 editor, L139 projection, L168 constructor, L185 onEditorUpdate, L215 setDraft, L220 addAttachments, L234 addFiles, L247 removeAttachment, L260 pruneAttachments, L274 commitSend, L287 paste, L297 submit, L352 arbitrate, L362 steerQueue, L370 space, L379 dismissPopup, L389 caretSpan, L414 beginCommand, L435 insertReference, L450 consumeToken, L473 insertText, L484 notify, L494 focus, L506 dispose, L527 snapshot, L539 bindMirror, L551 bindFilePicker, L562 canPickFiles, L570 pickFiles, L579 activeClaimToken, L587 dispatchRun, L594 run, L599 execute, L630 commitDraft, L646 sinkSerialized, L696 notifySubmission, L702 settleSink, L724 settleDetachedFailure, L737 restoreFailedDrafts, L762 restoreAttachments
+      members: L119 editor, L140 projection, L170 constructor, L187 onEditorUpdate, L217 setDraft, L224 refreshLexiconSubscription, L229 draftSnapshot, L237 persistCurrentDraft, L247 requestDraftInitialization, L257 draftInitializationBlocked, L264 addAttachments, L278 addFiles, L291 removeAttachment, L304 pruneAttachments, L318 commitSend, L331 paste, L341 submit, L396 arbitrate, L406 steerQueue, L414 space, L423 dismissPopup, L433 caretSpan, L458 beginCommand, L479 insertReference, L494 consumeToken, L517 insertText, L528 notify, L538 focus, L550 dispose, L571 snapshot, L580 bindDraftPersistence, L592 bindFilePicker, L603 canPickFiles, L611 pickFiles, L620 activeClaimToken, L628 dispatchRun, L635 run, L640 execute, L671 commitDraft, L687 sinkSerialized
 
-### packages/client/ui-conversation/src/client/input/hub.ts  (282 行)
-  57	class	InputHub
-      members: L64 constructor, L74 for, L92 shellFor, L169 shell, L182 keyboard, L191 canPickFiles, L200 pickFiles, L211 inputTriggers, L222 sink, L245 steerQueue, L258 controller, L264 popup, L270 sessions, L276 conversation
+### packages/client/ui-conversation/src/client/input/hub.ts  (293 行)
+  55	class	InputHub
+      members: L62 constructor, L72 for, L82 requestDraftInitialization, L96 shellFor, L180 shell, L193 keyboard, L202 canPickFiles, L211 pickFiles, L222 inputTriggers, L233 sink, L256 steerQueue, L269 controller, L275 popup, L281 sessions, L287 conversation
 
 ### packages/client/ui-conversation/src/client/input/machine.ts  (244 行)
   36	iface	SubmitSnapshot
@@ -527,17 +549,17 @@ None.
   46	class	ComposerSubmissionPolicy
       members: L55 constructor, L64 dispose, L71 setBusyEnter, L81 adopt
 
-### packages/client/ui-conversation/src/client/locales.ts  (748 行)
+### packages/client/ui-conversation/src/client/locales.ts  (760 行)
   4	const	NS
   11	const	zh
-  378	type	ConversationKey
-  381	const	en
+  384	type	ConversationKey
+  387	const	en
 
-### packages/client/ui-conversation/src/client/queue/QueueDock.tsx  (459 行)
+### packages/client/ui-conversation/src/client/queue/QueueDock.tsx  (412 行)
   35	iface	QueueDockInjected
-  149	type	QueueDockProps
-  156	fn	QueueDock
-  436	const	queueDockEntry
+  102	type	QueueDockProps
+  109	fn	QueueDock
+  389	const	queueDockEntry
 
 ### packages/client/ui-conversation/src/client/service.ts  (609 行)
   40	iface	IConversation
@@ -562,8 +584,8 @@ None.
 ### packages/client/ui-conversation/src/client/skeleton/ConversationHeader.tsx  (28 行)
   12	fn	ConversationHeader
 
-### packages/client/ui-conversation/src/client/skeleton/ConversationMainPanel.tsx  (56 行)
-  11	fn	ConversationMainPanel
+### packages/client/ui-conversation/src/client/skeleton/ConversationMainPanel.tsx  (58 行)
+  13	fn	ConversationMainPanel
 
 ### packages/client/ui-conversation/src/client/skeleton/ConversationPanel.tsx  (13 行)
   10	fn	ConversationPanel
@@ -581,7 +603,7 @@ None.
 ### packages/client/ui-conversation/src/client/skeleton/ConversationWidthControls.tsx  (183 行)
   136	fn	ConversationWidthControls
 
-### packages/client/ui-conversation/src/client/skeleton/DefaultConversationViews.tsx  (48 行)
+### packages/client/ui-conversation/src/client/skeleton/DefaultConversationViews.tsx  (45 行)
   13	fn	DefaultConversationViews
 
 ### packages/client/ui-conversation/src/client/skeleton/EmptyHero.tsx  (166 行)
@@ -617,9 +639,10 @@ None.
 ### packages/client/ui-conversation/src/client/stop-shortcut.ts  (66 行)
   18	fn	installStopShortcut
 
-### packages/client/ui-conversation/src/client/stores.ts  (53 行)
-  20	fn	createConversationStore
-  41	fn	readConversationViewPreference
+### packages/client/ui-conversation/src/client/stores.ts  (75 行)
+  22	fn	createConversationStore
+  43	fn	readConversationDraft
+  63	fn	readConversationViewPreference
 
 ### packages/client/ui-conversation/src/client/view-selection.ts  (22 行)
   4	const	DEFAULT_VIEW_ID
@@ -650,7 +673,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-client-ui-conversation",
   "description": "Target-neutral Conversation assembly, shell, composer, queue, and view navigation",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -710,4 +733,4 @@ None.
     "@deepseek-ai/dsh-client-locale": "workspace:*",
     "@deepseek-ai/dsh-client-file-upload": "workspace:*",
     "@deepseek-ai/dsh-client-store": "workspace:*",
-    "@deepseek-ai/dsh-client-test-runtime
+    "@deepseek-ai/dsh-client-test-runt

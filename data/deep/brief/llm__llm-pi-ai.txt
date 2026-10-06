@@ -2,10 +2,10 @@
 path: packages/llm/llm-pi-ai
 desc: pi-ai-backed DeepSeek adapter for the DeepSeek Harness LLM seam (design-verification twin of dsh-llm-deepseek)
 deps: @deepseek-ai/dsh-brand, @deepseek-ai/dsh-util-values, @deepseek-ai/schemastery
-peers: @deepseek-ai/cordis, @deepseek-ai/dsh-attachment, @deepseek-ai/dsh-authorization, @deepseek-ai/dsh-credentials, @deepseek-ai/dsh-fs, @deepseek-ai/dsh-launch-environment, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-settings, @deepseek-ai/dsh-timeout
-srcFiles: 11  srcLoc: 3962
+peers: @deepseek-ai/cordis, @deepseek-ai/dsh-attachment, @deepseek-ai/dsh-authorization, @deepseek-ai/dsh-credentials, @deepseek-ai/dsh-fs, @deepseek-ai/dsh-launch-environment, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-timeout, @deepseek-ai/cordis-plugin-loader
+srcFiles: 12  srcLoc: 4078
 
-## README.md (248 行)
+## README.md (246 行)
 ---
 description: "The pi-ai-backed multi-provider adapter for users and maintainers routing the harness LLM service through pi-ai catalogs and hand-declared gateways."
 kind: "package-reference"
@@ -164,7 +164,7 @@ The plugin declares every installed catalog provider it can authenticate in the 
 
 ### Replay and vocabulary
 
-Successful assistant responses store a versioned, lossless-JSON replay state beside the provider and model that produced them — response-level facts plus one per-block entry per streamed block. At request time, `LlmRuntime` passes replay state only when the same adapter instance owns both routes; the adapter validates it and restores native response ids, provider signatures, and optional `providerThinkingLevel` effort metadata, keeping absent effort metadata absent. Replay validates the requested model identity against the assistant source and separately restores an Anthropic response model when the provider resolved an alias or fallback. Absent or unusable replay state degrades to provider-neutral content while preserving the assistant source’s required provider and model. pi-ai tool-call arguments are parsed objects, so the adapter parses input and re-stringifies output to the harness raw-JSON convention; pi-ai in-stream error events map to terminal `finish` chunks.
+Successful assistant responses store a versioned, lossless-JSON replay state beside the provider and model that produced them — response-level facts plus one per-block entry per streamed block. At request time, `LlmRuntime` passes replay state only when the same adapter instance owns both routes; the adapter validates it and restores native response ids, provider signatures, and optional `providerThinkingLevel` effort metadata, keeping absent effort metadata absent. Replay validates the requested model identity against the assistant source and uses it to retain same-model signatures; provider-reported response models remain diagnostic metadata. Absent or unusable replay state degrades to provider-neutral content while preserving the assistant source’s required provider and model. pi-ai tool-call arguments are parsed objects, so the adapter parses input and re-stringifies output to the harness raw-JSON convention; pi-ai in-stream error events map to terminal `finish` chunks.
 
 </details>
 
@@ -234,10 +234,10 @@ These limits define where the adapter stops and future work begins. They are cur
 - **A modality declaration is not verified** — a model declaring `image` its gateway does not serve is refused by the provider after prompt admission. The durable image remains in history and the same misdeclared model can fail again; switching to a text-only model remains possible because the shared LLM runtime projects image references into stable text for that request.
 - **An unauthenticated route depends on its protocol** — a route naming no credential resolves as configured-but-keyless, but pi-ai's OpenAI-compatible implementation still requires an API key or an `Authorization` header, so a keyless local server needs a placeholder credential referenced by `apiKeyEnv` or an `Authorization` entry in `headers`.
 - **`GenerateOptions.stop` is unsupported** — pi-ai's common stream options cannot guarantee stop-sequence behavior across providers.
-- **Only a leading in-history `system` message becomes pi-ai's `systemPrompt`** — pi-ai has one system slot, so a later `system` message, or a leading one when `GenerateOptions.system` is also set, folds into a `user` message at its position; provider-specific placement of the prompt follows pi-ai rather than a harness-owned wire override. Images in system or assistant history, including the leading system message, fail with `UNSUPPORTED_CONTENT` on both conversion paths.
+- **Only a leading in-history `system` message becomes pi-ai's `systemPrompt`** — this adapter uses pi-ai's single `systemPrompt` input, so a later `system` message, or a leading one when `GenerateOptions.system` is also set, folds into a `user` message at its position; provider-specific placement of the prompt follows pi-ai rather than a harness-owned wire override. Images in system or assistant history, including the leading system message, fail with `UNSUPPORTED_CONTENT` on both conversion paths.
 - **Provider HTTP status is unavailable** — pi-ai error events do not expose a stable HTTP status across providers.
 - **Retry policy is provider-owned, not an SDK retry** — pi-ai SDK retries stay disabled so durable agent steps and `llm/retry` events own every visible attempt, and direct `ctx.llm.stream()` calls remain single-attempt.
-- **Streamed tool-call arguments are parsed once, when the call ends** — the installed pi-ai carries [`patches/@earendil-works__pi-ai@0.85.1.patch`](../../../patches/@earendil-works__pi-ai@0.85.1.patch), which removes the per-delta re-parse of the whole accumulated argument JSON in every stream adapter (upstream [earendil-works/pi#9265](https://github.com/earendil-works/pi/issues/9265)); unpatched, a multi-megabyte argument stream costs O(n²) CPU on the event loop and stalls every session in the process. Until `toolcall_end`, a pi-ai partial's tool-call `arguments` stays `{}`; this adapter reads only the delta strings and the finalized arguments. Re-apply or retire the patch on every pi-ai upgrade.
+- **Streamed tool-call arguments are parsed once, when the call ends** — the installed pi-ai carries [`patches/@earendil-works__pi-ai@0.87.1.patch`](../../../patches/@earendil-works__pi-ai@0.87.1.patch), which removes the per-delta re-parse of the whole accumulated argument JSON in every stream adapter (upstream [earendil-works/pi#9265](https://github.com/earendil-works/pi/issues/9265)); unpatched, a multi-megabyte argument stream costs O(n²) CPU on the event loop and stalls every session in the process. Until `toolcall_end`, a pi-ai partial's tool-call `arguments` stays `{}`; this adapter reads only the delta strings and the finalized arguments. Re-apply or retire the patch on every pi-ai upgrade.
 
 <a id="dev-note"></a>
 ### Dev Note
@@ -251,8 +251,6 @@ This Dev Note is non-authoritative working context: undecided directions and not
 - The `compat` switch set is pinned to pi-ai's compat types by drift gates; an upstream upgrade that adds a field, gives a further protocol a compat type, or widens a value union fails the build until someone classifies it.
 
 </details>
-
-**Runtime invariant:** No companion is published. This package exposes no independent event sequence or mutable data relation beyond contracts enforced at its owning seam.
 
 
 ## 源文件与导出符号
@@ -269,35 +267,35 @@ This Dev Note is non-authoritative working context: undecided directions and not
   141	fn	credentialStoreFrom
   203	fn	authContextFrom
 
-### packages/llm/llm-pi-ai/src/catalog.ts  (958 行)
-  40	type	PiAiModality
-  53	const	MODALITIES
-  85	const	THINKING_LEVELS
-  88	type	PiAiThinkingFormat
-  114	const	SUPPORTED_THINKING_FORMATS
-  117	type	PiAiMaxTokensField
-  126	const	MAX_TOKENS_FIELDS
-  129	type	PiAiThinkingTokenBudgetField
-  139	const	THINKING_TOKEN_BUDGET_FIELDS
-  142	type	PiAiCacheControlFormat
-  150	const	CACHE_CONTROL_FORMATS
-  153	type	PiAiChatTemplateVar
-  163	const	CHAT_TEMPLATE_VARS
-  183	fn	catalogProvider
-  191	fn	catalogProviderIds
-  200	fn	catalogModels
-  214	type	PiAiReasoningEfforts
-  359	iface	PiAiCompatProfile
-  440	type	EveryProfileFieldIsOffered
-  447	type	EveryOfferedFieldIsDocumented
-  464	type	EveryProfileFieldMatchesUpstream
-  574	iface	PiAiModelProfile
-  619	type	PiAiModelOverride
-  622	iface	RouteCatalogRequest
-  644	class	PiAiCatalogError
-      members: L661 for, L696 if, L707 if, L712 if, L720 for, L730 if, L735 for, L776 for, L780 for, L789 if
-  801	iface	RouteCatalog
-  828	fn	resolveRouteModels
+### packages/llm/llm-pi-ai/src/catalog.ts  (971 行)
+  41	type	PiAiModality
+  54	const	MODALITIES
+  86	const	THINKING_LEVELS
+  89	type	PiAiThinkingFormat
+  115	const	SUPPORTED_THINKING_FORMATS
+  118	type	PiAiMaxTokensField
+  127	const	MAX_TOKENS_FIELDS
+  130	type	PiAiThinkingTokenBudgetField
+  140	const	THINKING_TOKEN_BUDGET_FIELDS
+  143	type	PiAiCacheControlFormat
+  151	const	CACHE_CONTROL_FORMATS
+  154	type	PiAiChatTemplateVar
+  164	const	CHAT_TEMPLATE_VARS
+  184	fn	catalogProvider
+  192	fn	catalogProviderIds
+  201	fn	catalogModels
+  215	type	PiAiReasoningEfforts
+  372	iface	PiAiCompatProfile
+  453	type	EveryProfileFieldIsOffered
+  460	type	EveryOfferedFieldIsDocumented
+  477	type	EveryProfileFieldMatchesUpstream
+  587	iface	PiAiModelProfile
+  632	type	PiAiModelOverride
+  635	iface	RouteCatalogRequest
+  657	class	PiAiCatalogError
+      members: L674 for, L709 if, L720 if, L725 if, L733 for, L743 if, L748 for, L789 for, L793 for, L802 if
+  814	iface	RouteCatalog
+  841	fn	resolveRouteModels
 
 ### packages/llm/llm-pi-ai/src/config.ts  (511 行)
   47	const	DEFAULT_STREAM_IDLE_TIMEOUT_MS
@@ -344,11 +342,11 @@ This Dev Note is non-authoritative working context: undecided directions and not
   88	iface	ProviderSpec
   167	fn	buildProvider
 
-### packages/llm/llm-pi-ai/src/replay.ts  (262 行)
+### packages/llm/llm-pi-ai/src/replay.ts  (258 行)
   16	type	PiAiReplayBlock
   22	iface	PiAiReplayResponse
   77	fn	toPiReplayState
-  249	fn	toPiAssistant
+  245	fn	toPiAssistant
 
 ### packages/llm/llm-pi-ai/src/stream.ts  (235 行)
   24	fn	mapUsage
@@ -361,7 +359,7 @@ This Dev Note is non-authoritative working context: undecided directions and not
 {
   "name": "@deepseek-ai/dsh-llm-pi-ai",
   "description": "pi-ai-backed DeepSeek adapter for the DeepSeek Harness LLM seam (design-verification twin of dsh-llm-deepseek)",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -401,7 +399,7 @@ This Dev Note is non-authoritative working context: undecided directions and not
     "@deepseek-ai/dsh-brand": "workspace:*",
     "@deepseek-ai/dsh-util-values": "workspace:*",
     "@deepseek-ai/schemastery": "workspace:~",
-    "@earendil-works/pi-ai": "^0.85.1"
+    "@earendil-works/pi-ai": "^0.87.1"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
@@ -415,4 +413,4 @@ This Dev Note is non-authoritative working context: undecided directions and not
     "@deepseek-ai/dsh-llm-deepseek-api-key": "workspace:*",
     "@deepseek-ai/dsh-timeout": "workspace:*",
     "@deepseek-ai/dsh-http-proxy": "workspace:*",
-    "@
+   

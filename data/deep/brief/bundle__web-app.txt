@@ -1,11 +1,11 @@
 # @deepseek-ai/dsh-web-app
 path: packages/bundle/web-app
 desc: The dsh browser-surface bundle: the web patch layer over dsh-base plus the runtime glue plugin (frontend dist serving, web-surface prompt, bash runtime variables, URL line)
-deps: @deepseek-ai/dsh-agent-presets, @deepseek-ai/dsh-api-remotes, @deepseek-ai/dsh-api-session-controller, @deepseek-ai/dsh-api-settings-controller, @deepseek-ai/dsh-api-workspace-controller, @deepseek-ai/dsh-api-workspace-files, @deepseek-ai/dsh-app-boot, @deepseek-ai/dsh-client-connection, @deepseek-ai/dsh-client-file-upload, @deepseek-ai/dsh-client-hmr, @deepseek-ai/dsh-client-locale, @deepseek-ai/dsh-client-modules, @deepseek-ai/dsh-client-resources, @deepseek-ai/dsh-client-ui-agent-preset, @deepseek-ai/dsh-client-ui-approval, @deepseek-ai/dsh-client-ui-attachment, @deepseek-ai/dsh-client-ui-brand-official, @deepseek-ai/dsh-client-ui-chat, @deepseek-ai/dsh-client-ui-commands, @deepseek-ai/dsh-client-ui-conversation, @deepseek-ai/dsh-client-ui-cordis, @deepseek-ai/dsh-client-ui-deliverables, @deepseek-ai/dsh-client-ui-directory-picker-browse, @deepseek-ai/dsh-client-ui-directory-picker-native, @deepseek-ai/dsh-client-ui-goal, @deepseek-ai/dsh-client-ui-input-trigger, @deepseek-ai/dsh-client-ui-jobs, @deepseek-ai/dsh-client-ui-layout, @deepseek-ai/dsh-client-ui-message-feedback, @deepseek-ai/dsh-client-ui-model-selection, @deepseek-ai/dsh-client-ui-open-in-app, @deepseek-ai/dsh-client-ui-permission-presets, @deepseek-ai/dsh-client-ui-plan, @deepseek-ai/dsh-client-ui-reference, @deepseek-ai/dsh-client-ui-renderer, @deepseek-ai/dsh-client-ui-schedule, @deepseek-ai/dsh-client-ui-session, @deepseek-ai/dsh-client-ui-settings, @deepseek-ai/dsh-client-ui-settings-general, @deepseek-ai/dsh-client-ui-settings-models, @deepseek-ai/dsh-client-ui-settings-plugin-inventory, @deepseek-ai/dsh-client-ui-settings-plugins, @deepseek-ai/dsh-client-ui-sidebar, @deepseek-ai/dsh-client-ui-sidebar-files, @deepseek-ai/dsh-client-ui-sidebar-right, @deepseek-ai/dsh-client-ui-sidebar-textpreview, @deepseek-ai/dsh-client-ui-skill, @deepseek-ai/dsh-client-ui-subagent, @deepseek-ai/dsh-client-ui-theme, @deepseek-ai/dsh-client-ui-tool, @deepseek-ai/dsh-client-ui-trajectory, @deepseek-ai/dsh-client-ui-user-questions, @deepseek-ai/dsh-client-ui-workflow-run, @deepseek-ai/dsh-client-ui-workspace, @deepseek-ai/dsh-cmdline, @deepseek-ai/dsh-code-runtime-worker-thread, @deepseek-ai/dsh-cordis-client-runner, @deepseek-ai/dsh-cordis-host-runner, @deepseek-ai/dsh-file-reference, @deepseek-ai/dsh-file-reference-local, @deepseek-ai/dsh-host-directory-picker-auto, @deepseek-ai/dsh-host-directory-picker-browse, @deepseek-ai/dsh-host-directory-picker-native, @deepseek-ai/dsh-host-frontend-static, @deepseek-ai/dsh-host-open-in-app, @deepseek-ai/dsh-host-plugin-inventory, @deepseek-ai/dsh-host-webserver, @deepseek-ai/dsh-launch-environment, @deepseek-ai/dsh-message-feedback, @deepseek-ai/dsh-session-log-export, @deepseek-ai/dsh-session-reference, @deepseek-ai/dsh-session-stats, @deepseek-ai/dsh-session-turn-outline, @deepseek-ai/dsh-subprocess, @deepseek-ai/dsh-tool-subagent, @deepseek-ai/dsh-web-frontend, @deepseek-ai/dsh-workspace, @deepseek-ai/schemastery
+deps: @deepseek-ai/dsh-agent-instructions, @deepseek-ai/dsh-agent-preset, @deepseek-ai/dsh-agent-preset-registry, @deepseek-ai/dsh-agent-tool-presentation, @deepseek-ai/dsh-api-job-controller, @deepseek-ai/dsh-api-remotes, @deepseek-ai/dsh-api-session-controller, @deepseek-ai/dsh-api-settings-controller, @deepseek-ai/dsh-api-terminal-controller, @deepseek-ai/dsh-api-workspace-controller, @deepseek-ai/dsh-api-workspace-files, @deepseek-ai/dsh-app-boot, @deepseek-ai/dsh-client-connection, @deepseek-ai/dsh-client-file-upload, @deepseek-ai/dsh-client-hmr, @deepseek-ai/dsh-client-locale, @deepseek-ai/dsh-client-modules, @deepseek-ai/dsh-client-resources, @deepseek-ai/dsh-client-ui-agent-preset, @deepseek-ai/dsh-client-ui-approval, @deepseek-ai/dsh-client-ui-attachment, @deepseek-ai/dsh-client-ui-brand-official, @deepseek-ai/dsh-client-ui-chat, @deepseek-ai/dsh-client-ui-commands, @deepseek-ai/dsh-client-ui-conversation, @deepseek-ai/dsh-client-ui-cordis, @deepseek-ai/dsh-client-ui-deliverables, @deepseek-ai/dsh-client-ui-directory-picker-browse, @deepseek-ai/dsh-client-ui-directory-picker-native, @deepseek-ai/dsh-client-ui-goal, @deepseek-ai/dsh-client-ui-input-trigger, @deepseek-ai/dsh-client-ui-jobs, @deepseek-ai/dsh-client-ui-layout, @deepseek-ai/dsh-client-ui-message-feedback, @deepseek-ai/dsh-client-ui-model-selection, @deepseek-ai/dsh-client-ui-open-in-app, @deepseek-ai/dsh-client-ui-permission-presets, @deepseek-ai/dsh-client-ui-plan, @deepseek-ai/dsh-client-ui-plugin-manager, @deepseek-ai/dsh-client-ui-reference, @deepseek-ai/dsh-client-ui-renderer, @deepseek-ai/dsh-client-ui-session, @deepseek-ai/dsh-client-ui-schedule, @deepseek-ai/dsh-client-ui-settings, @deepseek-ai/dsh-client-ui-settings-general, @deepseek-ai/dsh-client-ui-settings-models, @deepseek-ai/dsh-client-ui-settings-plugin-inventory, @deepseek-ai/dsh-client-ui-settings-plugins, @deepseek-ai/dsh-client-ui-settings-shell, @deepseek-ai/dsh-client-ui-settings-agent-loop, @deepseek-ai/dsh-client-ui-settings-subagent, @deepseek-ai/dsh-client-ui-settings-web-search, @deepseek-ai/dsh-client-ui-sidebar, @deepseek-ai/dsh-client-ui-sidebar-browser, @deepseek-ai/dsh-client-ui-sidebar-documentpreview, @deepseek-ai/dsh-client-ui-sidebar-files, @deepseek-ai/dsh-client-ui-sidebar-right, @deepseek-ai/dsh-client-ui-sidebar-terminal, @deepseek-ai/dsh-client-ui-skill, @deepseek-ai/dsh-client-ui-subagent, @deepseek-ai/dsh-client-ui-theme, @deepseek-ai/dsh-client-ui-tool, @deepseek-ai/dsh-client-ui-trajectory, @deepseek-ai/dsh-client-ui-user-questions, @deepseek-ai/dsh-client-ui-workflow-run, @deepseek-ai/dsh-client-ui-workspace, @deepseek-ai/dsh-cmdline, @deepseek-ai/dsh-command-compact, @deepseek-ai/dsh-command-goal, @deepseek-ai/dsh-compaction-basic, @deepseek-ai/dsh-compaction-tool-result-pruner, @deepseek-ai/dsh-cordis-client-runner, @deepseek-ai/dsh-cordis-host-runner, @deepseek-ai/dsh-file-reference, @deepseek-ai/dsh-file-reference-local, @deepseek-ai/dsh-host-directory-picker-auto, @deepseek-ai/dsh-host-directory-picker-browse, @deepseek-ai/dsh-host-directory-picker-native, @deepseek-ai/dsh-host-frontend-static, @deepseek-ai/dsh-host-open-in-app, @deepseek-ai/dsh-host-plugin-inventory, @deepseek-ai/dsh-host-webserver, @deepseek-ai/dsh-launch-environment, @deepseek-ai/dsh-message-feedback, @deepseek-ai/dsh-office-to-pdf, @deepseek-ai/dsh-persona, @deepseek-ai/dsh-plan-mode, @deepseek-ai/dsh-plugin-manager, @deepseek-ai/dsh-schedule, @deepseek-ai/dsh-session-log-export, @deepseek-ai/dsh-session-reference, @deepseek-ai/dsh-session-stats, @deepseek-ai/dsh-session-turn-outline, @deepseek-ai/dsh-skill-filesystem, @deepseek-ai/dsh-subprocess, @deepseek-ai/dsh-terminal, @deepseek-ai/dsh-terminal-bash, @deepseek-ai/dsh-time-context, @deepseek-ai/dsh-tool-ask-user, @deepseek-ai/dsh-tool-bash, @deepseek-ai/dsh-tool-bash-persistent, @deepseek-ai/dsh-tool-cordis, @deepseek-ai/dsh-tool-fs, @deepseek-ai/dsh-tool-fs-search, @deepseek-ai/dsh-tool-goal, @deepseek-ai/dsh-tool-jobs, @deepseek-ai/dsh-tool-present, @deepseek-ai/dsh-tool-pwsh, @deepseek-ai/dsh-tool-pwsh-persistent, @deepseek-ai/dsh-tool-ralph, @deepseek-ai/dsh-tool-schedule, @deepseek-ai/dsh-tool-skill, @deepseek-ai/dsh-tool-subagent, @deepseek-ai/dsh-tool-subagent-control, @deepseek-ai/dsh-tool-todo, @deepseek-ai/dsh-tool-web, @deepseek-ai/dsh-tool-workflow, @deepseek-ai/dsh-web-frontend, @deepseek-ai/dsh-workflow-ptc, @deepseek-ai/dsh-workspace, @deepseek-ai/dsh-workspace-changes, @deepseek-ai/schemastery, @deepseek-ai/dsh-api-account-controller, @deepseek-ai/dsh-client-ui-settings-account, @deepseek-ai/dsh-client-shortcuts, @deepseek-ai/dsh-client-ui-shortcuts, @deepseek-ai/dsh-client-product-analytics, @deepseek-ai/dsh-host-product-telemetry-otel, @deepseek-ai/dsh-client-ui-settings-session-log
 peers: @deepseek-ai/cordis, @deepseek-ai/cordis-plugin-loader, @deepseek-ai/dsh-shell-env, @deepseek-ai/dsh-system-prompt
-srcFiles: 2  srcLoc: 389
+srcFiles: 3  srcLoc: 469
 
-## README.md (169 行)
+## README.md (179 行)
 ---
 description: "The browser GUI for dsh: interactive chat, model and settings management, and session history, for users running the dsh web surface."
 kind: "package-bundle"
@@ -17,9 +17,11 @@ English | [中文](README.zh.md)
 
 Desktop analytics follows the [product collection policy](../../client/product-analytics/README.md), including its live application setting. Web usage is excluded.
 
+Desktop analytics schedules partial batches every 30 seconds, with a 15-second exporter timeout and a 20-second processor timeout. Shutdown allows 2 seconds to drain, then cancels pending requests and retry waits so telemetry does not keep the Host alive. Pending events may be lost on exit.
+
 ## Summary
 
-Run `dsh --profile web` to open an interactive browser GUI with chat, model and settings management, and session history. It uses the same model access, tools, and safety defaults as other dsh surfaces. Startup prints an authenticated URL and normally opens it in the default browser; SSH sessions and `--no-open` leave the URL for manual opening. You can change the port and allow extra hosts, but cannot bind all network interfaces. Choose this package for interactive browser work; use `dsh-headless` for one-shot command-line tasks.
+Run `dsh --profile web` for browser chat, model and settings management, and session history, using the same model access, tools, and safety defaults as other dsh surfaces. Startup prints a tokenized URL and normally opens the default browser; SSH sessions and `--no-open` require manual opening. You can change the port and allow extra hosts, but cannot bind all network interfaces. Remote access supports an advertised public HTTP(S) URL behind a prefix-stripping proxy. For one-shot command-line tasks, use `dsh-headless`.
 
 ## Table of Contents
 
@@ -52,24 +54,30 @@ Saved model selections override the composition default. The settings card accep
 
 ### Configuration
 
-Most users never set these; the command-line flags feed the four settings below — `--host`, `--port`, and `--trusted-host` come from the invocation, and `--no-open` turns the browser handoff off for that invocation:
+`--host` and `--port` configure the listener; `--public-url` names the advertised public HTTP(S) root the GUI is reached at behind a prefix-stripping proxy, and `--trusted-host` adds further accepted authorities. All are described under [Listening, trust, and public deployments](#public-deployments):
 
 | Field | Default | Meaning |
 |---|---|---|
 | `openBrowser` | `true` | Open the default browser after startup; SSH launches suppress it |
 | `printUrl` | `true` | Print the `dsh web:` URL line at startup |
 | `surfaceContext` | `true` | Give the agent GUI-orientation context and expose `DSH_WEB_URL` to its shell commands |
+| `publicUrl` | Unset | Advertised HTTP(S) application root; otherwise announce the listener's loopback URL |
 | `trustedHosts` | `[]` | Extra hosts allowed to reach the GUI from the network |
 
-The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-web-app) is the exhaustive source for every accepted field and its JSDoc. The shipped composition carries no `time-context`, `schedule`, or `ui-schedule` row; the optional experimental bundle `@deepseek-ai/dsh-experimental-schedule-bundle` inserts those three rows from the Plugins page.
+The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-web-app) lists this runtime plugin's accepted fields and their JSDoc. The shipped composition inserts the `schedule` service row and the `ui-schedule` task page row, while the clock reading and the four reminder tools belong to the `standard`, `cordis`, and `ptc` presets. The `tool-subagent` and `tool-subagent-fork` rows in those presets deny the four tools, so a delegated child's scope never lists them.
 
-### LAN access and trusted hosts
+<a id="public-deployments"></a>
+### Listening, trust, and public deployments
 
-By default the GUI accepts connections from this machine only. A deployment that binds all network interfaces also allows browsers from the LAN, and the printed URL then includes a LAN address; `--trusted-host` adds extra hosts in either case. Host and Origin checks control reachability, while the token exchange authenticates every Host API method and WebSocket stream. The LAN addresses are sampled once at startup, so a network change later is not picked up — restart the GUI to re-advertise.
+By default the GUI listens on loopback and accepts connections from this machine only; repeatable `--trusted-host` adds the authorities its Host/Origin fence accepts, so a remote browser reaches it behind a prefix-stripping proxy or through a port-forwarding client that presents a trusted hostname.
+
+`--public-url` advertises the HTTP(S) root browsers use — the printed and opened startup URL, `DSH_WEB_URL`, and the web-surface orientation. Advertisement grants no trust: the browser-visible authority must also be named with `--trusted-host`. The flag configures no listener, routing, or cookie scope, because the proxy owns the external leg: [Publish the Web UI behind a reverse proxy](../../../docs/user/guide/public-deployments.md) lists what such a deployment must provide.
+
+The printed URL contains a process credential; share it only with intended users, and `printUrl: false` suppresses the line with or without `--public-url`.
 
 ### Running over SSH
 
-When you launch `dsh --profile web` over SSH, the URL line still prints but the browser is not opened for you: the SSH client or editor owns the local forwarding address. Open the forwarded URL on your machine yourself; the printed URL names the remote host's loopback endpoint.
+When you launch `dsh --profile web` over SSH, the URL line still prints but the browser is not opened for you: the SSH client or editor owns the local forwarding address. Without an advertised root the printed URL names the remote host's loopback endpoint, which you reach through your forwarding address. With `--public-url` the printed URL is the authenticated advertised root; the browser handoff stays suppressed, because opening a browser on the remote host cannot reach your screen.
 
 ### Per-session agent setup
 
@@ -83,11 +91,15 @@ Each browser session selects a shipped preset (`standard` by default). The Agent
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The bundle is one patch layer of five files plus one runtime glue plugin: `cordis.patch.yml` carries the host rows and the preset registry, and each `presets/<id>.patch.yml` inserts one shipped preset declaration, applied in the order `dsh.bundle.patch` lists them. The storage stack and projection cache come from `dsh-base`; the web overlay's workspace and message-feedback rows consume that shared `storageDomain` service. The patch restates the surface-specific values the base deliberately omits, inserts the web-only host rows and browser roster, then moves the agent plane behind presets. The glue plugin owns dist serving, trust sampling, prompt sections, the bash variable, and the readiness announcements. The `office-to-pdf` row mounts one lazy [Office conversion provider](../../document/office-to-pdf/README.md) for Host consumers, including Desktop compositions using this bundle. The conversion service's Remote methods authorize preview reads, while Document Preview owns the Office viewer and Client cache.
+The bundle is one patch layer of five files plus one runtime glue plugin: `cordis.patch.yml` carries the host rows and the preset registry, and each `presets/<id>.patch.yml` inserts one shipped preset declaration, applied in the order `dsh.bundle.patch` lists them. The storage stack and projection cache come from `dsh-base`; the web overlay's workspace and message-feedback rows consume that shared `storageDomain` service. The patch restates the surface-specific values the base deliberately omits, inserts the web-only host rows and browser roster, then moves the agent plane behind presets. The glue plugin owns dist serving, the advertised application URL, trust sampling, prompt sections, the bash variable, and the readiness announcements. The `office-to-pdf` row mounts one lazy [Office conversion provider](../../document/office-to-pdf/README.md) for Host consumers, including Desktop compositions using this bundle. The conversion service's Remote methods authorize preview reads, while Document Preview owns the Office viewer and Client cache.
 
 ### Patch semantics
 
-A patch replaces the targeted row's whole `config`, so each web row restates every key it owns: the persona prefix and suffix templates, the `DSH_TOOLS_MODE` PTC mode opt-in, and the `session-query-sqlite` values on the base rows, then `insert` adds the web host rows, transport, and browser roster. The per-agent tool rows the base mounts process-wide are disabled here and the preset roster takes over; the reasoning for each host-plane versus preset-plane decision is inline in the patch.
+A patch replaces the targeted row's whole `config`, so each web row restates every key it owns: the persona prefix and suffix templates, the `DSH_TOOLS_MODE` PTC mode opt-in, and the `session-query-sqlite` values on the base rows, then `insert` adds the web host rows, transport, and browser roster. The `webserver` and `web-runtime` rows inject the `webStartup` provider and read their invocation values directly; the `connection` row instead reads the bind-dependent `webRuntime` values the web-runtime row publishes, which are that provider's authorities plus the LAN literals of an all-interfaces bind. The per-agent tool rows the base mounts process-wide are disabled here and the preset roster takes over; the reasoning for each host-plane versus preset-plane decision is inline in the patch.
+
+### Advertised application URL
+
+Startup display and browser handoff receive the advertised root with its launch token; the web-surface prompt and `DSH_WEB_URL` receive it clean. The root itself is defined under [Listening, trust, and public deployments](#public-deployments).
 
 ### Readiness
 
@@ -101,19 +113,16 @@ The URL line and browser handoff are readiness signals: supervisors RPC as soon 
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | The `web-app` glue plugin: dist resolution, LAN trust sampling, prompt sections, bash variable, URL line, browser handoff |
-| [`src/startup.ts`](src/startup.ts) | The `web-startup` provider: `--host`, `--port`, `--trusted-host`, `--no-open`, `--help` |
+| [`src/index.ts`](src/index.ts) | The `web-app` glue plugin: dist resolution, advertised application URL, LAN trust sampling, prompt sections, bash variable, URL line, browser handoff |
+| [`src/public-url.ts`](src/public-url.ts) | Advertised-root validation and trailing-slash normalization; a leaf module for local imports, not package API |
+| [`src/startup.ts`](src/startup.ts) | The `web-startup` provider: `--host`, `--port`, `--public-url`, `--trusted-host`, `--no-open`, `--help` |
 | [`cordis.patch.yml`](cordis.patch.yml) | The web patch: restated base values, web host rows, browser roster, preset registry |
 | [`presets/`](presets) | One `@deepseek-ai/dsh-agent-preset` declaration per shipped preset (`standard`, `ptc`, `minimal`, `cordis`), each its own patch file |
-| — | No runtime invariant companion is published; every contribution (frontend-static child plugin, prompt section, bashEnv registration) is registry-disposed with the fiber, and each owning registry's package carries that relation's invariant; the package holds no mutable state of its own to audit. |
-| [`tests/web-app.spec.ts`](tests/web-app.spec.ts) | Dist resolution, fallback seat, prompt sections, readiness |
+| [`tests/web-app.spec.ts`](tests/web-app.spec.ts) | Dist resolution, fallback seat, prompt sections, readiness, advertised URL publication |
 | [`tests/startup.spec.ts`](tests/startup.spec.ts) | Command-line parsing over a real Loader tree |
+| [`tests/public-url.spec.ts`](tests/public-url.spec.ts) | Advertised-root parsing and normalization |
 | [`tests/trusted-hosts.spec.ts`](tests/trusted-hosts.spec.ts) | LAN-trust sampling |
 | [`tests/browser-open.spec.ts`](tests/browser-open.spec.ts) | Default-browser handoff after the page is reachable |
-
-### Invariant ownership
-
-No invariant companion is published because every contribution — the frontend-static child plugin, the prompt sections, and the bash variable registration — is registry-disposed with the fiber, and each owning registry package carries that relation's invariant.
 
 </details>
 
@@ -139,7 +148,7 @@ Read these pages when you want to go deeper into the shared core, the browser re
 
 #### What the model sees
 
-When `surfaceContext` is true, the `harness:source` section identifies the on-disk Harness implementation without claiming it is the working directory, and the `app:web-surface` global section (first-party order 10100, after reusable instructions) orients the model to the GUI: the canonical local URL, the "this page" referent, the update contract (the reload receiver is always on; no-refresh reloads additionally need the `pnpm run dev:web` watcher), and the instruction not to start replacement servers. `DSH_WEB_URL` additionally appears in the managed bash environment with its description, resolved per invocation from the live server. When it is false, neither section nor the variable is registered.
+When `surfaceContext` is true, the `harness:source` section identifies the on-disk Harness implementation without claiming it is the working directory, and the `app:web-surface` global section (first-party order 10100, after reusable instructions) orients the model to the GUI: the advertised application URL (defined under Listening, trust, and public deployments above), the "this page" referent, the update contract (the reload receiver is always on; no-refresh reloads additionally need the `pnpm run dev:web` watcher), and the instruction not to start replacement servers. `DSH_WEB_URL` additionally appears in the managed bash environment with its description, resolved per invocation from the live server. When it is false, neither section nor the variable is registered.
 
 #### Token effect
 
@@ -147,7 +156,7 @@ One source line and one prompt paragraph per session plus two managed-environmen
 
 #### KV Cache effect
 
-Source and Web sections follow first-party reusable instructions. Different checkout paths or local ports leave that preceding prefix unchanged when tools and configuration match; provider cache reuse is not guaranteed.
+Source and Web sections follow first-party reusable instructions. Different checkout paths or application URLs leave that preceding prefix unchanged when tools and configuration match; provider cache reuse is not guaranteed.
 
 ## Known Limitations and Deferred Work
 
@@ -157,9 +166,10 @@ Source and Web sections follow first-party reusable instructions. Different chec
 These limits tell you what to expect in unusual setups — a source checkout, SSH sessions, or strict networks. They are current package constraints, not a general browser comparison or a task backlog.
 
 - **The frontend must be built** — a source checkout needs `pnpm run build` first; startup stops with a build hint when the dist is missing, and there is no source-serving fallback.
+- **The listener has no TLS** — protect the external leg with a TLS-terminating proxy; an HTTP advertised root sends credentials without encryption.
 - **LAN addresses are sampled once at startup** — interface changes after boot are not re-advertised; the printed LAN URL always matches what was sampled.
 - **Only the handoff start is observable** — the GUI reports that the browser was asked to open, not that it actually opened; a later browser exit is never reported, and the printed URL is your manual fallback.
-- **SSH sessions keep the URL but skip the browser handoff** — the printed URL names the remote host's loopback endpoint; the SSH client or editor must expose and open the local forwarded address.
+- **SSH sessions keep the URL but skip the browser handoff** — without an advertised root the printed URL names the remote host's loopback endpoint; the SSH client or editor must expose and open the local forwarded address.
 - **`BROWSER` overrides only come from the environment** — a discovered `.env` cannot set `BROWSER`; only an inherited value can choose the executable for the automatic handoff.
 - **Binding all network interfaces is not supported** — `--host 0.0.0.0` is rejected at startup for safety; use the default loopback host.
 
@@ -178,22 +188,25 @@ The Web composition includes the account Remote controller and Account settings 
 
 ## 源文件与导出符号
 
-### packages/bundle/web-app/src/index.ts  (302 行)
-  31	const	name
-  41	const	inject
-  44	iface	Config
-  60	const	Config
-  68	iface	WebRuntimeValues
-  125	fn	resolveLanTrust
-  214	const	internals
-  225	fn	apply
+### packages/bundle/web-app/src/index.ts  (321 行)
+  33	const	name
+  43	const	inject
+  46	iface	Config
+  70	const	Config
+  79	iface	WebRuntimeValues
+  136	fn	resolveLanTrust
+  230	const	internals
+  241	fn	apply
 
-### packages/bundle/web-app/src/startup.ts  (89 行)
-  14	const	name
-  17	const	inject
-  20	const	WEB_STARTUP_SERVICE
-  23	iface	WebStartupValues
-  70	fn	apply
+### packages/bundle/web-app/src/public-url.ts  (40 行)
+  16	fn	parsePublicUrl
+
+### packages/bundle/web-app/src/startup.ts  (108 行)
+  16	const	name
+  19	const	inject
+  22	const	WEB_STARTUP_SERVICE
+  25	iface	WebStartupValues
+  81	fn	apply
 
 ## 其它关键文件
 
@@ -209,7 +222,7 @@ The Web composition includes the account Remote controller and Account settings 
 # ordinary Cordis service. Rows configured from flags inject that service, so
 # Loader resolves their expressions only after it exists. The web runtime then
 # provides bind-dependent `webRuntime` values to the trust fence.
-# `dsh --profile web --help` provides neither service, so no server binds.
+# `dsh --profile web --help` provides no `webStartup`, so no server binds.
 
 # ── surface-specific values the base deliberately omits ─────────────────────
 
@@ -248,7 +261,7 @@ The Web composition includes the account Remote controller and Account settings 
 {
   "name": "@deepseek-ai/dsh-web-app",
   "description": "The dsh browser-surface bundle: the web patch layer over dsh-base plus the runtime glue plugin (frontend dist serving, web-surface prompt, bash runtime variables, URL line)",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -282,6 +295,7 @@ The Web composition includes the account Remote controller and Account settings 
     "presets/ptc.patch.yml",
     "presets/minimal.patch.yml",
     "presets/cordis.patch.yml",
+    "lib/public-url-*.js",
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",
@@ -305,5 +319,4 @@ The Web composition includes the account Remote controller and Account settings 
     "@deepseek-ai/dsh-api-remotes": "workspace:*",
     "@deepseek-ai/dsh-api-session-controller": "workspace:*",
     "@deepseek-ai/dsh-api-settings-controller": "workspace:*",
-    "@deepseek-ai/dsh-api-terminal-controller": "workspace:*",
-    "@deepseek-ai
+    "@deepseek-ai/dsh-api-terminal-controller": "w

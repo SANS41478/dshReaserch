@@ -2,10 +2,10 @@
 path: packages/web/web-search-deepseek
 desc: DeepSeek-backed search provider (native web_search via the Anthropic-compatible API) for the DeepSeek Harness web capability seam (ctx.web)
 deps: @deepseek-ai/schemastery
-peers: @deepseek-ai/dsh-agent, @deepseek-ai/dsh-credentials, @deepseek-ai/dsh-launch-environment, @deepseek-ai/dsh-session, @deepseek-ai/dsh-web, @deepseek-ai/cordis, @deepseek-ai/dsh-settings
-srcFiles: 3  srcLoc: 562
+peers: @deepseek-ai/dsh-agent, @deepseek-ai/dsh-credentials, @deepseek-ai/dsh-deepseek-account, @deepseek-ai/dsh-launch-environment, @deepseek-ai/dsh-session, @deepseek-ai/dsh-web, @deepseek-ai/cordis
+srcFiles: 3  srcLoc: 626
 
-## README.md (179 行)
+## README.md (178 行)
 ---
 description: "The DeepSeek-backed search provider for ctx.web: how deployments mount native DeepSeek web search through the Anthropic-compatible Messages API, with per-search credential resolution."
 kind: "package-reference"
@@ -104,7 +104,6 @@ The provider is built on two commitments:
 | [`src/index.ts`](src/index.ts) | Config schema and per-search option capture |
 | [`src/provider.ts`](src/provider.ts) | The `DeepSeekSearchProvider`: Messages request dispatch, block parsing, citation joining, credential resolution |
 | [`src/types.ts`](src/types.ts) | Anthropic wire types for the search response |
-| — | No runtime invariant companion is published; the package emits a pre-dispatch log event but owns no later authoritative dispatch event to relate it to. Exact envelope equality is pinned at the provider boundary instead. |
 
 ### Request flow
 
@@ -226,7 +225,7 @@ A native DeepSeek search endpoint that avoids the full model turn would remove t
 {
   "name": "@deepseek-ai/dsh-web-search-deepseek",
   "description": "DeepSeek-backed search provider (native web_search via the Anthropic-compatible API) for the DeepSeek Harness web capability seam (ctx.web)",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

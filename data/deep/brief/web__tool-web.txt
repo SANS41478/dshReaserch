@@ -3,9 +3,9 @@ path: packages/web/tool-web
 desc: Model-facing web tools (web_search, web_fetch) over the DeepSeek Harness web capability seam (ctx.web)
 deps: @deepseek-ai/dsh-util-values, @deepseek-ai/schemastery
 peers: @deepseek-ai/cordis, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-system-prompt, @deepseek-ai/dsh-tools, @deepseek-ai/dsh-web
-srcFiles: 5  srcLoc: 1007
+srcFiles: 5  srcLoc: 1011
 
-## README.md (269 行)
+## README.md (268 行)
 ---
 description: "The model-facing web tools (web_search, web_fetch) over ctx.web: how deployments enable, configure, and observe the search and fetch tools the model sees."
 kind: "package-reference"
@@ -111,7 +111,6 @@ The package is built on one separation and one registration rule:
 | [`src/index.ts`](src/index.ts) | Plugin entry: config schema, enablement, timeout budgets, tool registration |
 | [`src/search.ts`](src/search.ts) | The `web_search` tool: argument validation, query fan-out, merge, formatting, presentation meta |
 | [`src/fetch.ts`](src/fetch.ts) | The `web_fetch` tool: HTML→markdown conversion, output caps, formatting, presentation meta |
-| — | No runtime invariant companion is published; this model-facing adapter has no independent lifecycle stream; execution relations are owned by the capability seam it calls. |
 
 ### Search flow
 
@@ -322,7 +321,7 @@ Exposing `max_results` as a model argument instead of a config bound stays defer
 {
   "name": "@deepseek-ai/dsh-tool-web",
   "description": "Model-facing web tools (web_search, web_fetch) over the DeepSeek Harness web capability seam (ctx.web)",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

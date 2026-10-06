@@ -1,9 +1,7 @@
 // Extract the full dsh package inventory + service index into JSON data files.
 import { readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-
-const ROOT = 'D:/下载的软件在这里！/deepseek-harness源码/deepseek-harness'
-const OUT = 'D:/临时/dsh研究/data'
+import { REPO as ROOT, DATA as OUT } from './_paths.mjs'
 mkdirSync(OUT, { recursive: true })
 
 const readText = p => { try { return readFileSync(p, 'utf8') } catch { return '' } }

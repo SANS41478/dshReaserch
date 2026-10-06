@@ -6,12 +6,17 @@
 
 const D = window.DSH_DATA
 const { packages: PKGS, services: SVCS, tools: TOOLS, events: EVENTS, bundles: BUNDLES, layers: LAYERS, code: CODE, deep: DEEP, filemap: FILEMAP } = D
+/** 数据快照元信息（源仓库名/版本/HEAD/生成时间），由 scripts/bundle.mjs 现读仓库写入 */
+const META = D.meta || {}
 
 /* ---------- 索引 ---------- */
 const byShort = new Map(PKGS.map(p => [p.short, p]))
 const byName = new Map(PKGS.map(p => [p.name, p]))
-/** 逐包精读解读（265 包全覆盖），键 group/dir */
+/** 逐包精读解读，键 group/dir。精读是人工/子代理逐包写的，与 packages.json 并非同一版本，
+ *  可能少于包总数（新加的包还没写），所以一律用 deepOf() 判空后再渲染。 */
 const deepOf = p => DEEP && DEEP[`${p.group}/${p.dir}`]
+/** 有精读的包数 / 总包数 —— 用于在地图与详情页如实标注覆盖情况 */
+const DEEP_N = DEEP ? Object.keys(DEEP).length : 0
 /** 每包文件清单（行号引用 → 完整路径用），键 group/dir；缺数据时优雅降级为纯文本 */
 const DIR_INDEX = DeepFmt.buildDirIndex(PKGS)
 const FMT_CTX = { filemap: FILEMAP || null, dirIndex: DIR_INDEX }
@@ -32,22 +37,26 @@ const GROUP_META = {
   llm:             { zh: '模型接入',   ico: '🧠', d: 'LLM 能力家族：抽象服务 + 各厂商适配器 + 重试 + token 计量。' },
   session:         { zh: '会话数据面', ico: '📜', d: '持久化的会话数据平面：存储接缝、后端、投影、标题、遥测、格式迁移。' },
   'session-query': { zh: '会话检索',   ico: '🔍', d: '会话读取家族：逻辑语料、有界读取、血缘、语义过滤、SQLite 全文搜索。' },
-  tools:           { zh: '工具',       ico: '🔧', d: '模型面向的工具包。' },
   shell:           { zh: 'Shell 执行', ico: '⌨️', d: 'Bash 能力家族：执行器接缝、本地实现、模型面向工具、持久 PTY。' },
   subprocess:      { zh: '子进程',     ico: '⚙️', d: '子进程能力 + 本地进程树提供者 + 共享 Win32 库。' },
+  ssh:             { zh: 'SSH 远程',   ico: '🔌', d: '共享 OpenSSH 连接 + 带版本的 POSIX 远端助手；在其上复用 fs / subprocess / terminal / sandbox 四种能力。' },
   terminal:        { zh: '终端',       ico: '🖥️', d: '持久 PTY 会话能力：owner 作用域会话、本地实现、模型面向工具。' },
   sandbox:         { zh: '沙箱',       ico: '🛡️', d: '进程围栏接缝；bwrap / Landlock / Seatbelt / Windows ACL 后端。' },
   fs:              { zh: '文件系统',   ico: '📁', d: '文件系统能力家族：接缝、本地实现、模型面向文件工具、发现工具。' },
-  'code-runtime':  { zh: '代码执行',   ico: '▶️', d: '代码执行能力家族：服务定义 + worker 线程提供者 + PTC 模式消费者。' },
+  'ptc-runtime':   { zh: 'PTC 运行时', ico: '▶️', d: '程序化工具调用（PTC）执行接缝 ctx.ptcRuntime + 沙箱化 Node 实现——取代旧的 code-runtime 家族。' },
   lsp:             { zh: '语言服务',   ico: '🧭', d: 'LSP 能力家族：接缝、通用 stdio 提供者、lsp 工具。' },
   skill:           { zh: '技能',       ico: '📚', d: '技能能力家族：提供者注册表、本地提供者、模型面向的目录/加载器。' },
-  compaction:      { zh: '上下文压缩', ico: '🗜️', d: '压缩能力家族：服务定义 + 基础提供者 + 命令消费者。' },
+  compaction:      { zh: '上下文压缩', ico: '🗜️', d: '压缩能力家族：服务定义 + 基础提供者 + 命令消费者 + 图片外置。' },
   context:         { zh: '上下文注入', ico: '📍', d: '模型可见的请求上下文：工作区指令、时间上下文、引用。' },
   subagent:        { zh: '子智能体',   ico: '👥', d: '子智能体能力家族：提供者注册契约与模型面向的委托工具。' },
   jobs:            { zh: '后台作业',   ico: '⏱️', d: '通用后台作业运行时与模型面向的作业控制工具。' },
-  workflow:        { zh: '工作流',     ico: '🔄', d: '工作流接缝、worker 线程引擎、workflow/ralph 工具。' },
+  workflow:        { zh: '工作流',     ico: '🔄', d: '工作流接缝、worker 线程引擎、workflow/ralph 工具，以及 PTC 版工作流。' },
   webhook:         { zh: 'Webhook',    ico: '📡', d: '经签名验证的外部事件、可信规则、发射即忘的工作区会话。' },
   web:             { zh: '网络访问',   ico: '🌐', d: '网络能力家族：接缝、搜索/抓取提供者、模型面向网络工具。' },
+  'browser-use':   { zh: '浏览器操控', ico: '🌍', d: '浏览器操控提供者的具名注册点（独占一个名字，具体实现由实验组或 MCP 驱动提供）。' },
+  'computer-use':  { zh: '电脑操控',   ico: '🖱️', d: '桌面/电脑操控提供者的具名注册点，与浏览器操控同构。' },
+  document:        { zh: '文档处理',   ico: '📄', d: 'Office → PDF 转换：有界队列 + 结果缓存，供附件与交付链路复用。' },
+  deliverables:    { zh: '交付物',     ico: '📤', d: '本回合工作区改动的记录与显式交付声明：从 git 工作树快照与整文件捕获算差异，再声明给用户。' },
   attachment:      { zh: '附件',       ico: '📎', d: '持久附件身份、校验、本地内容寻址存储。' },
   spill:           { zh: '溢出存储',   ico: '💧', d: '溢出能力家族：存储接缝、本地实现、工具结果溢出策略。' },
   todo:            { zh: '任务清单',   ico: '✅', d: '模型面向的 todo_write 工具。' },
@@ -61,21 +70,19 @@ const GROUP_META = {
   credentials:     { zh: '凭据授权',   ico: '🔑', d: '凭据引用/记录接缝 + env 优先于 .env 的提供者 + 需要问人的授权流。' },
   interaction:     { zh: '人机交互',   ico: '🙋', d: '人类协作平面：审批/交互接缝、权限预设、命令、ask-user 工具。' },
   workspace:       { zh: '工作区',     ico: '📂', d: '工作区实体。' },
-  'session-projection': { zh: '会话投影', ico: '🪞', d: '会话状态投影。' },
-  identity:        { zh: '身份',       ico: '🆔', d: '共享的匿名身份。' },
+  identity:        { zh: '身份',       ico: '🆔', d: '共享的匿名身份；含 DeepSeek 账号凭据与账号态模型接入。' },
   goal:            { zh: '目标',       ico: '🎯', d: '同会话目标持久化与生命周期。' },
   schedule:        { zh: '定时',       ico: '⏰', d: '会话本地的定时跟进。' },
   feedback:        { zh: '反馈',       ico: '💬', d: '人类反馈捕获与命令。' },
-  mcp:             { zh: 'MCP 桥',     ico: '🧩', d: 'MCP 客户端桥：把外部 MCP server 的工具注册为本地工具。' },
+  mcp:             { zh: 'MCP 桥',     ico: '🧩', d: 'MCP 客户端桥：把外部 MCP server 的工具注册为本地工具（含 resources 读取）。' },
+  telemetry:       { zh: '遥测',       ico: '📈', d: '基于 OTLP 的遥测出口：普通事件与字节有界的会话日志各走独立通道。' },
   acp:             { zh: 'ACP 服务',   ico: '🤖', d: '仅用于自动化的 Agent Client Protocol 服务。' },
   sdk:             { zh: 'SDK',        ico: '📦', d: '进程外 SDK：JSON-RPC 协议与 TypeScript 客户端/服务端。' },
-  host:            { zh: 'Web 主机',   ico: '🏠', d: 'Web GUI 主机半边：HTTP 路由服务器、目录选择、静态资源。' },
+  host:            { zh: 'Web 主机',   ico: '🏠', d: 'Web GUI 主机半边：HTTP 路由服务器、目录选择、静态资源、产品遥测。' },
   client:          { zh: 'Web 客户端', ico: '🎨', d: 'Web GUI 浏览器半边：壳、wire、对象服务、槽位、ui-* 插件。' },
-  'test-support':  { zh: '测试支撑',   ico: '🧪', d: '支撑设施：testkit、不变式、回放、Loader 冒烟。' },
-  'runtime-diagnostics': { zh: '运行时诊断', ico: '🔬', d: '运行时诊断：包自有的不变式检查与报告。' },
-  util:            { zh: '基础工具',   ico: '🧰', d: '跨组共享的零依赖底层工具（Branded、home/path 助手、超时、保留）。' },
-  e2b:             { zh: 'E2B',        ico: '☁️', d: 'E2B 远程运行时提供者（概念验证）。' },
-  experimental:    { zh: '实验性',     ico: '🧫', d: '私有原型与仅内部使用的插件。' },
+  'test-support':  { zh: '测试支撑',   ico: '🧪', d: '支撑设施：testkit、不变式、回放、Loader 冒烟、远端 mock。' },
+  util:            { zh: '基础工具',   ico: '🧰', d: '跨组共享的零依赖底层工具（Branded、home/path 助手、超时、分块列表、语言识别）。' },
+  experimental:    { zh: '实验性',     ico: '🧫', d: '私有原型与仅内部使用的插件：语音输入/转写、浏览器与电脑操控驱动、审查、会话检查器、PTC Python。' },
 }
 
 /* ---------- 工具函数 ---------- */
@@ -350,14 +357,14 @@ function pageHome() {
 
 /* ---------- 全站地图 ---------- */
 function pageMap() {
-  const order = ['core', 'bundle', 'boot', 'llm', 'session', 'session-query', 'shell', 'subprocess', 'terminal', 'sandbox', 'fs', 'code-runtime', 'lsp', 'skill', 'context', 'compaction', 'tools', 'todo', 'plan', 'interaction', 'subagent', 'jobs', 'workflow', 'goal', 'schedule', 'guard', 'hooks', 'extensions', 'web', 'webhook', 'mcp', 'spill', 'attachment', 'storage', 'settings', 'credentials', 'identity', 'preset', 'workspace', 'api', 'typert', 'host', 'client', 'acp', 'sdk', 'feedback', 'e2b', 'experimental', 'test-support', 'runtime-diagnostics', 'util']
+  const order = ['core', 'bundle', 'boot', 'llm', 'session', 'session-query', 'shell', 'subprocess', 'ssh', 'terminal', 'sandbox', 'fs', 'ptc-runtime', 'lsp', 'skill', 'context', 'compaction', 'todo', 'plan', 'interaction', 'subagent', 'jobs', 'workflow', 'goal', 'schedule', 'guard', 'hooks', 'extensions', 'web', 'webhook', 'mcp', 'browser-use', 'computer-use', 'document', 'deliverables', 'attachment', 'spill', 'storage', 'settings', 'credentials', 'identity', 'preset', 'workspace', 'api', 'typert', 'host', 'client', 'acp', 'sdk', 'telemetry', 'feedback', 'experimental', 'test-support', 'util']
   const rest = [...byGroup.keys()].filter(g => !order.includes(g))
   const sorted = [...order.filter(g => byGroup.has(g)), ...rest]
 
   return `
   <div class="crumb"><a href="#/">首页</a><span>/</span>全站地图</div>
   <h1>全站地图</h1>
-  <p class="lead">按能力域组织的完整包清单。全部 <strong>${PKGS.length}</strong> 个包都做过逐包源码精读——点击任意包名进入详情：一句话定位、为什么必须有它、系统位置、内部结构、职责边界、带行号的源码带读、坑与通俗复述。</p>
+  <p class="lead">按能力域组织的完整包清单，共 <strong>${PKGS.length}</strong> 个包、<strong>${byGroup.size}</strong> 个能力域。其中 <strong>${DEEP_N}</strong> 个包已完成逐包源码精读（一句话定位、为什么必须有它、系统位置、内部结构、职责边界、带行号的源码带读、坑与通俗复述）${PKGS.length - DEEP_N ? `；其余 <strong>${PKGS.length - DEEP_N}</strong> 个目前只到「依赖关系 + 源码入口」这一层，详情页会标注未精读` : ''}。</p>
 
   ${sorted.map(g => {
     const meta = GROUP_META[g] || { zh: g, ico: '📦', d: '' }
@@ -703,7 +710,7 @@ function pagePkg(group, dir) {
     ? p.peers.map(d => { const s = depShort(d); return s.startsWith('cordis') ? `<span class="dep peer">${esc(s)}</span>` : pkgLink(s) }).join('')
     : ''
 
-  // 逐包精读解读（265 包全覆盖）—— 结构化重排（分句 / 领句标签 / 行号链接 / 页内小目录）
+  // 逐包精读解读 —— 结构化重排（分句 / 领句标签 / 行号链接 / 页内小目录）
   const d = deepOf(p)
 
   /** 一个精读章节：图标 + 中文标题 + 英文 kicker +（可选）收起钮 */
@@ -716,7 +723,9 @@ function pagePkg(group, dir) {
   /** 正文 → 结构化 HTML（行号引用自动跳右栏源码） */
   const R = t => DeepFmt.renderField(t, p, FMT_CTX)
 
-  const toc = [
+  /* 页内小目录：只在有精读正文时才存在。必须整体挂在 d 上，
+     否则没有精读的包会在渲染期直接 `d.tour` 报错（整页变成"出错了"）。 */
+  const toc = d ? [
     ['sec-why', '💡 为什么'],
     ['sec-pos', '🧭 位置'],
     ['sec-inside', '🧩 内部结构'],
@@ -724,7 +733,7 @@ function pagePkg(group, dir) {
     d.tour?.length ? ['sec-tour', '📖 源码带读'] : null,
     d.gotchas ? ['sec-gotchas', '⚠️ 坑'] : null,
     ['sec-analogy', '🗣️ 通俗复述'],
-  ].filter(Boolean)
+  ].filter(Boolean) : []
 
   const deepHtml = d ? `
   <nav class="sec-toc">${toc.map(([id, label]) => `<button class="toc-chip" type="button" data-goto="${id}">${label}</button>`).join('')}</nav>
@@ -754,7 +763,8 @@ function pagePkg(group, dir) {
 
   <section class="dsec" id="sec-analogy"><div class="analogy"><div class="t">🗣️ 通俗复述</div>${R(d.analogy)}</div></section>` : `
   <h2>它是什么</h2>
-  <p class="lead">${md(p.summary || p.desc || '')}</p>`
+  <p class="lead">${md(p.summary || p.desc || '')}</p>
+  <p class="note">这个包还没有逐包精读（上游新增/改名后，解读还没跟上）。下面照常有它的依赖关系、上下游与被依赖情况，以及「读源码 →」入口——需要细节时直接进源码，右侧面板会给你符号表和溯源信息。</p>`
 
   return `
   <div class="crumb"><a href="#/">首页</a><span>/</span>${meta.ico} ${esc(meta.zh)}<span>/</span>${esc(p.short)}</div>
@@ -766,7 +776,7 @@ function pagePkg(group, dir) {
       <span class="badge ac">${esc(p.name)}</span>
       <span class="badge">${p.srcFiles} 个源文件</span>
       <span class="badge">${p.srcLoc.toLocaleString()} 行</span>
-      ${d ? '<span class="badge ok">已逐包精读</span>' : ''}
+      ${d ? '<span class="badge ok">已逐包精读</span>' : '<span class="badge">待精读</span>'}
       ${p.dshField?.bundle ? '<span class="badge warn">bundle 补丁层</span>' : ''}
       ${p.dshField?.profile ? '<span class="badge warn">profile 模板</span>' : ''}
     </div>
@@ -892,7 +902,8 @@ function pageAbout() {
   </table>
 
   <h2>版本</h2>
-  <p>源码版本 <code>0.1.5-alpha.1</code>（<code>@deepseek-ai/dsh-root</code>），仓库 HEAD <code>5dda764ed3</code>。dsh 处于 <strong>developer preview</strong>，API 会破坏性变更。</p>
+  <p>本快照对应源码 <code>${esc(META.version || '(未知)')}</code>（<code>${esc(META.name || '@deepseek-ai/dsh-root')}</code>），仓库 HEAD <code>${esc(META.sha || '(未取到)')}</code>，生成于 <code>${esc(META.generatedAt || '(未知)')}</code>。仓库路径 <code>${esc(META.repo || '')}</code>（改 <code>config.json</code> 即可换）。dsh 处于 <strong>developer preview</strong>，API 会破坏性变更——所以这里的数字会随源码走，页面上写的都取自当前快照，不写死。</p>
+  <p>逐包精读覆盖：<strong>${DEEP_N}</strong> / ${PKGS.length} 个包。精读是逐包人工归纳的，与包清单不是同一版产物，上游新增包会先以「待精读」出现在地图与包页里，解读随后补齐。</p>
 
   <h2>怎么用这个站</h2>
   <div class="mech">
@@ -1055,6 +1066,12 @@ async function route() {
 }
 
 /* ---------- 启动 ---------- */
+/* 侧栏版本号从数据快照现读：以前写死在 index.html 里，仓库升级后忘了改，
+   页面就会一直报旧版本。取不到就保留原始文案。 */
+if (META.version) {
+  const el = document.querySelector('.brand-txt span')
+  if (el) el.textContent = `全量架构解构 · v${META.version}`
+}
 renderNav()
 renderSourceNav()
 initSearch()

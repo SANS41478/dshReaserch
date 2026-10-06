@@ -3,9 +3,9 @@ path: packages/terminal/tool-terminal
 desc: Six model-facing persistent PTY tools with owner isolation and generic background-job integration
 deps: @deepseek-ai/schemastery
 peers: @deepseek-ai/dsh-agent, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-terminal, @deepseek-ai/dsh-output-retention, @deepseek-ai/dsh-system-prompt, @deepseek-ai/dsh-jobs, @deepseek-ai/dsh-tools, @deepseek-ai/cordis
-srcFiles: 2  srcLoc: 580
+srcFiles: 3  srcLoc: 615
 
-## README.md (187 行)
+## README.md (185 行)
 ---
 description: "Six model-facing persistent terminal tools with owner isolation, bounded results, and optional background sends for agents that need cross-call terminal state."
 kind: "package-reference"
@@ -191,8 +191,6 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. This stateless adapter contributes tools and prompt guidance, while PTY lifecycle and background-job relationships remain owned by the services it composes.
-
 
 ## 源文件与导出符号
 
@@ -223,7 +221,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-tool-terminal",
   "description": "Six model-facing persistent PTY tools with owner isolation and generic background-job integration",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -276,4 +274,4 @@ None.
     "@deepseek-ai/dsh-subprocess-local": "workspace:*",
     "@deepseek-ai/dsh-system-prompt": "workspace:*",
     "@deepseek-ai/dsh-jobs": "workspace:*",
-    "@deepseek-ai/dsh-jobs-local": "wor
+    "@deepseek-ai/dsh-jobs-local": "

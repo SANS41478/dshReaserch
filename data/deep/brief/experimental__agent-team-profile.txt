@@ -1,11 +1,11 @@
 # @deepseek-ai/dsh-experimental-agent-team-profile
 path: packages/experimental/agent-team-profile
-desc: Private profile bundle enabling Agent Teams over dsh-base
-deps: @deepseek-ai/dsh-experimental-agent-team, @deepseek-ai/dsh-experimental-tool-agent-team
+desc: Agent Teams collaboration, tools, and Web UI in one experimental bundle
+deps: @deepseek-ai/dsh-experimental-agent-team, @deepseek-ai/dsh-experimental-client-ui-agent-team, @deepseek-ai/dsh-experimental-tool-agent-team
 peers: @deepseek-ai/cordis
 srcFiles: 1  srcLoc: 9
 
-## README.md (120 行)
+## README.md (119 行)
 ---
 description: "Enable team collaboration, tools, and the Web roster and task board with one experimental bundle."
 kind: "package-bundle"
@@ -72,7 +72,6 @@ The package's runtime content is [`cordis.patch.yml`](cordis.patch.yml). Applied
 |---|---|
 | [`cordis.patch.yml`](cordis.patch.yml) | Ordered patch over `dsh-base` |
 | [`src/index.ts`](src/index.ts) | Empty module entry; the patch is the runtime content |
-| — | No runtime invariant companion is published; the package carries only a static profile patch. The Team service and tools own their mutable relationships; the UI package owns its disposable slot registration. |
 
 </details>
 
@@ -173,7 +172,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-experimental-agent-team-profile",
   "description": "Agent Teams collaboration, tools, and Web UI in one experimental bundle",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "icon": "./icon.svg",
   "publishConfig": {
     "access": "public"

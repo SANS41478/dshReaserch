@@ -3,9 +3,9 @@ path: packages/client/ui-sidebar-right
 desc: Right Sidebar: the docking surface's session-bound state, its panel and header expand control, and the navigation service over it
 deps: -
 peers: @deepseek-ai/cordis
-srcFiles: 17  srcLoc: 2618
+srcFiles: 26  srcLoc: 3932
 
-## README.md (160 行)
+## README.md (158 行)
 ---
 description: "The right Sidebar of the dsh web client: one docking surface per session, two presentations, the navigation controller ctx.sidebarRight, the tab-type registry ctx.sidebarRightTabs, and the Tab domain."
 kind: "package-reference"
@@ -66,7 +66,7 @@ While the panel is hidden, one button in the conversation header's corner seat (
 
 The panel takes the conversation's ground colour and content font sizes rather than a raised layer of its own: it is a column of the page, not a card over it.
 
-The root-scoped `rightbar` entry renders the selected Session and background Sessions with initialized `keepMounted` bodies through separate `rightbar.session` subtrees. Each View owns its Session reference. Only the foreground Conversation reports a frame track and binds public navigation; other subtrees stay hidden without deleting tab state.
+The root-scoped `rightbar` entry renders the selected Session and background Sessions with initialized `keepMounted` bodies through separate `rightbar.session` subtrees. Each View owns its Session reference. Only the foreground subtree reports a frame track; other subtrees stay hidden without deleting tab state.
 
 <a id="state"></a>
 ## State
@@ -102,9 +102,9 @@ Two more seats extend what is already there: `sidebar.right.tab.guide` (chain) r
 
 `preferNewPane: true` first asks the target docked pane to split under the normal two-pane and room rules, then falls back to that pane when no split is available. `replaceTab` takes precedence and disables this preference.
 
-`close(tabId)` closes a tab; `active()` reads the active tab. `isExpanded()` and `toggleExpanded()` read and drive the column's expansion; `toggleFullscreen(target)` applies the panel control’s display-mode action to a captured dock pane. Layout operations, for callers that arrange the column programmatically, each recorded like the gesture it stands in for: `focus(tabId)` focuses a tab and its pane; `split(paneId?)` splits a docked pane (the active one by default) under the same pane budget and room rule as the strip's control and returns the new pane's id, or `undefined` — recording nothing — when it cannot; `float(tabId, rect?)` takes a docked tab out into a panel; `dock(paneId)` returns a floating panel to the active docked pane. A tab or pane that does not exist, or already is where the call would put it, is left alone. The face exposes operations only: no layout snapshot, no operation log, no lookup by address. `_undo()` / `_redo()` step the mounted surface's history; they are `@internal` — the sequence has no user-facing control, and these exist for tests. Commands need a mounted session surface; with none, they throw rather than write into a surface nobody draws. `mounted` is the observable of the session whose seat is on screen, `undefined` while a global panel replaces the Conversation or no session is selected. A component that opens content from its own mount effect reads it through a bound hook and acts once it is defined: the frame mounts the Conversation column ahead of this seat, and the seat publishes its binding from a passive effect of the same commit, so an effect that assumed a bound seat would run first and throw. The plan review's automatic open reads it this way.
+`close(tabId)` closes a tab; `active()` reads the active tab. `isExpanded()` and `toggleExpanded()` read and drive the column's expansion; `toggleFullscreen(target)` applies the panel control’s display-mode action to a captured dock pane. Layout operations, for callers that arrange the column programmatically, each recorded like the gesture it stands in for: `focus(tabId)` focuses a tab and its pane; `split(paneId?)` splits a docked pane (the active one by default) under the same pane budget and room rule as the strip's control and returns the new pane's id, or `undefined` — recording nothing — when it cannot; `float(tabId, rect?)` takes a docked tab out into a panel; `dock(paneId)` returns a floating panel to the active docked pane. A tab or pane that does not exist, or already is where the call would put it, is left alone. The face exposes operations only: no layout snapshot, no operation log, no lookup by address. `_undo()` / `_redo()` step the on-screen surface's history; they are `@internal` — the sequence has no user-facing control, and these exist for tests. Commands act on the on-screen Session through its adopted store; with no Session on screen, or before the runtime mints its store, they throw rather than write into a surface nobody draws. `mounted` is the observable of the Session on screen: the selected Session while the Conversation fills the main column, `undefined` while a global panel replaces it or no Session is selected. The plugin derives it from the Session selection and `ctx.layout.panelInfo`, and it changes before React renders the change that causes it, so a component rendered in that commit reads the arriving Session and may act on it from its effects: the frame renders that Session's seat in the same pass, which mints its store. Seats never publish it; each reports only what it renders with: the room its docking kit measured, which `split` and `preferNewPane` apply to that Session's panes (unmeasured panes have room), and whether its frame width presents the panel fullscreen automatically, which the fullscreen command applies. The plan review's automatic open reads `mounted` through a bound hook.
 
-`focusedTarget(element?)` resolves the current DOM pane and tab, including an embedding iframe; outside focus returns no page. `commandTarget(element?)` additionally allows an outside open to use the mounted Session's active dock pane. Captures include the occurrence and navigation revision; `isTargetCurrent(target)` rejects changed Sessions, moved or reopened tabs, and intervening navigation. Focus and pointer activation remain separate from persisted layout selection.
+`focusedTarget(element?)` resolves the current DOM pane and tab, including an embedding iframe; outside focus returns no page. `commandTarget(element?)` additionally allows an outside open to use the on-screen Session's active dock pane. Captures include the occurrence and navigation revision; `isTargetCurrent(target)` rejects changed Sessions, moved or reopened tabs, and intervening navigation. Focus and pointer activation remain separate from persisted layout selection.
 
 <a id="the-tab-domain"></a>
 ## The Tab domain
@@ -164,8 +164,6 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. The two services (`sidebarRight`, `sidebarRightTabs`) are provided through `ctx.reflect.provide` inside one effect and torn down with it; the seat's binding and the Tab domain's occurrence lifetimes are asserted directly by this package's specs, and no independent observation exists to diverge from them.
-
 
 ## 源文件与导出符号
 
@@ -201,10 +199,10 @@ None.
   56	fn	visibleSidebarPane
   73	fn	observeSidebarFocus
 
-### packages/client/ui-sidebar-right/src/client/index.ts  (252 行)
+### packages/client/ui-sidebar-right/src/client/index.ts  (280 行)
   declare module: declare module '@deepseek-ai/cordis' {
-  82	const	inject
-  100	fn	apply
+  83	const	inject
+  101	fn	apply
 
 ### packages/client/ui-sidebar-right/src/client/labels.ts  (45 行)
   22	fn	dockLabels
@@ -220,18 +218,18 @@ None.
   86	fn	writeSidebarLayout
   97	fn	clearSidebarLayout
 
-### packages/client/ui-sidebar-right/src/client/service.ts  (714 行)
-  49	type	SurfaceActions
-  52	iface	SidebarRightSurfaceStore
-  71	fn	createSidebarRightController
-  101	iface	SidebarRightBinding
-  126	iface	SidebarRightPlacement
-  141	iface	SidebarRightOpenResourceOptions
-  149	iface	SidebarRightOpenTabOptions
-  158	type	SidebarRightCloseHandler
-  161	iface	ISidebarRight
-  236	class	SidebarRightController
-      members: L251 registerCloseHandler, L269 constructor, L284 tabsIn, L295 bind, L308 publishMounted, L318 openResource, L328 openTab, L341 openResourceIn, L354 openTabIn, L366 closeIn, L375 removeAfterCleanup, L381 placeResource, L394 placeTab, L407 place, L450 close, L460 active, L471 isExpanded, L476 toggleExpanded, L489 focus, L500 focusedTarget, L513 commandTarget, L531 openTabFromTarget, L553 canCloseTarget, L563 closeTarget, L581 isTargetCurrent, L598 splitBlock, L614 toggleFullscreen, L627 split, L648 float, L660 dock, L673 _undo, L683 _redo, L689 mountedSurface, L700 actionsFor, L704 require
+### packages/client/ui-sidebar-right/src/client/service.ts  (735 行)
+  52	type	SurfaceActions
+  55	iface	SidebarRightSurfaceStore
+  90	fn	createSidebarRightController
+  129	iface	SidebarRightHost
+  151	iface	SidebarRightPlacement
+  166	iface	SidebarRightOpenResourceOptions
+  174	iface	SidebarRightOpenTabOptions
+  183	type	SidebarRightCloseHandler
+  186	iface	ISidebarRight
+  262	class	SidebarRightController
+      members: L277 registerCloseHandler, L295 constructor, L313 tabsIn, L322 openResource, L332 openTab, L345 openResourceIn, L358 openTabIn, L370 closeIn, L379 removeAfterCleanup, L385 placeResource, L398 placeTab, L411 place, L456 close, L464 active, L475 isExpanded, L480 toggleExpanded, L493 focus, L504 focusedTarget, L516 commandTarget, L534 openTabFromTarget, L557 canCloseTarget, L567 closeTarget, L585 isTargetCurrent, L602 splitBlock, L618 toggleFullscreen, L632 split, L653 float, L665 dock, L678 _undo, L688 _redo, L697 screen, L705 mountedSurface, L710 canSplitPane, L719 actionsFor, L723 require
 
 ### packages/client/ui-sidebar-right/src/client/session-view.ts  (92 行)
   declare module: declare module '@deepseek-ai/dsh-api-session-controller/client' {
@@ -251,12 +249,12 @@ None.
   10	iface	RightbarRootInjected
   34	fn	RightbarRoot
 
-### packages/client/ui-sidebar-right/src/client/shell/SidebarRight.tsx  (444 行)
-  61	iface	SidebarRightPresentation
-  71	iface	SidebarRightInjected
-  125	type	RightbarSeatProps
-  168	fn	intentsFor
-  360	fn	RightbarSeat
+### packages/client/ui-sidebar-right/src/client/shell/SidebarRight.tsx  (424 行)
+  60	iface	SidebarRightPresentation
+  70	iface	SidebarRightInjected
+  118	type	RightbarSeatProps
+  161	fn	intentsFor
+  352	fn	RightbarSeat
 
 ### packages/client/ui-sidebar-right/src/client/shell/close-focus.ts  (36 行)
   13	fn	openWithPaneFocus
@@ -327,7 +325,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-client-ui-sidebar-right",
   "description": "Right Sidebar: the docking surface's session-bound state, its panel and header expand control, and the navigation service over it",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -384,4 +382,4 @@ None.
     "@deepseek-ai/dsh-client-ui-layout": "workspace:*",
     "@deepseek-ai/dsh-client-ui-primitives": "workspace:*",
     "@deepseek-ai/dsh-client-ui-renderer": "workspace:*",
-    "@deepse
+    "@dee

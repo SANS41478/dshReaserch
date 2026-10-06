@@ -3,9 +3,9 @@ path: packages/extensions/cordis-client-runner
 desc: Browser half of dynamic dual-half plugin packages: event subscription, closure evaluation, guard facade, and loader entries
 deps: -
 peers: @deepseek-ai/cordis
-srcFiles: 11  srcLoc: 5843
+srcFiles: 11  srcLoc: 7817
 
-## README.md (148 行)
+## README.md (146 行)
 ---
 description: "Browser half of dynamic Cordis packages for users and maintainers choosing, composing, or debugging how a page answers run requests and loads browser-half code."
 kind: "package-reference"
@@ -152,12 +152,10 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. The owned relation (a live Plugin's loader entry exists exactly while one Plugin Run ID is live) is browser-only state reachable through the client half's service, which the node-plane companion cannot observe. The relation is asserted by the package's own load/teardown coverage instead.
-
 
 ## 源文件与导出符号
 
-### packages/extensions/cordis-client-runner/src/client/api-catalog.ts  (1141 行)
+### packages/extensions/cordis-client-runner/src/client/api-catalog.ts  (1149 行)
   17	iface	ApiParameter
   25	iface	ServiceApiMethod
   39	iface	ServiceApiEntry
@@ -167,9 +165,9 @@ None.
   83	const	SERVICE_API
   441	const	EVENT_API
   477	const	TYPE_API
-  1041	const	INHERITED_CTX_API
-  1080	fn	queryServiceApi
-  1114	fn	queryEventApi
+  1049	const	INHERITED_CTX_API
+  1088	fn	queryServiceApi
+  1122	fn	queryEventApi
 
 ### packages/extensions/cordis-client-runner/src/client/evaluator.ts  (223 行)
   14	iface	DynamicCordisEvaluatedPlugin
@@ -228,7 +226,7 @@ None.
       members: L214 constructor, L242 subscribe, L262 getSnapshot, L279 isLoaded, L288 load, L309 retract, L319 dispose, L327 notify, L334 enqueue, L343 mount, L409 guardedSurface, L443 teardown
   488	fn	errorDetails
 
-### packages/extensions/cordis-client-runner/src/client/slot-catalog.ts  (4134 行)
+### packages/extensions/cordis-client-runner/src/client/slot-catalog.ts  (4275 行)
   18	iface	ClientSlotOption
   30	iface	ClientSlotEntry
   68	const	CLIENT_NOTES
@@ -249,7 +247,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-cordis-client-runner",
   "description": "Browser half of dynamic dual-half plugin packages: event subscription, closure evaluation, guard facade, and loader entries",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

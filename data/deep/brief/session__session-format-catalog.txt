@@ -1,9 +1,9 @@
 # @deepseek-ai/dsh-session-format-catalog
 path: packages/session/session-format-catalog
 desc: Build-static first-party Session format codec and migration catalog
-deps: @deepseek-ai/dsh-session-format, @deepseek-ai/dsh-session-format-v0-to-v1, @deepseek-ai/dsh-session-format-v1-to-v2, @deepseek-ai/dsh-session-format-v2-to-v3
+deps: @deepseek-ai/dsh-session-format, @deepseek-ai/dsh-session-format-v0-to-v1, @deepseek-ai/dsh-session-format-v1-to-v2, @deepseek-ai/dsh-session-format-v2-to-v3, @deepseek-ai/dsh-session-format-v3-to-v4, @deepseek-ai/dsh-compaction-image-offload
 peers: @deepseek-ai/cordis, @deepseek-ai/dsh-session
-srcFiles: 3  srcLoc: 89
+srcFiles: 6  srcLoc: 159
 
 ## README.md (111 行)
 ---
@@ -35,7 +35,7 @@ English | [中文](README.zh.md)
 
 ### When to use it
 
-Import this library from persistence and test-support readers that need the complete first-party released-format inventory before any feature plugin mounts. Feature compositions do not register or reorder its entries. No runtime invariant companion is published because construction rejects an invalid static inventory and each completed restore validates its result; mutable row-decoder state belongs to one caller-owned streaming restore.
+Import this library from persistence and test-support readers that need the complete first-party released-format inventory before any feature plugin mounts. Feature compositions do not register or reorder its entries.
 
 ### Entry point
 
@@ -145,7 +145,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-session-format-catalog",
   "description": "Build-static first-party Session format codec and migration catalog",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

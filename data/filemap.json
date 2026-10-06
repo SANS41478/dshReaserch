@@ -8,6 +8,10 @@
   "packages/acp/acp/src/session.ts",
   "packages/acp/acp/src/updates.ts"
  ],
+ "api/account-controller": [
+  "packages/api/account-controller/src/index.ts",
+  "packages/api/account-controller/src/types.ts"
+ ],
  "api/gateway": [
   "packages/api/gateway/src/client/index.ts",
   "packages/api/gateway/src/client/journal-stream.ts",
@@ -20,6 +24,16 @@
   "packages/api/gateway/src/stream-protocol.ts",
   "packages/api/gateway/src/stream-server.ts",
   "packages/api/gateway/src/types.ts"
+ ],
+ "api/job-controller": [
+  "packages/api/job-controller/src/client/index.ts",
+  "packages/api/job-controller/src/client/model.ts",
+  "packages/api/job-controller/src/client/service.ts",
+  "packages/api/job-controller/src/index.ts",
+  "packages/api/job-controller/src/observe.ts",
+  "packages/api/job-controller/src/rows.ts",
+  "packages/api/job-controller/src/types.ts",
+  "packages/api/job-controller/src/wake.ts"
  ],
  "api/remotes": [
   "packages/api/remotes/src/client/index.ts",
@@ -67,6 +81,20 @@
   "packages/api/settings-controller/src/credentials.ts",
   "packages/api/settings-controller/src/index.ts",
   "packages/api/settings-controller/src/types.ts"
+ ],
+ "api/terminal-controller": [
+  "packages/api/terminal-controller/src/client/bindings.ts",
+  "packages/api/terminal-controller/src/client/close-requests.ts",
+  "packages/api/terminal-controller/src/client/index.ts",
+  "packages/api/terminal-controller/src/client/model.ts",
+  "packages/api/terminal-controller/src/client/retention.ts",
+  "packages/api/terminal-controller/src/client/shell-preference.ts",
+  "packages/api/terminal-controller/src/index.ts",
+  "packages/api/terminal-controller/src/retention.ts",
+  "packages/api/terminal-controller/src/shells.ts",
+  "packages/api/terminal-controller/src/stream.ts",
+  "packages/api/terminal-controller/src/terminal.ts",
+  "packages/api/terminal-controller/src/types.ts"
  ],
  "api/workspace-controller": [
   "packages/api/workspace-controller/src/client/index.ts",
@@ -134,6 +162,33 @@
  "boot/cmdline": [
   "packages/boot/cmdline/src/index.ts"
  ],
+ "boot/config-editor": [
+  "packages/boot/config-editor/src/index.ts"
+ ],
+ "boot/hmr": [
+  "packages/boot/hmr/src/error.ts",
+  "packages/boot/hmr/src/index.ts",
+  "packages/boot/hmr/src/package-manifest.ts",
+  "packages/boot/hmr/src/watch-config.ts"
+ ],
+ "boot/plugin-manager": [
+  "packages/boot/plugin-manager/src/build-approval.ts",
+  "packages/boot/plugin-manager/src/failure.ts",
+  "packages/boot/plugin-manager/src/github-connection.ts",
+  "packages/boot/plugin-manager/src/index.ts",
+  "packages/boot/plugin-manager/src/install-failure.ts",
+  "packages/boot/plugin-manager/src/install-spec.ts",
+  "packages/boot/plugin-manager/src/operations.ts",
+  "packages/boot/plugin-manager/src/patch.ts",
+  "packages/boot/plugin-manager/src/registry.ts",
+  "packages/boot/plugin-manager/src/run-tree.ts",
+  "packages/boot/plugin-manager/src/tools.ts",
+  "packages/boot/plugin-manager/src/types.ts"
+ ],
+ "browser-use/browser-use": [
+  "packages/browser-use/browser-use/src/brand.ts",
+  "packages/browser-use/browser-use/src/index.ts"
+ ],
  "bundle/acp-app": [
   "packages/bundle/acp-app/src/index.ts"
  ],
@@ -155,6 +210,7 @@
  ],
  "bundle/web-app": [
   "packages/bundle/web-app/src/index.ts",
+  "packages/bundle/web-app/src/public-url.ts",
   "packages/bundle/web-app/src/startup.ts"
  ],
  "client/connection": [
@@ -187,8 +243,7 @@
  "client/hmr": [
   "packages/client/hmr/src/client/index.ts",
   "packages/client/hmr/src/events.ts",
-  "packages/client/hmr/src/index.ts",
-  "packages/client/hmr/src/invariant.ts"
+  "packages/client/hmr/src/index.ts"
  ],
  "client/locale": [
   "packages/client/locale/src/client/LanguageRow.tsx",
@@ -209,14 +264,33 @@
   "packages/client/modules/src/client/index.ts",
   "packages/client/modules/src/client/manifest.ts",
   "packages/client/modules/src/client/system.ts",
-  "packages/client/modules/src/index.ts",
-  "packages/client/modules/src/invariant.ts"
+  "packages/client/modules/src/index.ts"
+ ],
+ "client/product-analytics": [
+  "packages/client/product-analytics/src/client/index.ts",
+  "packages/client/product-analytics/src/events.ts",
+  "packages/client/product-analytics/src/index.ts"
  ],
  "client/resources": [
   "packages/client/resources/src/client/contract.ts",
   "packages/client/resources/src/client/index.ts",
   "packages/client/resources/src/client/resources.ts",
   "packages/client/resources/src/index.ts"
+ ],
+ "client/shortcuts": [
+  "packages/client/shortcuts/src/binding.ts",
+  "packages/client/shortcuts/src/client/dom.ts",
+  "packages/client/shortcuts/src/client/index.ts",
+  "packages/client/shortcuts/src/client/native.ts",
+  "packages/client/shortcuts/src/client/registry.ts",
+  "packages/client/shortcuts/src/client/storage.ts",
+  "packages/client/shortcuts/src/client/types.ts",
+  "packages/client/shortcuts/src/config.ts",
+  "packages/client/shortcuts/src/configuration.ts",
+  "packages/client/shortcuts/src/index.ts",
+  "packages/client/shortcuts/src/native.ts",
+  "packages/client/shortcuts/src/persistence.ts",
+  "packages/client/shortcuts/src/protocol.ts"
  ],
  "client/store": [
   "packages/client/store/src/contract.ts",
@@ -226,6 +300,7 @@
   "packages/client/ui-agent-preset/src/client/AgentPresetLabel.tsx",
   "packages/client/ui-agent-preset/src/client/AgentPresetSeat.tsx",
   "packages/client/ui-agent-preset/src/client/AgentPresetSection.tsx",
+  "packages/client/ui-agent-preset/src/client/CreatePluginMenuItem.tsx",
   "packages/client/ui-agent-preset/src/client/PresetGuideDialog.tsx",
   "packages/client/ui-agent-preset/src/client/guide-locales.ts",
   "packages/client/ui-agent-preset/src/client/index.ts",
@@ -327,7 +402,6 @@
   "packages/client/ui-chat/src/client/conversation-nodes/fallback.ts",
   "packages/client/ui-chat/src/client/conversation-nodes/inbox.ts",
   "packages/client/ui-chat/src/client/conversation-nodes/message.ts",
-  "packages/client/ui-chat/src/client/conversation-nodes/partial.ts",
   "packages/client/ui-chat/src/client/conversation-nodes/process-activity.ts",
   "packages/client/ui-chat/src/client/conversation-nodes/process-groups.ts",
   "packages/client/ui-chat/src/client/conversation-nodes/register.ts",
@@ -363,6 +437,7 @@
   "packages/client/ui-commands/src/client/directory.ts",
   "packages/client/ui-commands/src/client/index.ts",
   "packages/client/ui-commands/src/client/locales.ts",
+  "packages/client/ui-commands/src/client/option-groups.ts",
   "packages/client/ui-commands/src/client/popup.ts",
   "packages/client/ui-commands/src/client/presentation.ts",
   "packages/client/ui-commands/src/client/resolution.ts",
@@ -395,6 +470,7 @@
   "packages/client/ui-conversation/src/client/conversation/historical-images.ts",
   "packages/client/ui-conversation/src/client/conversation/location-index.ts",
   "packages/client/ui-conversation/src/client/conversation/view-registry.ts",
+  "packages/client/ui-conversation/src/client/draft.ts",
   "packages/client/ui-conversation/src/client/image-labels.ts",
   "packages/client/ui-conversation/src/client/index.ts",
   "packages/client/ui-conversation/src/client/input/blocks.ts",
@@ -565,6 +641,7 @@
   "packages/client/ui-model-selection/src/client/directory.ts",
   "packages/client/ui-model-selection/src/client/index.ts",
   "packages/client/ui-model-selection/src/client/locales.ts",
+  "packages/client/ui-model-selection/src/client/provider-order.ts",
   "packages/client/ui-model-selection/src/client/service.ts",
   "packages/client/ui-model-selection/src/client/slots.ts",
   "packages/client/ui-model-selection/src/css-modules.d.ts",
@@ -612,6 +689,21 @@
   "packages/client/ui-plan/src/css-modules.d.ts",
   "packages/client/ui-plan/src/index.ts"
  ],
+ "client/ui-plugin-manager": [
+  "packages/client/ui-plugin-manager/src/client/PluginManagerPage.tsx",
+  "packages/client/ui-plugin-manager/src/client/PluginRefreshToast.tsx",
+  "packages/client/ui-plugin-manager/src/client/PluginsPanelIcon.tsx",
+  "packages/client/ui-plugin-manager/src/client/config-ledger.ts",
+  "packages/client/ui-plugin-manager/src/client/index.ts",
+  "packages/client/ui-plugin-manager/src/client/locales.ts",
+  "packages/client/ui-plugin-manager/src/client/manager-store.ts",
+  "packages/client/ui-plugin-manager/src/client/navigation-store.ts",
+  "packages/client/ui-plugin-manager/src/client/presentation.ts",
+  "packages/client/ui-plugin-manager/src/client/sanitize-install-input.ts",
+  "packages/client/ui-plugin-manager/src/client/slot-contract.ts",
+  "packages/client/ui-plugin-manager/src/css-modules.d.ts",
+  "packages/client/ui-plugin-manager/src/index.ts"
+ ],
  "client/ui-primitives": [
   "packages/client/ui-primitives/src/BrandWordmark.tsx",
   "packages/client/ui-primitives/src/Button.tsx",
@@ -628,10 +720,12 @@
   "packages/client/ui-primitives/src/HoverCard.tsx",
   "packages/client/ui-primitives/src/ImageLightbox.tsx",
   "packages/client/ui-primitives/src/ImagePreview.tsx",
+  "packages/client/ui-primitives/src/InlineEditor.tsx",
   "packages/client/ui-primitives/src/Input.tsx",
   "packages/client/ui-primitives/src/JsonTree.tsx",
   "packages/client/ui-primitives/src/LinkIcon.tsx",
   "packages/client/ui-primitives/src/Menu.tsx",
+  "packages/client/ui-primitives/src/MenuGroup.tsx",
   "packages/client/ui-primitives/src/MenuSurface.tsx",
   "packages/client/ui-primitives/src/Modal.tsx",
   "packages/client/ui-primitives/src/PathLabel.tsx",
@@ -714,8 +808,7 @@
   "packages/client/ui-renderer/src/client/registry.ts",
   "packages/client/ui-renderer/src/client/scoped-slots.tsx",
   "packages/client/ui-renderer/src/client/use-sync-external-store.d.ts",
-  "packages/client/ui-renderer/src/index.ts",
-  "packages/client/ui-renderer/src/invariant.ts"
+  "packages/client/ui-renderer/src/index.ts"
  ],
  "client/ui-schedule": [
   "packages/client/ui-schedule/src/client/CalendarIcon.tsx",
@@ -772,6 +865,56 @@
   "packages/client/ui-settings/src/css-modules.d.ts",
   "packages/client/ui-settings/src/developer-tools-settings.ts",
   "packages/client/ui-settings/src/index.ts"
+ ],
+ "client/ui-settings-account": [
+  "packages/client/ui-settings-account/src/client/AccountAvatar.tsx",
+  "packages/client/ui-settings-account/src/client/AccountMenu.tsx",
+  "packages/client/ui-settings-account/src/client/AccountNotice.tsx",
+  "packages/client/ui-settings-account/src/client/AccountOnboarding.tsx",
+  "packages/client/ui-settings-account/src/client/AccountPlatformHost.tsx",
+  "packages/client/ui-settings-account/src/client/AccountQuotaNotice.tsx",
+  "packages/client/ui-settings-account/src/client/AccountSection.tsx",
+  "packages/client/ui-settings-account/src/client/DesktopOnboarding.tsx",
+  "packages/client/ui-settings-account/src/client/DesktopOnboardingEntry.tsx",
+  "packages/client/ui-settings-account/src/client/LogoutIcon.tsx",
+  "packages/client/ui-settings-account/src/client/OnboardingConfirmation.tsx",
+  "packages/client/ui-settings-account/src/client/OnboardingCreditStep.tsx",
+  "packages/client/ui-settings-account/src/client/OnboardingIllustration.tsx",
+  "packages/client/ui-settings-account/src/client/OnboardingProcessStep.tsx",
+  "packages/client/ui-settings-account/src/client/OnboardingPurposeStep.tsx",
+  "packages/client/ui-settings-account/src/client/OnboardingSurface.tsx",
+  "packages/client/ui-settings-account/src/client/OnboardingWelcomeStep.tsx",
+  "packages/client/ui-settings-account/src/client/PlatformOverlay.tsx",
+  "packages/client/ui-settings-account/src/client/SignInDialog.tsx",
+  "packages/client/ui-settings-account/src/client/SignOutDialog.tsx",
+  "packages/client/ui-settings-account/src/client/account-refresh.ts",
+  "packages/client/ui-settings-account/src/client/assets.d.ts",
+  "packages/client/ui-settings-account/src/client/authorize-url.ts",
+  "packages/client/ui-settings-account/src/client/bonus-notices.ts",
+  "packages/client/ui-settings-account/src/client/client-metadata.ts",
+  "packages/client/ui-settings-account/src/client/contact-url.ts",
+  "packages/client/ui-settings-account/src/client/formatBalance.ts",
+  "packages/client/ui-settings-account/src/client/index.ts",
+  "packages/client/ui-settings-account/src/client/locales.ts",
+  "packages/client/ui-settings-account/src/client/locales/onboarding.ts",
+  "packages/client/ui-settings-account/src/client/onboarding-balance.ts",
+  "packages/client/ui-settings-account/src/client/onboarding-contract.ts",
+  "packages/client/ui-settings-account/src/client/onboarding-credentials.ts",
+  "packages/client/ui-settings-account/src/client/onboarding-state.ts",
+  "packages/client/ui-settings-account/src/client/overlay-inert.ts",
+  "packages/client/ui-settings-account/src/client/platform-pages.ts",
+  "packages/client/ui-settings-account/src/contact-config.ts",
+  "packages/client/ui-settings-account/src/css-modules.d.ts",
+  "packages/client/ui-settings-account/src/index.ts",
+  "packages/client/ui-settings-account/src/onboarding-settings.ts"
+ ],
+ "client/ui-settings-agent-loop": [
+  "packages/client/ui-settings-agent-loop/src/client/AgentLoopCard.tsx",
+  "packages/client/ui-settings-agent-loop/src/client/agent-loop-card-controller.ts",
+  "packages/client/ui-settings-agent-loop/src/client/index.ts",
+  "packages/client/ui-settings-agent-loop/src/client/locales.ts",
+  "packages/client/ui-settings-agent-loop/src/css-modules.d.ts",
+  "packages/client/ui-settings-agent-loop/src/index.ts"
  ],
  "client/ui-settings-general": [
   "packages/client/ui-settings-general/src/client/CurrentVersionRow.tsx",
@@ -831,6 +974,54 @@
   "packages/client/ui-settings-plugins/src/css-modules.d.ts",
   "packages/client/ui-settings-plugins/src/index.ts"
  ],
+ "client/ui-settings-session-log": [
+  "packages/client/ui-settings-session-log/src/client/UploadRow.tsx",
+  "packages/client/ui-settings-session-log/src/client/index.ts",
+  "packages/client/ui-settings-session-log/src/client/locales.ts",
+  "packages/client/ui-settings-session-log/src/client/upload-preference.ts",
+  "packages/client/ui-settings-session-log/src/css-modules.d.ts",
+  "packages/client/ui-settings-session-log/src/index.ts"
+ ],
+ "client/ui-settings-shell": [
+  "packages/client/ui-settings-shell/src/client/ShellCard.tsx",
+  "packages/client/ui-settings-shell/src/client/index.ts",
+  "packages/client/ui-settings-shell/src/client/locales.ts",
+  "packages/client/ui-settings-shell/src/client/shell-card-controller.ts",
+  "packages/client/ui-settings-shell/src/css-modules.d.ts",
+  "packages/client/ui-settings-shell/src/index.ts"
+ ],
+ "client/ui-settings-subagent": [
+  "packages/client/ui-settings-subagent/src/client/SubagentCard.tsx",
+  "packages/client/ui-settings-subagent/src/client/SubagentLimitsFields.tsx",
+  "packages/client/ui-settings-subagent/src/client/SubagentModelSelectionFields.tsx",
+  "packages/client/ui-settings-subagent/src/client/index.ts",
+  "packages/client/ui-settings-subagent/src/client/locales.ts",
+  "packages/client/ui-settings-subagent/src/client/subagent-card-controller.ts",
+  "packages/client/ui-settings-subagent/src/client/subagent-limits-card-controller.ts",
+  "packages/client/ui-settings-subagent/src/client/subagent-model-selection-card-controller.ts",
+  "packages/client/ui-settings-subagent/src/css-modules.d.ts",
+  "packages/client/ui-settings-subagent/src/index.ts"
+ ],
+ "client/ui-settings-web-search": [
+  "packages/client/ui-settings-web-search/src/client/WebSearchCard.tsx",
+  "packages/client/ui-settings-web-search/src/client/index.ts",
+  "packages/client/ui-settings-web-search/src/client/locales.ts",
+  "packages/client/ui-settings-web-search/src/client/web-search-card-controller.ts",
+  "packages/client/ui-settings-web-search/src/css-modules.d.ts",
+  "packages/client/ui-settings-web-search/src/index.ts"
+ ],
+ "client/ui-shortcuts": [
+  "packages/client/ui-shortcuts/src/client/Editor.tsx",
+  "packages/client/ui-shortcuts/src/client/Icons.tsx",
+  "packages/client/ui-shortcuts/src/client/Reference.tsx",
+  "packages/client/ui-shortcuts/src/client/feedback.ts",
+  "packages/client/ui-shortcuts/src/client/fixed.ts",
+  "packages/client/ui-shortcuts/src/client/index.ts",
+  "packages/client/ui-shortcuts/src/client/locales.ts",
+  "packages/client/ui-shortcuts/src/client/store.ts",
+  "packages/client/ui-shortcuts/src/css-modules.d.ts",
+  "packages/client/ui-shortcuts/src/index.ts"
+ ],
  "client/ui-sidebar": [
   "packages/client/ui-sidebar/src/client/HeaderLeadingControls.tsx",
   "packages/client/ui-sidebar/src/client/SidebarRoot.tsx",
@@ -839,6 +1030,114 @@
   "packages/client/ui-sidebar/src/client/locales.ts",
   "packages/client/ui-sidebar/src/css-modules.d.ts",
   "packages/client/ui-sidebar/src/index.ts"
+ ],
+ "client/ui-sidebar-browser": [
+  "packages/client/ui-sidebar-browser/src/client/browser/BrowserController.ts",
+  "packages/client/ui-sidebar-browser/src/client/browser/BrowserFrame.ts",
+  "packages/client/ui-sidebar-browser/src/client/browser/BrowserNavigation.ts",
+  "packages/client/ui-sidebar-browser/src/client/browser/BrowserPage.ts",
+  "packages/client/ui-sidebar-browser/src/client/browser/BrowserPersistence.ts",
+  "packages/client/ui-sidebar-browser/src/client/browser/IframeImpl.ts",
+  "packages/client/ui-sidebar-browser/src/client/browser/store.ts",
+  "packages/client/ui-sidebar-browser/src/client/browser/url.ts",
+  "packages/client/ui-sidebar-browser/src/client/definition.tsx",
+  "packages/client/ui-sidebar-browser/src/client/electron/ElectronWebViewImpl.ts",
+  "packages/client/ui-sidebar-browser/src/client/electron/ElectronWebviewPresentation.ts",
+  "packages/client/ui-sidebar-browser/src/client/electron/pages.ts",
+  "packages/client/ui-sidebar-browser/src/client/electron/workspace.ts",
+  "packages/client/ui-sidebar-browser/src/client/index.ts",
+  "packages/client/ui-sidebar-browser/src/client/locales.ts",
+  "packages/client/ui-sidebar-browser/src/client/pages.ts",
+  "packages/client/ui-sidebar-browser/src/client/view/BrowserBody.tsx",
+  "packages/client/ui-sidebar-browser/src/client/view/BrowserPresentation.ts",
+  "packages/client/ui-sidebar-browser/src/client/view/BrowserTitle.tsx",
+  "packages/client/ui-sidebar-browser/src/client/view/IframePresentation.ts",
+  "packages/client/ui-sidebar-browser/src/css-modules.d.ts",
+  "packages/client/ui-sidebar-browser/src/index.ts",
+  "packages/client/ui-sidebar-browser/src/types.ts"
+ ],
+ "client/ui-sidebar-documentpreview": [
+  "packages/client/ui-sidebar-documentpreview/src/client/LoadingIndicator.tsx",
+  "packages/client/ui-sidebar-documentpreview/src/client/TextPreview.tsx",
+  "packages/client/ui-sidebar-documentpreview/src/client/TextTitle.tsx",
+  "packages/client/ui-sidebar-documentpreview/src/client/code/CodeBody.tsx",
+  "packages/client/ui-sidebar-documentpreview/src/client/code/index.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/code/locales.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/definition.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/document/contract.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/document/registry.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/document/resource-group.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/document/suffix.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/document/tab-lifetime.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/document/unviewable.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/excel/LazyExcelBody.tsx",
+  "packages/client/ui-sidebar-documentpreview/src/client/excel/asset-imports.d.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/excel/convert.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/excel/delimited.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/excel/error.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/excel/excel.tsx",
+  "packages/client/ui-sidebar-documentpreview/src/client/excel/format.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/excel/index.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/excel/locales.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/excel/model.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/excel/parse.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/excel/worker.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/excel/xls.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/excel/xlsx-archive.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/excel/xlsx.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/face.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/failure-line.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/html/HtmlBody.tsx",
+  "packages/client/ui-sidebar-documentpreview/src/client/html/basic-document.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/html/bootstrap.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/html/bytes.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/html/index.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/html/locales.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/html/pack.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/html/read-relative.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/image/ImageBody.tsx",
+  "packages/client/ui-sidebar-documentpreview/src/client/image/index.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/image/locales.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/index.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/locales.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/markdown/MarkdownBody.tsx",
+  "packages/client/ui-sidebar-documentpreview/src/client/markdown/frontmatter-fields.tsx",
+  "packages/client/ui-sidebar-documentpreview/src/client/markdown/frontmatter.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/markdown/index.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/markdown/locales.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/markdown/path-images.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/office/FontNotice.tsx",
+  "packages/client/ui-sidebar-documentpreview/src/client/office/OfficeBody.tsx",
+  "packages/client/ui-sidebar-documentpreview/src/client/office/OfficeFontAction.tsx",
+  "packages/client/ui-sidebar-documentpreview/src/client/office/cache.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/office/face.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/office/index.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/office/locales.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/office/store.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/pdf/LazyPdfBody.tsx",
+  "packages/client/ui-sidebar-documentpreview/src/client/pdf/asset-imports.d.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/pdf/assets.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/pdf/document.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/pdf/errors.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/pdf/index.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/pdf/locales.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/pdf/pdf.tsx",
+  "packages/client/ui-sidebar-documentpreview/src/client/pdf/runtime.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/pdf/store.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/pdf/text.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/rpc.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/store.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/text/TextBody.tsx",
+  "packages/client/ui-sidebar-documentpreview/src/client/text/index.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/text/lines.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/zoom/ZoomControls.tsx",
+  "packages/client/ui-sidebar-documentpreview/src/client/zoom/ZoomViewport.tsx",
+  "packages/client/ui-sidebar-documentpreview/src/client/zoom/locales.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/zoom/store.ts",
+  "packages/client/ui-sidebar-documentpreview/src/client/zoom/types.ts",
+  "packages/client/ui-sidebar-documentpreview/src/config.ts",
+  "packages/client/ui-sidebar-documentpreview/src/css-modules.d.ts",
+  "packages/client/ui-sidebar-documentpreview/src/index.ts"
  ],
  "client/ui-sidebar-files": [
   "packages/client/ui-sidebar-files/src/client/FilesBody.tsx",
@@ -880,7 +1179,22 @@
   "packages/client/ui-sidebar-right/src/css-modules.d.ts",
   "packages/client/ui-sidebar-right/src/index.ts"
  ],
- "client/ui-sidebar-textpreview": [],
+ "client/ui-sidebar-terminal": [
+  "packages/client/ui-sidebar-terminal/src/client/LazyTerminalBody.tsx",
+  "packages/client/ui-sidebar-terminal/src/client/TerminalCleanup.tsx",
+  "packages/client/ui-sidebar-terminal/src/client/TerminalGuide.tsx",
+  "packages/client/ui-sidebar-terminal/src/client/TerminalIcon.tsx",
+  "packages/client/ui-sidebar-terminal/src/client/TerminalRecovery.tsx",
+  "packages/client/ui-sidebar-terminal/src/client/TerminalTitle.tsx",
+  "packages/client/ui-sidebar-terminal/src/client/face.ts",
+  "packages/client/ui-sidebar-terminal/src/client/index.ts",
+  "packages/client/ui-sidebar-terminal/src/client/locales.ts",
+  "packages/client/ui-sidebar-terminal/src/client/terminal-cursor.ts",
+  "packages/client/ui-sidebar-terminal/src/client/terminal-theme.ts",
+  "packages/client/ui-sidebar-terminal/src/client/terminal.tsx",
+  "packages/client/ui-sidebar-terminal/src/css-modules.d.ts",
+  "packages/client/ui-sidebar-terminal/src/index.ts"
+ ],
  "client/ui-skill": [
   "packages/client/ui-skill/src/client/SkillRow.tsx",
   "packages/client/ui-skill/src/client/index.ts",
@@ -921,7 +1235,7 @@
   "packages/client/ui-tool/src/client/locale.ts",
   "packages/client/ui-tool/src/client/tool/ToolCallTree.tsx",
   "packages/client/ui-tool/src/client/tool/components/AskQuestionCard.tsx",
-  "packages/client/ui-tool/src/client/tool/components/PreparingToolRow.tsx",
+  "packages/client/ui-tool/src/client/tool/components/QuestionToolRow.tsx",
   "packages/client/ui-tool/src/client/tool/components/ToolDetails.tsx",
   "packages/client/ui-tool/src/client/tool/components/ToolRow.tsx",
   "packages/client/ui-tool/src/client/tool/models/ask-question-card-model.ts",
@@ -941,7 +1255,6 @@
   "packages/client/ui-tool/src/client/tool/models/todo-history.ts",
   "packages/client/ui-tool/src/client/tool/models/tool-call-model.ts",
   "packages/client/ui-tool/src/client/tool/models/web-card-model.ts",
-  "packages/client/ui-tool/src/client/tool/tool-call-arguments-partial.ts",
   "packages/client/ui-tool/src/client/tool/toolviews/GenericToolCard.tsx",
   "packages/client/ui-tool/src/client/tool/toolviews/ask-question-row.tsx",
   "packages/client/ui-tool/src/client/tool/toolviews/bash-sample.tsx",
@@ -993,10 +1306,12 @@
  "client/ui-user-questions": [
   "packages/client/ui-user-questions/src/client/PlanReviewPanel.tsx",
   "packages/client/ui-user-questions/src/client/QuestionComposer.tsx",
+  "packages/client/ui-user-questions/src/client/QuestionReplyView.tsx",
   "packages/client/ui-user-questions/src/client/contract/slots.ts",
   "packages/client/ui-user-questions/src/client/draft-store.ts",
   "packages/client/ui-user-questions/src/client/index.ts",
   "packages/client/ui-user-questions/src/client/locales.ts",
+  "packages/client/ui-user-questions/src/client/question-reply.ts",
   "packages/client/ui-user-questions/src/css-modules.d.ts",
   "packages/client/ui-user-questions/src/index.ts"
  ],
@@ -1044,8 +1359,6 @@
   "packages/client/web/src/window-drag/recall.ts",
   "packages/client/web/src/window-drag/regions.ts"
  ],
- "code-runtime/code-runtime": [],
- "code-runtime/code-runtime-worker-thread": [],
  "compaction/command-compact": [
   "packages/compaction/command-compact/src/index.ts"
  ],
@@ -1053,7 +1366,6 @@
   "packages/compaction/compaction/src/brand.ts",
   "packages/compaction/compaction/src/checkpoint.ts",
   "packages/compaction/compaction/src/index.ts",
-  "packages/compaction/compaction/src/invariant.ts",
   "packages/compaction/compaction/src/tool-pairing.ts",
   "packages/compaction/compaction/src/types.ts"
  ],
@@ -1064,10 +1376,20 @@
   "packages/compaction/compaction-basic/src/summarizer.ts",
   "packages/compaction/compaction-basic/src/types.ts"
  ],
+ "compaction/compaction-image-offload": [
+  "packages/compaction/compaction-image-offload/src/image-offload.ts",
+  "packages/compaction/compaction-image-offload/src/index.ts",
+  "packages/compaction/compaction-image-offload/src/project-message.ts",
+  "packages/compaction/compaction-image-offload/src/projection.ts"
+ ],
  "compaction/compaction-tool-result-pruner": [
   "packages/compaction/compaction-tool-result-pruner/src/config.ts",
   "packages/compaction/compaction-tool-result-pruner/src/index.ts",
   "packages/compaction/compaction-tool-result-pruner/src/types.ts"
+ ],
+ "computer-use/computer-use": [
+  "packages/computer-use/computer-use/src/brand.ts",
+  "packages/computer-use/computer-use/src/index.ts"
  ],
  "context/agent-instructions": [
   "packages/context/agent-instructions/src/config.ts",
@@ -1097,7 +1419,6 @@
  ],
  "context/time-context": [
   "packages/context/time-context/src/index.ts",
-  "packages/context/time-context/src/invariant.ts",
   "packages/context/time-context/src/request-zone.ts",
   "packages/context/time-context/src/timestamp.ts"
  ],
@@ -1109,7 +1430,6 @@
   "packages/core/agent/src/consumed-work.ts",
   "packages/core/agent/src/dispatch.ts",
   "packages/core/agent/src/index.ts",
-  "packages/core/agent/src/invariant.ts",
   "packages/core/agent/src/model-selection.ts",
   "packages/core/agent/src/projection.ts",
   "packages/core/agent/src/runtime-types.ts",
@@ -1124,7 +1444,6 @@
   "packages/core/agent-loop/src/constants.ts",
   "packages/core/agent-loop/src/inbox.ts",
   "packages/core/agent-loop/src/index.ts",
-  "packages/core/agent-loop/src/invariant.ts",
   "packages/core/agent-loop/src/runtime-context.ts",
   "packages/core/agent-loop/src/tool-calls.ts"
  ],
@@ -1133,14 +1452,11 @@
  ],
  "core/scope": [
   "packages/core/scope/src/index.ts",
-  "packages/core/scope/src/invariant.ts",
-  "packages/core/scope/src/scoped-events.generated.ts",
   "packages/core/scope/src/store.ts"
  ],
  "core/session": [
   "packages/core/session/src/fork.ts",
   "packages/core/session/src/index.ts",
-  "packages/core/session/src/invariant.ts",
   "packages/core/session/src/known-event-types.ts",
   "packages/core/session/src/preparation.ts",
   "packages/core/session/src/repair.ts",
@@ -1151,12 +1467,10 @@
   "packages/core/session/src/types.ts"
  ],
  "core/system-prompt": [
-  "packages/core/system-prompt/src/index.ts",
-  "packages/core/system-prompt/src/invariant.ts"
+  "packages/core/system-prompt/src/index.ts"
  ],
  "core/tools": [
   "packages/core/tools/src/index.ts",
-  "packages/core/tools/src/invariant.ts",
   "packages/core/tools/src/json-schema.ts",
   "packages/core/tools/src/presentation.ts",
   "packages/core/tools/src/ptc.ts",
@@ -1168,26 +1482,54 @@
  ],
  "credentials/authorization": [
   "packages/credentials/authorization/src/index.ts",
-  "packages/credentials/authorization/src/invariant.ts",
   "packages/credentials/authorization/src/types.ts"
  ],
  "credentials/credentials": [
   "packages/credentials/credentials/src/index.ts",
-  "packages/credentials/credentials/src/invariant.ts",
   "packages/credentials/credentials/src/types.ts"
  ],
  "credentials/credentials-local": [
   "packages/credentials/credentials-local/src/index.ts"
  ],
- "e2b/e2b": [],
- "e2b/fs-e2b": [],
- "e2b/subprocess-e2b": [],
+ "credentials/deepseek-account": [
+  "packages/credentials/deepseek-account/src/account-tasks.ts",
+  "packages/credentials/deepseek-account/src/index.ts",
+  "packages/credentials/deepseek-account/src/types.ts"
+ ],
+ "credentials/deepseek-account-platform": [
+  "packages/credentials/deepseek-account-platform/src/details.ts",
+  "packages/credentials/deepseek-account-platform/src/index.ts",
+  "packages/credentials/deepseek-account-platform/src/logout.ts",
+  "packages/credentials/deepseek-account-platform/src/protocol.ts",
+  "packages/credentials/deepseek-account-platform/src/types.ts"
+ ],
+ "deliverables/tool-present": [
+  "packages/deliverables/tool-present/src/index.ts",
+  "packages/deliverables/tool-present/src/types.ts"
+ ],
+ "deliverables/workspace-changes": [
+  "packages/deliverables/workspace-changes/src/capture.ts",
+  "packages/deliverables/workspace-changes/src/compare.ts",
+  "packages/deliverables/workspace-changes/src/git.ts",
+  "packages/deliverables/workspace-changes/src/index.ts",
+  "packages/deliverables/workspace-changes/src/numstat.ts",
+  "packages/deliverables/workspace-changes/src/paths.ts",
+  "packages/deliverables/workspace-changes/src/recorder.ts",
+  "packages/deliverables/workspace-changes/src/types.ts"
+ ],
+ "document/office-to-pdf": [
+  "packages/document/office-to-pdf/src/errors.ts",
+  "packages/document/office-to-pdf/src/identity.ts",
+  "packages/document/office-to-pdf/src/index.ts",
+  "packages/document/office-to-pdf/src/output.ts",
+  "packages/document/office-to-pdf/src/queue.ts",
+  "packages/document/office-to-pdf/src/types.ts"
+ ],
  "experimental/agent-team": [
   "packages/experimental/agent-team/src/activity.ts",
   "packages/experimental/agent-team/src/client.ts",
   "packages/experimental/agent-team/src/error.ts",
   "packages/experimental/agent-team/src/index.ts",
-  "packages/experimental/agent-team/src/invariant.ts",
   "packages/experimental/agent-team/src/journal.ts",
   "packages/experimental/agent-team/src/lifecycle.ts",
   "packages/experimental/agent-team/src/mailbox.ts",
@@ -1204,7 +1546,47 @@
  "experimental/agent-team-profile": [
   "packages/experimental/agent-team-profile/src/index.ts"
  ],
- "experimental/agent-team-web-profile": [],
+ "experimental/api-speech-to-text": [
+  "packages/experimental/api-speech-to-text/src/index.ts",
+  "packages/experimental/api-speech-to-text/src/types.ts"
+ ],
+ "experimental/auto-review": [
+  "packages/experimental/auto-review/src/index.ts"
+ ],
+ "experimental/browser-use-chrome-devtools-mcp": [
+  "packages/experimental/browser-use-chrome-devtools-mcp/src/index.ts"
+ ],
+ "experimental/browser-use-playwright-mcp": [
+  "packages/experimental/browser-use-playwright-mcp/src/index.ts"
+ ],
+ "experimental/browser-use-runtime": [
+  "packages/experimental/browser-use-runtime/src/index.ts",
+  "packages/experimental/browser-use-runtime/src/mcp.ts"
+ ],
+ "experimental/browser-use-stagehand-native": [
+  "packages/experimental/browser-use-stagehand-native/src/index.ts",
+  "packages/experimental/browser-use-stagehand-native/src/launch.ts",
+  "packages/experimental/browser-use-stagehand-native/src/native.ts",
+  "packages/experimental/browser-use-stagehand-native/src/worker-client.ts",
+  "packages/experimental/browser-use-stagehand-native/src/worker-rpc.ts",
+  "packages/experimental/browser-use-stagehand-native/src/worker.ts"
+ ],
+ "experimental/claude-code-mods": [
+  "packages/experimental/claude-code-mods/src/api.ts",
+  "packages/experimental/claude-code-mods/src/chain.ts",
+  "packages/experimental/claude-code-mods/src/define-mod.ts",
+  "packages/experimental/claude-code-mods/src/elements.ts",
+  "packages/experimental/claude-code-mods/src/engine.ts",
+  "packages/experimental/claude-code-mods/src/host-ops.ts",
+  "packages/experimental/claude-code-mods/src/index.ts",
+  "packages/experimental/claude-code-mods/src/matcher.ts",
+  "packages/experimental/claude-code-mods/src/module.ts",
+  "packages/experimental/claude-code-mods/src/surfaces.ts",
+  "packages/experimental/claude-code-mods/src/testing.ts",
+  "packages/experimental/claude-code-mods/src/tool-names.ts",
+  "packages/experimental/claude-code-mods/src/types.ts",
+  "packages/experimental/claude-code-mods/src/values.ts"
+ ],
  "experimental/client-ui-agent-team": [
   "packages/experimental/client-ui-agent-team/src/client/TeamAction.tsx",
   "packages/experimental/client-ui-agent-team/src/client/index.ts",
@@ -1213,11 +1595,43 @@
   "packages/experimental/client-ui-agent-team/src/css-modules.d.ts",
   "packages/experimental/client-ui-agent-team/src/index.ts"
  ],
- "experimental/code-runtime-python": [],
+ "experimental/client-ui-claude-code-mods": [
+  "packages/experimental/client-ui-claude-code-mods/src/client/Band.tsx",
+  "packages/experimental/client-ui-claude-code-mods/src/client/index.ts",
+  "packages/experimental/client-ui-claude-code-mods/src/client/locales.ts",
+  "packages/experimental/client-ui-claude-code-mods/src/client/mount.ts",
+  "packages/experimental/client-ui-claude-code-mods/src/css-modules.d.ts",
+  "packages/experimental/client-ui-claude-code-mods/src/index.ts"
+ ],
+ "experimental/client-ui-voice-input": [
+  "packages/experimental/client-ui-voice-input/src/client/PreparationCard.tsx",
+  "packages/experimental/client-ui-voice-input/src/client/VoiceInput.tsx",
+  "packages/experimental/client-ui-voice-input/src/client/VoiceSetupDialog.tsx",
+  "packages/experimental/client-ui-voice-input/src/client/VoiceSetupPrompt.tsx",
+  "packages/experimental/client-ui-voice-input/src/client/Waveform.tsx",
+  "packages/experimental/client-ui-voice-input/src/client/audio.ts",
+  "packages/experimental/client-ui-voice-input/src/client/index.ts",
+  "packages/experimental/client-ui-voice-input/src/client/locales.ts",
+  "packages/experimental/client-ui-voice-input/src/client/mount.ts",
+  "packages/experimental/client-ui-voice-input/src/client/readiness.ts",
+  "packages/experimental/client-ui-voice-input/src/css-modules.d.ts",
+  "packages/experimental/client-ui-voice-input/src/index.ts"
+ ],
+ "experimental/computer-use-cua-driver-mcp": [
+  "packages/experimental/computer-use-cua-driver-mcp/src/index.ts"
+ ],
+ "experimental/computer-use-cua-driver-native": [
+  "packages/experimental/computer-use-cua-driver-native/src/index.ts"
+ ],
  "experimental/inspector": [
+  "packages/experimental/inspector/src/client/bottom/keyboard.ts",
+  "packages/experimental/inspector/src/client/bottom/locales.ts",
+  "packages/experimental/inspector/src/client/bottom/page.tsx",
+  "packages/experimental/inspector/src/client/bottom/resize.tsx",
   "packages/experimental/inspector/src/client/bridge/controller.ts",
   "packages/experimental/inspector/src/client/bridge/dispatcher.ts",
   "packages/experimental/inspector/src/client/bridge/lifecycle.ts",
+  "packages/experimental/inspector/src/client/bridge/locales.ts",
   "packages/experimental/inspector/src/client/bridge/publisher.ts",
   "packages/experimental/inspector/src/client/bridge/rpc.ts",
   "packages/experimental/inspector/src/client/bridge/transport.ts",
@@ -1237,6 +1651,7 @@
   "packages/experimental/inspector/src/client/inspection/network.ts",
   "packages/experimental/inspector/src/client/inspection/realm.ts",
   "packages/experimental/inspector/src/client/plugin.ts",
+  "packages/experimental/inspector/src/css-modules.d.ts",
   "packages/experimental/inspector/src/host/bridge/controller.ts",
   "packages/experimental/inspector/src/host/bridge/dispatcher.ts",
   "packages/experimental/inspector/src/host/bridge/lifecycle.ts",
@@ -1308,6 +1723,7 @@
   "packages/experimental/inspector/src/shared/cordis/publisher.ts",
   "packages/experimental/inspector/src/shared/cordis/reader.ts",
   "packages/experimental/inspector/src/shared/cordis/snapshot.ts",
+  "packages/experimental/inspector/src/shared/dispose.ts",
   "packages/experimental/inspector/src/shared/identity.ts",
   "packages/experimental/inspector/src/shared/index.ts",
   "packages/experimental/inspector/src/shared/json.ts",
@@ -1315,6 +1731,7 @@
   "packages/experimental/inspector/src/shared/network/observation.ts",
   "packages/experimental/inspector/src/shared/service.ts",
   "packages/experimental/inspector/src/shared/validation.ts",
+  "packages/experimental/inspector/src/shared/web.ts",
   "packages/experimental/inspector/src/worker/bridge/endpoint.ts",
   "packages/experimental/inspector/src/worker/bridge/hub.ts",
   "packages/experimental/inspector/src/worker/bridge/runtime-rpc.ts",
@@ -1364,8 +1781,66 @@
   "packages/experimental/inspector/src/worker/realms/host/values.ts",
   "packages/experimental/inspector/src/worker/server.ts"
  ],
+ "experimental/inspector-profile": [
+  "packages/experimental/inspector-profile/src/index.ts"
+ ],
+ "experimental/ptc-runtime-python": [
+  "packages/experimental/ptc-runtime-python/src/index.ts",
+  "packages/experimental/ptc-runtime-python/src/protocol.ts"
+ ],
+ "experimental/session-inspector": [
+  "packages/experimental/session-inspector/src/client/index.ts",
+  "packages/experimental/session-inspector/src/client/locales.ts",
+  "packages/experimental/session-inspector/src/client/views/InspectorDetails.tsx",
+  "packages/experimental/session-inspector/src/client/views/InspectorObjectTree.tsx",
+  "packages/experimental/session-inspector/src/client/views/InspectorTable.tsx",
+  "packages/experimental/session-inspector/src/client/views/TypeFilter.tsx",
+  "packages/experimental/session-inspector/src/client/views/View.tsx",
+  "packages/experimental/session-inspector/src/client/views/chat-node/dom.ts",
+  "packages/experimental/session-inspector/src/client/views/chat-node/highlight.ts",
+  "packages/experimental/session-inspector/src/client/views/chat-node/model.ts",
+  "packages/experimental/session-inspector/src/client/views/chat-node/objects.ts",
+  "packages/experimental/session-inspector/src/client/views/chat-node/pick-match.ts",
+  "packages/experimental/session-inspector/src/client/views/chat-node/picker.ts",
+  "packages/experimental/session-inspector/src/client/views/chat-node/reveal-target.ts",
+  "packages/experimental/session-inspector/src/client/views/chat-node/reveal.ts",
+  "packages/experimental/session-inspector/src/client/views/format.ts",
+  "packages/experimental/session-inspector/src/client/views/index.ts",
+  "packages/experimental/session-inspector/src/client/views/object-value.ts",
+  "packages/experimental/session-inspector/src/client/views/objects.ts",
+  "packages/experimental/session-inspector/src/client/views/raw-json.ts",
+  "packages/experimental/session-inspector/src/client/views/session-log/chat-target.ts",
+  "packages/experimental/session-inspector/src/client/views/session-log/groups.ts",
+  "packages/experimental/session-inspector/src/client/views/session-log/model.ts",
+  "packages/experimental/session-inspector/src/client/views/session-log/stream.ts",
+  "packages/experimental/session-inspector/src/client/views/table-layout.ts",
+  "packages/experimental/session-inspector/src/client/views/table-model.ts",
+  "packages/experimental/session-inspector/src/client/views/type-filter.ts",
+  "packages/experimental/session-inspector/src/css-modules.d.ts",
+  "packages/experimental/session-inspector/src/index.ts"
+ ],
+ "experimental/speech-to-text": [
+  "packages/experimental/speech-to-text/src/index.ts",
+  "packages/experimental/speech-to-text/src/types.ts",
+  "packages/experimental/speech-to-text/src/wave.ts"
+ ],
+ "experimental/speech-to-text-sensevoice": [
+  "packages/experimental/speech-to-text-sensevoice/src/config.ts",
+  "packages/experimental/speech-to-text-sensevoice/src/download-error.ts",
+  "packages/experimental/speech-to-text-sensevoice/src/index.ts",
+  "packages/experimental/speech-to-text-sensevoice/src/inference.ts",
+  "packages/experimental/speech-to-text-sensevoice/src/input.ts",
+  "packages/experimental/speech-to-text-sensevoice/src/model-sources.ts",
+  "packages/experimental/speech-to-text-sensevoice/src/process-server.ts",
+  "packages/experimental/speech-to-text-sensevoice/src/recognizer.ts",
+  "packages/experimental/speech-to-text-sensevoice/src/runtime.ts",
+  "packages/experimental/speech-to-text-sensevoice/src/worker.ts"
+ ],
  "experimental/tool-agent-team": [
   "packages/experimental/tool-agent-team/src/index.ts"
+ ],
+ "experimental/voice-input-bundle": [
+  "packages/experimental/voice-input-bundle/src/index.ts"
  ],
  "experimental/webworker-packer": [
   "packages/experimental/webworker-packer/src/bin.ts",
@@ -1381,6 +1856,7 @@
   "packages/experimental/webworker-runtime/src/client/client.ts",
   "packages/experimental/webworker-runtime/src/client/index.ts",
   "packages/experimental/webworker-runtime/src/client/source-chooser.ts",
+  "packages/experimental/webworker-runtime/src/client/text-viewer.ts",
   "packages/experimental/webworker-runtime/src/compile/transform.ts",
   "packages/experimental/webworker-runtime/src/fixture-manifest.ts",
   "packages/experimental/webworker-runtime/src/image-layout.ts",
@@ -1389,6 +1865,7 @@
   "packages/experimental/webworker-runtime/src/module-system/module-loader.ts",
   "packages/experimental/webworker-runtime/src/module-system/posix-path.ts",
   "packages/experimental/webworker-runtime/src/node/builtin_modules/implemented/abort-error.ts",
+  "packages/experimental/webworker-runtime/src/node/builtin_modules/implemented/assert/strict.ts",
   "packages/experimental/webworker-runtime/src/node/builtin_modules/implemented/async_hooks.ts",
   "packages/experimental/webworker-runtime/src/node/builtin_modules/implemented/buffer.ts",
   "packages/experimental/webworker-runtime/src/node/builtin_modules/implemented/child_process.ts",
@@ -1417,6 +1894,7 @@
   "packages/experimental/webworker-runtime/src/node/builtin_modules/mock/worker_threads.ts",
   "packages/experimental/webworker-runtime/src/node/builtins.ts",
   "packages/experimental/webworker-runtime/src/node/external_packages/execa.ts",
+  "packages/experimental/webworker-runtime/src/node/external_packages/got.ts",
   "packages/experimental/webworker-runtime/src/node/external_packages/koffi.ts",
   "packages/experimental/webworker-runtime/src/node/external_packages/libreoffice-kit.ts",
   "packages/experimental/webworker-runtime/src/node/external_packages/node-addon-system-flock.ts",
@@ -1442,6 +1920,7 @@
   "packages/experimental/webworker-runtime/src/shell/process/landlock.ts",
   "packages/experimental/webworker-runtime/src/shell/process/protocol.ts",
   "packages/experimental/webworker-runtime/src/shell/process/virtual-executables.ts",
+  "packages/experimental/webworker-runtime/src/shell/process/xdg-open.ts",
   "packages/experimental/webworker-runtime/src/shell/programs/builtins.ts",
   "packages/experimental/webworker-runtime/src/shell/programs/files.ts",
   "packages/experimental/webworker-runtime/src/shell/programs/index.ts",
@@ -1518,7 +1997,6 @@
  ],
  "fs/fs": [
   "packages/fs/fs/src/index.ts",
-  "packages/fs/fs/src/invariant.ts",
   "packages/fs/fs/src/types.ts"
  ],
  "fs/fs-local": [
@@ -1567,13 +2045,11 @@
   "packages/goal/goal/src/domain.ts",
   "packages/goal/goal/src/fold.ts",
   "packages/goal/goal/src/index.ts",
-  "packages/goal/goal/src/invariant.ts",
   "packages/goal/goal/src/runtime.ts",
   "packages/goal/goal/src/types.ts"
  ],
  "goal/goal-round-driver": [
   "packages/goal/goal-round-driver/src/index.ts",
-  "packages/goal/goal-round-driver/src/invariant.ts",
   "packages/goal/goal-round-driver/src/prompt.ts"
  ],
  "goal/tool-goal": [
@@ -1592,7 +2068,6 @@
   "packages/hooks/hook-protocol/src/detached.ts",
   "packages/hooks/hook-protocol/src/events.ts",
   "packages/hooks/hook-protocol/src/index.ts",
-  "packages/hooks/hook-protocol/src/invariant.ts",
   "packages/hooks/hook-protocol/src/matcher.ts",
   "packages/hooks/hook-protocol/src/merge.ts",
   "packages/hooks/hook-protocol/src/runner.ts",
@@ -1642,6 +2117,9 @@
   "packages/host/plugin-inventory/src/index.ts",
   "packages/host/plugin-inventory/src/types.ts"
  ],
+ "host/product-telemetry-otel": [
+  "packages/host/product-telemetry-otel/src/index.ts"
+ ],
  "host/webserver": [
   "packages/host/webserver/src/index.ts",
   "packages/host/webserver/src/injections.ts"
@@ -1652,32 +2130,31 @@
  "interaction/commands": [
   "packages/interaction/commands/src/brand.ts",
   "packages/interaction/commands/src/index.ts",
-  "packages/interaction/commands/src/invariant.ts",
   "packages/interaction/commands/src/types.ts"
  ],
  "interaction/permission-presets": [
   "packages/interaction/permission-presets/src/client.ts",
   "packages/interaction/permission-presets/src/index.ts",
-  "packages/interaction/permission-presets/src/invariant.ts",
   "packages/interaction/permission-presets/src/types.ts"
  ],
  "interaction/tool-ask-user": [
-  "packages/interaction/tool-ask-user/src/index.ts"
+  "packages/interaction/tool-ask-user/src/index.ts",
+  "packages/interaction/tool-ask-user/src/timed.ts"
  ],
  "interaction/user-approval": [
   "packages/interaction/user-approval/src/index.ts",
-  "packages/interaction/user-approval/src/invariant.ts",
   "packages/interaction/user-approval/src/types.ts"
  ],
  "interaction/user-questions": [
   "packages/interaction/user-questions/src/index.ts",
+  "packages/interaction/user-questions/src/projection.ts",
+  "packages/interaction/user-questions/src/timed-wait.ts",
   "packages/interaction/user-questions/src/types.ts"
  ],
  "jobs/jobs": [
   "packages/jobs/jobs/src/archive-admission.ts",
   "packages/jobs/jobs/src/brand.ts",
   "packages/jobs/jobs/src/index.ts",
-  "packages/jobs/jobs/src/invariant.ts",
   "packages/jobs/jobs/src/types.ts",
   "packages/jobs/jobs/src/view.ts"
  ],
@@ -1706,7 +2183,6 @@
   "packages/llm/llm/src/content.ts",
   "packages/llm/llm/src/error.ts",
   "packages/llm/llm/src/index.ts",
-  "packages/llm/llm/src/invariant.ts",
   "packages/llm/llm/src/message.ts",
   "packages/llm/llm/src/retry-policy.ts",
   "packages/llm/llm/src/types.ts"
@@ -1737,6 +2213,14 @@
   "packages/llm/llm-deepseek/src/upload-index.ts",
   "packages/llm/llm-deepseek/src/wire-types.ts"
  ],
+ "llm/llm-deepseek-account": [
+  "packages/llm/llm-deepseek-account/src/config.ts",
+  "packages/llm/llm-deepseek-account/src/index.ts"
+ ],
+ "llm/llm-deepseek-api-key": [
+  "packages/llm/llm-deepseek-api-key/src/config.ts",
+  "packages/llm/llm-deepseek-api-key/src/index.ts"
+ ],
  "llm/llm-pi-ai": [
   "packages/llm/llm-pi-ai/src/adapter.ts",
   "packages/llm/llm-pi-ai/src/auth.ts",
@@ -1753,9 +2237,7 @@
  ],
  "llm/llm-retry": [
   "packages/llm/llm-retry/src/brand.ts",
-  "packages/llm/llm-retry/src/history.ts",
   "packages/llm/llm-retry/src/index.ts",
-  "packages/llm/llm-retry/src/invariant.ts",
   "packages/llm/llm-retry/src/types.ts"
  ],
  "llm/plugin-package-inventory-deepseek": [
@@ -1802,18 +2284,50 @@
   "packages/mcp/mcp-client/src/tools.ts",
   "packages/mcp/mcp-client/src/transport.ts"
  ],
+ "mcp/mcp-resources": [
+  "packages/mcp/mcp-resources/src/index.ts",
+  "packages/mcp/mcp-resources/src/render.ts",
+  "packages/mcp/mcp-resources/src/tools.ts"
+ ],
  "plan/plan-mode": [
   "packages/plan/plan-mode/src/client.ts",
   "packages/plan/plan-mode/src/index.ts",
-  "packages/plan/plan-mode/src/invariant.ts",
   "packages/plan/plan-mode/src/types.ts"
  ],
- "preset/agent-presets": [],
+ "preset/agent-preset": [
+  "packages/preset/agent-preset/src/index.ts"
+ ],
+ "preset/agent-preset-registry": [
+  "packages/preset/agent-preset-registry/src/composition-inventory.ts",
+  "packages/preset/agent-preset-registry/src/definition.ts",
+  "packages/preset/agent-preset-registry/src/display.ts",
+  "packages/preset/agent-preset-registry/src/index.ts",
+  "packages/preset/agent-preset-registry/src/mount.ts",
+  "packages/preset/agent-preset-registry/src/preset.ts",
+  "packages/preset/agent-preset-registry/src/session.ts",
+  "packages/preset/agent-preset-registry/src/types.ts"
+ ],
  "preset/persona": [
   "packages/preset/persona/src/index.ts"
  ],
- "runtime-diagnostics/invariants": [
-  "packages/runtime-diagnostics/invariants/src/index.ts"
+ "ptc-runtime/ptc-runtime": [
+  "packages/ptc-runtime/ptc-runtime/src/index.ts",
+  "packages/ptc-runtime/ptc-runtime/src/types.ts"
+ ],
+ "ptc-runtime/ptc-runtime-node": [
+  "packages/ptc-runtime/ptc-runtime-node/src/bindings.ts",
+  "packages/ptc-runtime/ptc-runtime-node/src/bootstrap.ts",
+  "packages/ptc-runtime/ptc-runtime-node/src/channel.ts",
+  "packages/ptc-runtime/ptc-runtime-node/src/environment.ts",
+  "packages/ptc-runtime/ptc-runtime-node/src/index.ts",
+  "packages/ptc-runtime/ptc-runtime-node/src/json-wire.ts",
+  "packages/ptc-runtime/ptc-runtime-node/src/launch.ts",
+  "packages/ptc-runtime/ptc-runtime-node/src/output-json.ts",
+  "packages/ptc-runtime/ptc-runtime-node/src/output-ledger.ts",
+  "packages/ptc-runtime/ptc-runtime-node/src/output-stream.ts",
+  "packages/ptc-runtime/ptc-runtime-node/src/process-entry.ts",
+  "packages/ptc-runtime/ptc-runtime-node/src/process.ts",
+  "packages/ptc-runtime/ptc-runtime-node/src/protocol.ts"
  ],
  "sandbox/sandbox": [
   "packages/sandbox/sandbox/src/diagnostics.ts",
@@ -1827,10 +2341,10 @@
  ],
  "sandbox/sandbox-policy": [
   "packages/sandbox/sandbox-policy/src/index.ts",
-  "packages/sandbox/sandbox-policy/src/invariant.ts",
   "packages/sandbox/sandbox-policy/src/session-mode.ts"
  ],
  "sandbox/sandbox-windows-acl": [
+  "packages/sandbox/sandbox-windows-acl/src/acl-skill.ts",
   "packages/sandbox/sandbox-windows-acl/src/acl.ts",
   "packages/sandbox/sandbox-windows-acl/src/ffi.ts",
   "packages/sandbox/sandbox-windows-acl/src/grant.ts",
@@ -1847,12 +2361,13 @@
   "packages/schedule/schedule/src/delivery-history.ts",
   "packages/schedule/schedule/src/domain.ts",
   "packages/schedule/schedule/src/index.ts",
-  "packages/schedule/schedule/src/invariant.ts",
   "packages/schedule/schedule/src/runtime.ts",
   "packages/schedule/schedule/src/storage.ts",
-  "packages/schedule/schedule/src/tools.ts",
   "packages/schedule/schedule/src/types.ts",
   "packages/schedule/schedule/src/update.ts"
+ ],
+ "schedule/tool-schedule": [
+  "packages/schedule/tool-schedule/src/index.ts"
  ],
  "sdk/client": [
   "packages/sdk/client/src/api.ts",
@@ -1920,9 +2435,27 @@
   "packages/session/session-format-v2-to-v3/src/references.ts",
   "packages/session/session-format-v2-to-v3/src/validation.ts"
  ],
+ "session/session-format-v3-to-v4": [
+  "packages/session/session-format-v3-to-v4/src/codec.ts",
+  "packages/session/session-format-v3-to-v4/src/content.ts",
+  "packages/session/session-format-v3-to-v4/src/developer.ts",
+  "packages/session/session-format-v3-to-v4/src/extension-identities.ts",
+  "packages/session/session-format-v3-to-v4/src/facts.ts",
+  "packages/session/session-format-v3-to-v4/src/fork-result.ts",
+  "packages/session/session-format-v3-to-v4/src/index.ts",
+  "packages/session/session-format-v3-to-v4/src/message-sources.ts",
+  "packages/session/session-format-v3-to-v4/src/migration.ts",
+  "packages/session/session-format-v3-to-v4/src/references.ts",
+  "packages/session/session-format-v3-to-v4/src/relationships.ts",
+  "packages/session/session-format-v3-to-v4/src/retired-syntax.ts",
+  "packages/session/session-format-v3-to-v4/src/sources.ts",
+  "packages/session/session-format-v3-to-v4/src/system-message.ts",
+  "packages/session/session-format-v3-to-v4/src/testing/validation.ts",
+  "packages/session/session-format-v3-to-v4/src/tool-role.ts",
+  "packages/session/session-format-v3-to-v4/src/validation.ts"
+ ],
  "session/session-log-deepseek": [
   "packages/session/session-log-deepseek/src/index.ts",
-  "packages/session/session-log-deepseek/src/invariant.ts",
   "packages/session/session-log-deepseek/src/types.ts"
  ],
  "session/session-persistence": [
@@ -1971,7 +2504,6 @@
  "session/session-title": [
   "packages/session/session-title/src/client.ts",
   "packages/session/session-title/src/index.ts",
-  "packages/session/session-title/src/invariant.ts",
   "packages/session/session-title/src/normalize.ts",
   "packages/session/session-title/src/types.ts"
  ],
@@ -2034,7 +2566,6 @@
   "packages/settings/settings/src/schema.ts",
   "packages/settings/settings/src/types.ts"
  ],
- "settings/settings-file": [],
  "shell/bash-local": [
   "packages/shell/bash-local/src/index.ts"
  ],
@@ -2083,8 +2614,14 @@
  "skill/skill-filesystem": [
   "packages/skill/skill-filesystem/src/index.ts"
  ],
+ "skill/skill-office": [
+  "packages/skill/skill-office/src/index.ts"
+ ],
  "skill/tool-skill": [
   "packages/skill/tool-skill/src/index.ts"
+ ],
+ "skill/tool-workspace-dependencies": [
+  "packages/skill/tool-workspace-dependencies/src/index.ts"
  ],
  "spill/spill": [
   "packages/spill/spill/src/index.ts",
@@ -2101,6 +2638,24 @@
   "packages/spill/spill-policy/src/retention.ts",
   "packages/spill/spill-policy/src/types.ts"
  ],
+ "ssh/fs-ssh": [
+  "packages/ssh/fs-ssh/src/index.ts"
+ ],
+ "ssh/sandbox-ssh": [
+  "packages/ssh/sandbox-ssh/src/index.ts"
+ ],
+ "ssh/ssh": [
+  "packages/ssh/ssh/src/helper-entry.ts",
+  "packages/ssh/ssh/src/helper-processes.ts",
+  "packages/ssh/ssh/src/helper.ts",
+  "packages/ssh/ssh/src/index.ts",
+  "packages/ssh/ssh/src/protocol.ts",
+  "packages/ssh/ssh/src/schemas.ts",
+  "packages/ssh/ssh/src/stream-security.ts"
+ ],
+ "ssh/subprocess-ssh": [
+  "packages/ssh/subprocess-ssh/src/index.ts"
+ ],
  "storage/storage": [
   "packages/storage/storage/src/backend.ts",
   "packages/storage/storage/src/error.ts",
@@ -2112,7 +2667,6 @@
   "packages/storage/storage-domain/src/error.ts",
   "packages/storage/storage-domain/src/events.ts",
   "packages/storage/storage-domain/src/index.ts",
-  "packages/storage/storage-domain/src/invariant.ts",
   "packages/storage/storage-domain/src/spec.ts"
  ],
  "storage/storage-json": [
@@ -2144,7 +2698,6 @@
   "packages/subagent/subagent/src/inbox.ts",
   "packages/subagent/subagent/src/index.ts",
   "packages/subagent/subagent/src/internal.ts",
-  "packages/subagent/subagent/src/invariant.ts",
   "packages/subagent/subagent/src/lifecycle.ts",
   "packages/subagent/subagent/src/list-children.ts",
   "packages/subagent/subagent/src/out-of-process.ts",
@@ -2183,7 +2736,6 @@
  ],
  "subagent/tool-subagent": [
   "packages/subagent/tool-subagent/src/index.ts",
-  "packages/subagent/tool-subagent/src/invariant.ts",
   "packages/subagent/tool-subagent/src/list-models.ts",
   "packages/subagent/tool-subagent/src/model-selection-settings.ts",
   "packages/subagent/tool-subagent/src/model-selection-state.ts",
@@ -2224,6 +2776,13 @@
   "packages/subprocess/win32-process/src/index.ts",
   "packages/subprocess/win32-process/src/koffi.ts",
   "packages/subprocess/win32-process/src/process.ts"
+ ],
+ "telemetry/otel": [
+  "packages/telemetry/otel/src/event-log.ts",
+  "packages/telemetry/otel/src/event-transport.ts",
+  "packages/telemetry/otel/src/index.ts",
+  "packages/telemetry/otel/src/session-log.ts",
+  "packages/telemetry/otel/src/transport.ts"
  ],
  "terminal/terminal": [
   "packages/terminal/terminal/src/index.ts",
@@ -2275,6 +2834,13 @@
   "packages/test-support/loader-smoke/src/agent-turn.ts",
   "packages/test-support/loader-smoke/src/index.ts"
  ],
+ "test-support/remote-mock": [
+  "packages/test-support/remote-mock/src/index.ts",
+  "packages/test-support/remote-mock/src/log.ts",
+  "packages/test-support/remote-mock/src/remote-mock.ts",
+  "packages/test-support/remote-mock/src/remote-proxy.ts",
+  "packages/test-support/remote-mock/src/streams.ts"
+ ],
  "test-support/session-snapshot": [
   "packages/test-support/session-snapshot/src/harness.ts",
   "packages/test-support/session-snapshot/src/identity.ts",
@@ -2289,7 +2855,6 @@
  "todo/tool-todo": [
   "packages/todo/tool-todo/src/client.ts",
   "packages/todo/tool-todo/src/index.ts",
-  "packages/todo/tool-todo/src/invariant.ts",
   "packages/todo/tool-todo/src/types.ts"
  ],
  "typert/generator": [
@@ -2324,6 +2889,12 @@
  "util/brand": [
   "packages/util/brand/src/index.ts"
  ],
+ "util/chunked-list": [
+  "packages/util/chunked-list/src/index.ts"
+ ],
+ "util/code-language": [
+  "packages/util/code-language/src/index.ts"
+ ],
  "util/crypto": [
   "packages/util/crypto/src/index.ts"
  ],
@@ -2340,6 +2911,9 @@
  ],
  "util/launch-environment": [
   "packages/util/launch-environment/src/index.ts"
+ ],
+ "util/lazy-require": [
+  "packages/util/lazy-require/src/index.ts"
  ],
  "util/native-command": [
   "packages/util/native-command/src/desktop-entry.ts",
@@ -2365,7 +2939,8 @@
   "packages/util/timeout/src/index.ts"
  ],
  "util/values": [
-  "packages/util/values/src/index.ts"
+  "packages/util/values/src/index.ts",
+  "packages/util/values/src/partial-json.ts"
  ],
  "util/workspace-path": [
   "packages/util/workspace-path/src/file-address.ts",
@@ -2406,7 +2981,6 @@
  "webhook/webhook": [
   "packages/webhook/webhook/src/brand.ts",
   "packages/webhook/webhook/src/index.ts",
-  "packages/webhook/webhook/src/invariant.ts",
   "packages/webhook/webhook/src/session.ts",
   "packages/webhook/webhook/src/types.ts"
  ],
@@ -2421,21 +2995,28 @@
  ],
  "workflow/tool-workflow": [
   "packages/workflow/tool-workflow/src/index.ts",
-  "packages/workflow/tool-workflow/src/invariant.ts",
   "packages/workflow/tool-workflow/src/record.ts",
   "packages/workflow/tool-workflow/src/types.ts"
  ],
  "workflow/workflow": [
   "packages/workflow/workflow/src/index.ts",
-  "packages/workflow/workflow/src/invariant.ts",
   "packages/workflow/workflow/src/runtime-types.ts",
   "packages/workflow/workflow/src/types.ts"
  ],
- "workflow/workflow-worker-thread": [],
+ "workflow/workflow-ptc": [
+  "packages/workflow/workflow-ptc/src/guest-source.ts",
+  "packages/workflow/workflow-ptc/src/guest-types.ts",
+  "packages/workflow/workflow-ptc/src/guest.ts",
+  "packages/workflow/workflow-ptc/src/host.ts",
+  "packages/workflow/workflow-ptc/src/index.ts",
+  "packages/workflow/workflow-ptc/src/meta.ts",
+  "packages/workflow/workflow-ptc/src/realm.ts",
+  "packages/workflow/workflow-ptc/src/runtime.ts",
+  "packages/workflow/workflow-ptc/src/types.ts"
+ ],
  "workspace/workspace": [
   "packages/workspace/workspace/src/entity.ts",
   "packages/workspace/workspace/src/index.ts",
-  "packages/workspace/workspace/src/invariant.ts",
   "packages/workspace/workspace/src/paths.ts",
   "packages/workspace/workspace/src/spec.ts",
   "packages/workspace/workspace/src/types.ts"

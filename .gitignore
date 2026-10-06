@@ -3,3 +3,7 @@ node_modules/
 *.log
 shots/
 .wbapp_*
+# 重建数据前的本地退路（旧 data 快照），只该留在本机
+.backup-*/
+# WorkBuddy 的会话标识，与本项目无关
+.freebuff/

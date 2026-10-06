@@ -1,11 +1,11 @@
 # @deepseek-ai/dsh-subprocess-local
 path: packages/subprocess/subprocess-local
 desc: Local-subprocess implementation of the DeepSeek Harness subprocess seam
-deps: @deepseek-ai/dsh-win32-process
+deps: @deepseek-ai/dsh-lazy-require, @deepseek-ai/dsh-win32-process
 peers: @deepseek-ai/dsh-subprocess, @deepseek-ai/dsh-timeout, @deepseek-ai/cordis
-srcFiles: 13  srcLoc: 4215
+srcFiles: 16  srcLoc: 4799
 
-## README.md (169 行)
+## README.md (168 行)
 ---
 description: "The local host provider for the subprocess service: run OS-owned managed ranges and real terminal sessions on the host machine, with explicit weaker fallbacks."
 kind: "package-reference"
@@ -109,7 +109,6 @@ Each spawn selects one owner for both signalling and quiescence. Supported Linux
 | [`src/terminal.ts`](src/terminal.ts) | `node-pty` handle: Linux scope attachment, foreground inspection, and fallback cleanup |
 | [`src/process-inspector.ts`](src/process-inspector.ts) | POSIX process-tree and session inspection |
 | [`src/windows-inspector.ts`](src/windows-inspector.ts) | Windows Toolhelp32 process-table inspection via koffi |
-| — | No runtime invariant companion is published; this package exposes no independent event sequence or mutable data relation beyond contracts enforced at its owning seam. |
 
 ### Main flow
 
@@ -306,7 +305,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-subprocess-local",
   "description": "Local-subprocess implementation of the DeepSeek Harness subprocess seam",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -354,7 +353,7 @@ None.
   "dependencies": {
     "@deepseek-ai/dsh-lazy-require": "workspace:*",
     "@deepseek-ai/dsh-win32-process": "workspace:*",
-    "koffi": "^3.1.0",
+    "koffi": "3.1.1",
     "node-pty": "1.2.0-beta.15"
   },
   "devDependencies": {

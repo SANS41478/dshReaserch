@@ -2,10 +2,10 @@
 path: packages/goal/goal
 desc: Event-sourced same-session goal state and lifecycle service for the DeepSeek Harness
 deps: @deepseek-ai/schemastery
-peers: @deepseek-ai/dsh-agent, @deepseek-ai/dsh-session-projection, @deepseek-ai/dsh-brand, @deepseek-ai/dsh-invariants, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-scope, @deepseek-ai/dsh-session, @deepseek-ai/dsh-typert-protocol, @deepseek-ai/cordis
-srcFiles: 7  srcLoc: 1396
+peers: @deepseek-ai/dsh-agent, @deepseek-ai/dsh-session-projection, @deepseek-ai/dsh-brand, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-scope, @deepseek-ai/dsh-session, @deepseek-ai/dsh-typert-protocol, @deepseek-ai/cordis
+srcFiles: 6  srcLoc: 1316
 
-## README.md (173 行)
+## README.md (172 行)
 ---
 description: "The persisted same-session goal service for users and maintainers choosing, configuring, or debugging one durable completion objective per session."
 kind: "package-reference"
@@ -117,7 +117,6 @@ This section explains how the service realizes the behavior above; the observabl
 | [`src/types.ts`](src/types.ts) | Pure client-safe types: `GoalView`, `GoalSnapshot`, `GoalActivationChanged`, projection-key declaration |
 | [`src/fold.ts`](src/fold.ts) | Strict replay fold and decoder for durable goal changes |
 | [`src/runtime.ts`](src/runtime.ts) | `GoalId` brand, `GoalError` codes, change-version constant |
-| [`src/invariant.ts`](src/invariant.ts) | Invariant companion: independent incremental fold over every attached session |
 
 ### Events and attribution
 
@@ -135,7 +134,7 @@ The package-level contract is enough for most consumers; read these when you nee
 - [Goal subsystem](../../../docs/subsystems/goal.md) — the goal types, durable change payloads, and generated service API.
 - [Goal group map](../README.md) — the goal packages and how they compose.
 - [Generated configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-goal) — every accepted config field and its source declaration.
-- [Goal domain Agent Note](../../../.agents/notes/implemented/feature/2026-07-19-persisted-same-session-goal-domain.md) — the domain design, alternatives, and decisions.
+- [historical Goal domain Agent Note](../../../.agents/notes/archived/feature/2026-07-19-persisted-same-session-goal-domain.md) — the domain design, alternatives, and decisions.
 
 -----
 
@@ -214,11 +213,6 @@ This Dev Note is working context for maintainers; it is explicitly non-authorita
   240	class	GoalService
       members: L250 constructor, L277 get, L289 disarm, L303 create, L329 edit, L352 pause, L364 resume, L391 complete, L409 block, L433 clear, L450 prepareMutation, L456 expectCurrent, L469 assertLive, L476 state, L484 runtimeState, L496 setActivation, L518 withPhase, L529 transition, L545 transitionError, L553 commitCurrent, L574 nextMutationTime, L579 commitSnapshot, L609 commit, L629 view, L647 remoteExportCreate
 
-### packages/goal/goal/src/invariant.ts  (81 行)
-  12	const	name
-  14	const	inject
-  79	const	apply
-
 ### packages/goal/goal/src/runtime.ts  (31 行)
   8	const	GOAL_CHANGE_VERSION
   15	fn	GoalId
@@ -247,7 +241,7 @@ This Dev Note is working context for maintainers; it is explicitly non-authorita
 {
   "name": "@deepseek-ai/dsh-goal",
   "description": "Event-sourced same-session goal state and lifecycle service for the DeepSeek Harness",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -263,10 +257,6 @@ This Dev Note is working context for maintainers; it is explicitly non-authorita
     ".": {
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
-    },
-    "./invariant": {
-      "types": "./lib/types/invariant.d.ts",
-      "default": "./lib/invariant.js"
     },
     "./types": {
       "types": "./lib/types/types.d.ts",
@@ -289,7 +279,6 @@ This Dev Note is working context for maintainers; it is explicitly non-authorita
   },
   "files": [
     "lib/index.js",
-    "lib/invariant.js",
     "lib/types/**/*.js",
     "lib/types/**/*.d.ts",
     "lib/typert.host.js",
@@ -302,7 +291,6 @@ This Dev Note is working context for maintainers; it is explicitly non-authorita
     "@deepseek-ai/dsh-agent": "workspace:*",
     "@deepseek-ai/dsh-session-projection": "workspace:*",
     "@deepseek-ai/dsh-brand": "workspace:*",
-    "@deepseek-ai/dsh-invariants": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-scope": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
@@ -313,4 +301,8 @@ This Dev Note is working context for maintainers; it is explicitly non-authorita
     "@deepseek-ai/schemastery": "workspace:~",
     "zod": "^4.4.3"
   },
-  "devDepe
+  "devDependencies": {
+    "@deepseek-ai/dsh-agent": "workspace:*",
+    "@deepseek-ai/dsh-agent-loop": "workspace:*",
+    "@deepseek-ai/dsh-agent-loop-testkit": "workspace:*",
+    "@deepseek-a

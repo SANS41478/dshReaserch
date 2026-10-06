@@ -2,8 +2,8 @@
 path: packages/api/gateway
 desc: Typert Remote Host dispatcher and Client API endpoint
 deps: @deepseek-ai/dsh-deque, @deepseek-ai/dsh-timeout, @deepseek-ai/schemastery, @deepseek-ai/dsh-typert-protocol
-peers: @deepseek-ai/cordis
-srcFiles: 11  srcLoc: 4389
+peers: @deepseek-ai/cordis, @deepseek-ai/dsh-client-connection
+srcFiles: 11  srcLoc: 5232
 
 ## README.md (104 行)
 ---
@@ -49,6 +49,8 @@ Every stream also carries a Client-to-Host uplink on the same logical stream. A 
 Stream cancellation and stopping keep read-local state, not a history of delivered items, on the Host downlink, Host uplink, and Client uplink pump. Completing the downlink also wakes pending uplink reads.
 
 Host composition can register one application event source through `registerRemoteEvents()`. Gateway reserves the internal `$events` logical endpoint for that source, accepts only empty `args`, and aborts streams opened by the registration when the source is withdrawn. API Remotes owns the event selection, argument validation, per-Client queues, and the Host home sent in the opening `{ type: 'ready', clientId, host: { home } }` frame. Its source factory attaches incremental listeners synchronously, so the Client publishes the generation and starts baseline reads only after incremental delivery is ready.
+
+`hasLiveClient()` checks the existing `$events` records for an uncancelled stream. A cancelled stream does not count even while its iterator is still awaiting cleanup; a bare WebSocket does not count. This synchronous observation does not guarantee delivery or Client provider readiness.
 
 <a id="client-service-clientremote-ctx-key-remote"></a>
 ## Client service: `ClientRemote` (ctx key: `remote`)
@@ -106,8 +108,6 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. Host calls re-read authoritative Cordis and Typert state, while Client methods, descriptors, and `$on` subscriptions mutate in one owned effect.
-
 The ./stream-protocol export supplies the shared Remote stream framing and parser to native Desktop callers. These callers use the same authenticated WebSocket endpoint as the browser client.
 
 
@@ -155,13 +155,13 @@ The ./stream-protocol export supplies the shared Remote stream framing and parse
   401	class	ClientUplinkQueue
       members: L408 constructor, L415 push, L423 end, L430 close, L446 next, L460 return, L465 signal
 
-### packages/api/gateway/src/index.ts  (1563 行)
-  inject: L199 ['typert']
-  145	iface	Config
-  162	class	TypertGatewayError
-      members: L175 constructor
-  198	class	TypertGatewayService
-      members: L226 constructor, L285 registerRemoteEvents, L313 claimsEndpoint, L322 collectSrcClaims, L345 invoke, L349 invokePrepared, L374 stream, L382 openStream, L412 dispatchRpc, L434 openWireStream, L456 operatorPeer, L509 consumeRemoteEvents, L526 broadcastRemoteEvent, L536 startRemoteEvent, L595 deliverRemoteEvent, L601 receiveRemoteEventResult, L622 removeRemoteEventDelivery, L627 removeRemoteEventClient, L633 settleRemoteEvent, L638 cancelRemoteEvent, L644 finishRemoteEvent, L657 closeRemoteEvents, L664 invokeRpc, L686 prepareInvocation, L743 resolveDescriptor, L756 resolveSrcDescriptor, L784 srcDescriptor, L879 resolveReceiverContext, L927 resolveParameter, L1063 push, L1069 end, L1092 assertRemoteEventName, L1093 if, L1099 if, L1105 if, L1121 if, L1125 if, L1144 if, L1145 if, L1224 constructor
+### packages/api/gateway/src/index.ts  (1576 行)
+  inject: L200 ['typert']
+  146	iface	Config
+  163	class	TypertGatewayError
+      members: L176 constructor
+  199	class	TypertGatewayService
+      members: L227 constructor, L284 hasLiveClient, L297 registerRemoteEvents, L325 claimsEndpoint, L334 collectSrcClaims, L357 invoke, L361 invokePrepared, L386 stream, L394 openStream, L424 dispatchRpc, L446 openWireStream, L468 operatorPeer, L522 consumeRemoteEvents, L539 broadcastRemoteEvent, L549 startRemoteEvent, L608 deliverRemoteEvent, L614 receiveRemoteEventResult, L635 removeRemoteEventDelivery, L640 removeRemoteEventClient, L646 settleRemoteEvent, L651 cancelRemoteEvent, L657 finishRemoteEvent, L670 closeRemoteEvents, L677 invokeRpc, L699 prepareInvocation, L756 resolveDescriptor, L769 resolveSrcDescriptor, L797 srcDescriptor, L892 resolveReceiverContext, L940 resolveParameter, L1076 push, L1082 end, L1105 assertRemoteEventName, L1106 if, L1112 if, L1118 if, L1134 if, L1138 if, L1157 if, L1158 if
 
 ### packages/api/gateway/src/remote-error-codes.ts  (38 行)
   declare module: declare module '@deepseek-ai/dsh-typert-protocol' {
@@ -205,7 +205,7 @@ The ./stream-protocol export supplies the shared Remote stream framing and parse
       members: L55 constructor, L71 handleUpgrade, L91 close, L105 startHeartbeat, L139 constructor, L146 run, L174 receive, L201 openStream, L225 pump, L263 sendFailure, L274 send, L318 constructor, L324 push, L348 end, L355 fail, L369 next, L385 return, L393 violate, L398 signal, L423 if, L424 if
   433	fn	rejectRemoteStreamUpgrade
 
-### packages/api/gateway/src/types.ts  (175 行)
+### packages/api/gateway/src/types.ts  (181 行)
   declare module: declare module '@deepseek-ai/cordis' {
   11	iface	InvokeRemoteRequest
   30	iface	TypertRemoteEventFrame
@@ -224,7 +224,7 @@ The ./stream-protocol export supplies the shared Remote stream framing and parse
 {
   "name": "@deepseek-ai/dsh-api-gateway",
   "description": "Typert Remote Host dispatcher and Client API endpoint",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -293,4 +293,4 @@ The ./stream-protocol export supplies the shared Remote stream framing and parse
     "@deepseek-ai/dsh-cmdline": "workspace:*",
     "@deepseek-ai/dsh-client-connection": "workspace:*",
     "@deepseek-ai/dsh-host-webserver": "workspace:*",
-    "@deepseek-ai/dsh-remote-mock": "workspace
+    "@deepseek-ai/dsh-remote-mock": "worksp

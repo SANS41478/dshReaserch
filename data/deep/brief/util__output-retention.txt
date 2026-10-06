@@ -3,9 +3,9 @@ path: packages/util/output-retention
 desc: Zero-dependency bounded-retention primitive: ItemRetainer/TextRetainer + neutral notice helpers (what did we keep, what did we omit)
 deps: -
 peers: @deepseek-ai/cordis
-srcFiles: 1  srcLoc: 444
+srcFiles: 1  srcLoc: 461
 
-## README.md (169 行)
+## README.md (168 行)
 ---
 description: "Bounded model-facing output for tools that must cap how much context they return: item and text retainers plus a standardized omission footer."
 kind: "package-library"
@@ -117,7 +117,6 @@ The library is built on one separation: it owns the mechanical question of what 
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | `ItemRetainer`, `TextRetainer`, `describeOmitted`, `formatRetentionNotice`, and `truncateWithoutSplittingSurrogatePair` |
-| — | No runtime invariant companion is published; this pure utility owns no event stream or mutable runtime data; its value algebra is enforced by unit tests. |
 
 ### Two retainers, two resource models
 
@@ -200,7 +199,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-output-retention",
   "description": "Zero-dependency bounded-retention primitive: ItemRetainer/TextRetainer + neutral notice helpers (what did we keep, what did we omit)",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

@@ -3,9 +3,9 @@ path: packages/client/ui-agent-preset
 desc: Agent-preset surfaces: the default for later sessions, this session's seat, and the composition editor
 deps: -
 peers: @deepseek-ai/cordis
-srcFiles: 10  srcLoc: 1809
+srcFiles: 13  srcLoc: 1811
 
-## README.md (77 行)
+## README.md (83 行)
 ---
 description: "Choose Agent presets and the new-task default in Web, read what each mode does and what it declares. Authoring is guided to Creator mode."
 kind: "package-reference"
@@ -35,9 +35,15 @@ Choose Agent presets and the new-task default in Web, read what each mode does a
 
 Settings shows the built-in and custom card groups with default highlighting and card-body selection; a group without presets is omitted, except the custom group, which keeps its Creator entry on screen. Every card offers “View configuration”, which opens the preset's declared plugin list as read-only YAML in the Loader's own dialect (`!!js` conditions included); a failed preset stays readable because its diagnostic points into that YAML. Escape closes only the viewer and returns focus to its card; leaving Settings clears the viewer, and a late read does not reopen it. The page edits nothing: the Creator entry starts a Creator-mode task that authors or overrides a preset as a bundle, offered while the `cordis` preset is on the roster and a conversation flow exists.
 
-Coding Tools in General Settings decide whether a mode can be chosen at all: with them off the new-session picker disappears and the cards refuse selection, while the saved default keeps composing new tasks. Choosing a healthy default also synchronizes the blank session on the current new-task surface. Creator starts a new task using the `cordis` preset.
+With Coding Tools off in General Settings, the new-session picker and Settings roster offer Standard, Creator, and custom presets; turning them on also offers PTC and Minimal. Default selection and the Creator entry remain available in both states. Choosing a healthy default also synchronizes the blank session on the current new-task surface. Creator starts a new task using the `cordis` preset.
+
+Turning Coding Tools off clears all unapplied choices through the existing Developer tools subscription. Once the off value is accepted, a host-backed connection resets a saved built-in PTC or Minimal default to Standard. Saved Standard, Creator, and custom defaults (including named PTC or Minimal overrides) stay unchanged. The user can select an available preset again after turning Coding Tools off. Existing sessions, including blank sessions reused by New Session, keep their selected mode; its label remains visible even when that mode is absent from the menu. Turning Coding Tools back on does not restore the old default or cleared choice. A remote connection using in-memory settings does not rewrite the Host's default. If Standard is missing or broken, the default remains unchanged and an error is shown.
 
 Known shipped presets offer mode details and usage examples in a read-only dialog. Its tabs preserve each page's scroll position; closing returns focus to the opening action. Help does not change the new-task default. The default badge replaces the card's group badge, and the preset id appears beside the title. Guide copy and examples belong to this package.
+
+**Let the agent create a plugin** in the Plugins page's **Add plugin** arrow menu enters the same Creator flow as Settings. It submits no message and preserves unsent drafts. While the roster loads or Creator is unavailable, the menu item is disabled with an explanation. Both entries show a Toast with the reason if the Host refuses the preset switch.
+
+Entering Creator selects `cordis` for the receiving blank Session without changing the new-task default or Coding Tools setting. If no workspace or blank Session is bound yet, the choice waits for that binding. After the choice is applied, the Creator Session keeps its preset; a later newly created Session uses the configured default, such as Standard.
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
@@ -46,6 +52,8 @@ Known shipped presets offer mode details and usage examples in a read-only dialo
 <summary>Implementation internals — click to expand</summary>
 
 `agentPresets/list` supplies the roster and marks the current default, and `agentPresets/read` one declaration's YAML for the viewer; default changes write the `agent-preset-registry` settings namespace. The picker, blank-session synchronization and read-only session label use recorded preset identities. Connection resets and settings updates refresh the roster.
+
+`CreatePluginMenuItem` contributes to `plugins.add.actions` using the shared roster store. Its selection calls the owner's `onDismiss()` before the same `startCreatorDraft` callback exposed to Settings as `creatorDraft`. That callback stages `cordis` through `AgentPresetSeatController` and opens the task through `uiWorkspace.startSession`; it can reuse a blank Session and applies the staged choice when a Session binding becomes available. The choice is consumed once applied. Both Coding Tools states use the same picker and selection store, and `AgentPresetSeat` renders refusals through the shared `Toast` component.
 
 </details>
 
@@ -81,8 +89,6 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published; the Host registry owns state, and component tests cover client presentation and selection.
-
 
 ## 源文件与导出符号
 
@@ -91,15 +97,19 @@ None.
   33	type	AgentPresetLabelProps
   43	fn	AgentPresetLabel
 
-### packages/client/ui-agent-preset/src/client/AgentPresetSeat.tsx  (228 行)
-  28	iface	AgentPresetSeatInjected
-  68	type	AgentPresetSeatProps
-  79	fn	AgentPresetSeat
+### packages/client/ui-agent-preset/src/client/AgentPresetSeat.tsx  (222 行)
+  29	iface	AgentPresetSeatInjected
+  71	type	AgentPresetSeatProps
+  81	fn	AgentPresetSeat
 
-### packages/client/ui-agent-preset/src/client/AgentPresetSection.tsx  (178 行)
-  15	iface	AgentPresetSectionInjected
-  31	type	AgentPresetSectionProps
-  63	fn	AgentPresetSection
+### packages/client/ui-agent-preset/src/client/AgentPresetSection.tsx  (177 行)
+  16	iface	AgentPresetSectionInjected
+  32	type	AgentPresetSectionProps
+  64	fn	AgentPresetSection
+
+### packages/client/ui-agent-preset/src/client/CreatePluginMenuItem.tsx  (51 行)
+  11	iface	CreatePluginMenuItemInjected
+  27	fn	CreatePluginMenuItem
 
 ### packages/client/ui-agent-preset/src/client/PresetGuideDialog.tsx  (161 行)
   9	type	PresetGuidePage
@@ -112,40 +122,41 @@ None.
   77	type	PresetGuideKey
   80	const	guideZh
 
-### packages/client/ui-agent-preset/src/client/index.ts  (232 行)
+### packages/client/ui-agent-preset/src/client/index.ts  (276 行)
   declare module: declare module '@deepseek-ai/dsh-client-ui-slots' {
-  62	const	inject
-  70	fn	apply
+  64	const	inject
+  72	fn	apply
 
-### packages/client/ui-agent-preset/src/client/locales.ts  (116 行)
+### packages/client/ui-agent-preset/src/client/locales.ts  (128 行)
   6	type	AgentPresetSettingsKey
-  34	const	en
-  75	const	zh
+  38	const	en
+  83	const	zh
 
-### packages/client/ui-agent-preset/src/client/seat-store.ts  (262 行)
-  25	iface	AgentPresetSeatState
-  46	iface	AgentPresetStage
-  54	class	AgentPresetSeatController
-      members: L69 constructor, L79 set, L83 clearStage, L89 selectionAvailable, L97 load, L137 select, L154 stage, L164 blankSessionId, L176 syncBlankSession, L188 introduced, L202 apply
+### packages/client/ui-agent-preset/src/client/seat-store.ts  (256 行)
+  23	iface	AgentPresetSeatState
+  44	iface	AgentPresetStage
+  52	class	AgentPresetSeatController
+      members: L67 constructor, L77 set, L81 clearStage, L90 load, L127 select, L144 stage, L153 dismissRefusal, L163 blankSessionId, L175 syncBlankSession, L187 introduced, L201 apply
 
-### packages/client/ui-agent-preset/src/client/section-store.ts  (95 行)
+### packages/client/ui-agent-preset/src/client/section-store.ts  (123 行)
   9	iface	PresetView
   18	iface	AgentPresetSectionState
   30	class	AgentPresetSectionController
-      members: L35 constructor, L37 set, L42 load, L45 readRoster, L57 view, L69 closeView, L76 makeDefault, L79 save
+      members: L36 constructor, L38 set, L43 load, L46 readRoster, L58 view, L70 closeView, L77 makeDefault, L85 reconcileCodingTools, L101 save
 
-### packages/client/ui-agent-preset/src/client/settings-store.ts  (169 行)
-  16	const	AGENT_PRESET_SETTINGS_NS
-  28	fn	writeDefaultPreset
-  37	iface	AgentPresetOption
-  47	type	RosterPreset
-  50	type	RosterRead
-  59	fn	readRoster
-  80	fn	beginRosterRead
-  108	fn	presetOptions
-  119	iface	AgentPresetSettingsState
-  132	class	AgentPresetSettingsController
-      members: L139 constructor, L143 set, L153 load
+### packages/client/ui-agent-preset/src/client/settings-store.ts  (180 行)
+  17	const	AGENT_PRESET_SETTINGS_NS
+  30	fn	writeDefaultPreset
+  40	iface	AgentPresetOption
+  53	fn	requiresCodingTools
+  58	type	RosterPreset
+  61	type	RosterRead
+  70	fn	readRoster
+  91	fn	beginRosterRead
+  119	fn	presetOptions
+  130	iface	AgentPresetSettingsState
+  143	class	AgentPresetSettingsController
+      members: L150 constructor, L154 set, L164 load
 
 ### packages/client/ui-agent-preset/src/css-modules.d.ts  (5 行)
   declare module: declare module '*.module.css' {
@@ -159,7 +170,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-client-ui-agent-preset",
   "description": "Agent-preset surfaces: the default for later sessions, this session's seat, and the composition editor",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -216,5 +227,5 @@ None.
     "@deepseek-ai/dsh-client-store": "workspace:*",
     "@deepseek-ai/dsh-client-test-runtime": "workspace:*",
     "@deepseek-ai/dsh-client-ui-conversation": "workspace:*",
-    "@deepseek-ai/dsh-client-ui-primitives": "workspace:*",
-    "@deeps
+    "@deepseek-ai/dsh-client-ui-plugin-manager": "workspace:*",
+    

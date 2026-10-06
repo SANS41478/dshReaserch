@@ -3,9 +3,9 @@ path: packages/client/web
 desc: Web boot kernel: static module table, Cordis loader, framework-free boot page, and UI-renderer handoff
 deps: -
 peers: @deepseek-ai/cordis
-srcFiles: 7  srcLoc: 381
+srcFiles: 12  srcLoc: 830
 
-## README.md (136 行)
+## README.md (134 行)
 ---
 description: "Web boot kernel for the web GUI: two-stage boot of the client plugin tree, the framework-free boot page, and the shared module table, for users and maintainers composing or debugging the browser application."
 kind: "package-library"
@@ -140,8 +140,6 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. The Vite entry shell provides boot glue and module-table seeding, emits no Cordis events, and holds no cross-plugin mutable state; the boot chain (loading page → settled → one-flip UI) is verified by the web smoke e2e against the real carrier.
-
 
 ## 源文件与导出符号
 
@@ -202,7 +200,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-client-web",
   "description": "Web boot kernel: static module table, Cordis loader, framework-free boot page, and UI-renderer handoff",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

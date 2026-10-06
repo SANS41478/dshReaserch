@@ -5,7 +5,7 @@ deps: -
 peers: @deepseek-ai/cordis
 srcFiles: 2  srcLoc: 193
 
-## README.md (62 行)
+## README.md (60 行)
 ---
 description: "Official DeepSeek request-extension registry for provider plugins contributing lifecycle-owned top-level API fields."
 kind: "package-reference"
@@ -66,8 +66,6 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. Duplicate ownership, detached output, and one acceptance settlement are enforced inside the registry operation that owns each decision.
-
 
 ## 源文件与导出符号
 
@@ -90,7 +88,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-deepseek-llm-api-extensions",
   "description": "Additive request-field registry for the official DeepSeek LLM API adapter",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

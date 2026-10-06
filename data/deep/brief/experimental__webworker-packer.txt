@@ -1,11 +1,11 @@
 # @deepseek-ai/dsh-experimental-webworker-packer
 path: packages/experimental/webworker-packer
 desc: Build-time packer for the browser runtime's base VFS image and ordered data-overlay archives
-deps: @deepseek-ai/cordis-plugin-include, @deepseek-ai/dsh-experimental-webworker-runtime, @deepseek-ai/dsh-home-paths
+deps: @deepseek-ai/cordis-plugin-include, @deepseek-ai/dsh-experimental-webworker-runtime, @deepseek-ai/dsh-home-paths, @deepseek-ai/dsh-session-format, @deepseek-ai/dsh-session-format-catalog, @deepseek-ai/dsh-session-format-v3-to-v4
 peers: @deepseek-ai/cordis
-srcFiles: 6  srcLoc: 1080
+srcFiles: 7  srcLoc: 1201
 
-## README.md (76 行)
+## README.md (74 行)
 ---
 description: "Browser-worker VFS image packaging for maintainers building or debugging the experimental preview deployment."
 kind: "package-library"
@@ -80,8 +80,6 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. This package is a build-time pass with no production event stream or mutable data; the pack's own gates (unresolvable own requests, the all-or-nothing wrapper contract) fail the pack instead.
-
 
 ## 源文件与导出符号
 
@@ -128,7 +126,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-experimental-webworker-packer",
   "description": "Build-time packer for the browser runtime's base VFS image and ordered data-overlay archives",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

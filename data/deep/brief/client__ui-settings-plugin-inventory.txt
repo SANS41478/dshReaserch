@@ -3,9 +3,9 @@ path: packages/client/ui-settings-plugin-inventory
 desc: Read-only Cordis Loader inventory tab in Web Plugins settings
 deps: -
 peers: @deepseek-ai/cordis
-srcFiles: 5  srcLoc: 663
+srcFiles: 5  srcLoc: 773
 
-## README.md (112 行)
+## README.md (110 行)
 ---
 description: "Scope-grouped read-only plugin inventory tab in Web Plugins settings for the dsh web client: agent-preset compositions first, the global plane behind a disclosure, search across both."
 kind: "package-reference"
@@ -116,8 +116,6 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. This package owns a read-only Settings contribution.
-
 
 ## 源文件与导出符号
 
@@ -149,7 +147,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-client-ui-settings-plugin-inventory",
   "description": "Read-only Cordis Loader inventory tab in Web Plugins settings",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -208,4 +206,4 @@ None.
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "@deepseek-ai/dsh-client-ui-renderer": "workspace:*",
-    "@deepseek-ai/dsh-agent-preset-registry": "workspac
+    "@deepseek-ai/dsh-agent-preset-registry": "works

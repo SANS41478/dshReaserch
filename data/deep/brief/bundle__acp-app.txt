@@ -5,7 +5,7 @@ deps: @deepseek-ai/dsh-acp, @deepseek-ai/dsh-cmdline
 peers: @deepseek-ai/cordis
 srcFiles: 1  srcLoc: 49
 
-## README.md (77 行)
+## README.md (75 行)
 ---
 description: "Automation-only ACP stdio application profile for users and maintainers launching persistent harness agents."
 kind: "package-bundle"
@@ -81,8 +81,6 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. The bundle adds a process transport and startup latch; source/built stdio tests own frame purity, help exclusion, and shutdown.
-
 
 ## 源文件与导出符号
 
@@ -125,7 +123,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-acp-app",
   "description": "The dsh ACP profile bundle: automation-only JSON-RPC stdio and process lifecycle over dsh-base",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

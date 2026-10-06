@@ -3,9 +3,9 @@ path: packages/subagent/tool-subagent-control
 desc: Globally named send_message, interrupt_agent, and list_agents tools over ctx.subagents continuations
 deps: @deepseek-ai/dsh-brand, @deepseek-ai/dsh-util-values
 peers: @deepseek-ai/cordis, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-session, @deepseek-ai/dsh-subagent, @deepseek-ai/dsh-tools
-srcFiles: 2  srcLoc: 312
+srcFiles: 2  srcLoc: 292
 
-## README.md (184 行)
+## README.md (183 行)
 ---
 description: "Global send_message, interrupt_agent, and list_agents tools for users and maintainers composing or debugging continuable-child control."
 kind: "package-reference"
@@ -92,7 +92,6 @@ The tool forwards its execution signal, which owns admission only until inbox ac
 |---|---|
 | [`src/index.ts`](src/index.ts) | `send_message` and `interrupt_agent` registration |
 | [`src/list-agents.ts`](src/list-agents.ts) | `list_agents` registration: scopes, status refinement, projection |
-| — | No runtime invariant companion is published; this model-facing adapter has no independent lifecycle stream; delivery and activation relations are owned by the subagent service it calls. |
 
 </details>
 
@@ -209,7 +208,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-tool-subagent-control",
   "description": "Globally named send_message, interrupt_agent, and list_agents tools over ctx.subagents continuations",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -263,5 +262,4 @@ None.
     "@deepseek-ai/dsh-tools": "workspace:*"
   },
   "dependencies": {
-    "@deepseek-ai/dsh-brand": "workspace:*",
-
+    "@deepseek-ai/dsh-brand": "workspace:*

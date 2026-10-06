@@ -3,9 +3,9 @@ path: packages/client/ui-attachment
 desc: Dynamic attachment presentation plugin for conversation input, message-image, and trajectory image slots
 deps: -
 peers: @deepseek-ai/cordis
-srcFiles: 11  srcLoc: 868
+srcFiles: 11  srcLoc: 867
 
-## README.md (109 行)
+## README.md (107 行)
 ---
 description: "Attachment presentation for the conversation UI: mixed draft-attachment rail, document drop target, history-image gallery, and original-image lightbox; for users and maintainers of the Web attachment experience."
 kind: "package-reference"
@@ -79,7 +79,7 @@ The plugin waits for `conversation.input.attachments`, `conversation.message.ima
 Read these pages when the attachment surface is not enough. They move from the slots this package fills to the conversation shell that owns the input flow.
 
 - [ui-conversation](../ui-conversation/README.md) — declares the attachment slots and owns the composer and image intake.
-- [Web client architecture](../../../.agents/notes/implemented/architecture/2026-07-19-gui-web-client-architecture.md) — how browser plugin rows load and register slots.
+- [Web client architecture](../../../docs/subsystems/web-client.md) — how browser plugin rows load and register slots.
 - [Client package map](../README.md) — adjacent browser UI packages.
 
 -----
@@ -112,8 +112,6 @@ These limits define the current attachment surface. They are package constraints
 None.
 
 </details>
-
-**Runtime invariant:** No companion is published. The package contributes only effect-owned slot entries; the slot registry owns their lifecycle and validates their declarations.
 
 
 ## 源文件与导出符号
@@ -171,7 +169,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-client-ui-attachment",
   "description": "Dynamic attachment presentation plugin for conversation input, message-image, and trajectory image slots",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -234,4 +232,4 @@ None.
     "lib/types/**/*.d.ts"
   ],
   "peerDependencies": {
-    "@deepseek-ai/cordis": "work
+    "@deepseek-ai/cordis": "w

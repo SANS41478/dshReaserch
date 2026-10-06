@@ -3,9 +3,9 @@ path: packages/experimental/tool-agent-team
 desc: Scoped model-facing Agent Teams tools over ctx.agentTeams
 deps: @deepseek-ai/schemastery
 peers: @deepseek-ai/dsh-agent, @deepseek-ai/dsh-session, @deepseek-ai/dsh-system-prompt, @deepseek-ai/dsh-experimental-agent-team, @deepseek-ai/dsh-tools, @deepseek-ai/cordis
-srcFiles: 1  srcLoc: 412
+srcFiles: 1  srcLoc: 423
 
-## README.md (160 行)
+## README.md (159 行)
 ---
 description: "Nine tools that let the model create, message, and coordinate teammates, for compositions mounting the experimental Team plugins."
 kind: "package-reference"
@@ -100,7 +100,6 @@ The [Agent Teams Agent Note](../../../.agents/notes/implemented/feature/2026-08-
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: config, the fixed policy text, and the nine scoped tool registrations |
-| — | No runtime invariant companion is published; the Team service owns durable and authorization relations. |
 
 ### Policy and tools
 
@@ -182,7 +181,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-experimental-tool-agent-team",
   "description": "Scoped model-facing Agent Teams tools over ctx.agentTeams",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -235,4 +234,4 @@ None.
     "@deepseek-ai/dsh-tool-subagent-control": "workspace:*",
     "@deepseek-ai/dsh-system-prompt": "workspace:*",
     "@deepseek-ai/dsh-experimental-agent-team": "workspace:*",
-    "@deepseek-ai/
+    "@deepseek-

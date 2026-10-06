@@ -5,7 +5,7 @@ deps: -
 peers: @deepseek-ai/cordis
 srcFiles: 1  srcLoc: 191
 
-## README.md (155 行)
+## README.md (154 行)
 ---
 description: "Shared timeout arithmetic, deadline fusion, and timeout-versus-cancel classification for capabilities that clamp a caller's hint, arm a deadline, and must tell the two apart later."
 kind: "package-library"
@@ -100,7 +100,6 @@ The library is built on one boundary: share the timing and classification, keep 
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | `clampTimeout`, `deadline`, `idleWatchdog`, `timeoutOf`, `TimeoutReason`, `MAX_TIMER_DELAY_MS` |
-| — | No runtime invariant companion is published; this pure utility owns no event stream or mutable runtime data; its value algebra is enforced by unit tests. |
 
 ### How a deadline fuses sources
 
@@ -181,7 +180,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-timeout",
   "description": "Zero-dependency timeout/deadline primitive: clampTimeout, deadline, timeoutOf, TimeoutReason (timing + classification only, no termination)",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

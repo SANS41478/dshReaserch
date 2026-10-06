@@ -1,11 +1,11 @@
 # @deepseek-ai/dsh-time-context
 path: packages/context/time-context
-desc: Opt-in durable per-step context with the current time and elapsed time
+desc: Durable per-step context with the current time and elapsed time
 deps: @deepseek-ai/dsh-util-values, @deepseek-ai/schemastery
-peers: @deepseek-ai/cordis, @deepseek-ai/dsh-agent, @deepseek-ai/dsh-invariants, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-session, @deepseek-ai/dsh-session-projection
-srcFiles: 4  srcLoc: 537
+peers: @deepseek-ai/cordis, @deepseek-ai/dsh-agent, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-session, @deepseek-ai/dsh-session-projection
+srcFiles: 3  srcLoc: 347
 
-## README.md (152 行)
+## README.md (151 行)
 ---
 description: "Per-step clock context with the current time, browser zone, and elapsed time, for users and maintainers tuning the plugin."
 kind: "package-reference"
@@ -17,7 +17,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-time-context` gives the model a clock: on eligible steps it appends a durable, source-attributed reading with the current time, the browser zone attached to the open request, and the elapsed time since the preceding model-visible message. It helps the model interpret otherwise-unqualified dates and times in the user's browser zone, and tells it to ask when current-turn browser zones are mixed or missing. The shipped Web composition carries no row for it; the optional `@deepseek-ai/dsh-experimental-schedule-bundle` inserts and mounts it with Schedule from the Plugins page. Readings default to a 10-minute minimum interval; `refreshIntervalMs: 0` injects at every eligible step.
+`dsh-time-context` gives the model a clock: on eligible steps it appends a durable, source-attributed reading with the current time, the browser zone attached to the open request, and the elapsed time since the preceding model-visible message. It helps the model interpret otherwise-unqualified dates and times in the user's browser zone, and tells it to ask when current-turn browser zones are mixed or missing. The shipped Web composition carries no row for it; `standard`, `cordis`, and `ptc` declare it. Readings default to a 10-minute minimum interval; `refreshIntervalMs: 0` injects at every eligible step.
 
 ## Table of Contents
 
@@ -33,7 +33,7 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this plugin when the model should interpret unqualified dates and times in the user's zone, and when a request-local browser zone is available or a configured fallback is acceptable. Each injection is one additional user-role message in the durable history; schedule it with `refreshIntervalMs` when per-step readings are more than the conversation needs.
+Mount this plugin when the model should interpret unqualified dates and times in the user's zone, and when a request-local browser zone is available or a configured fallback is acceptable. Each injection is one additional user-role message in the durable history; schedule it with `refreshIntervalMs` when per-step readings are more than the conversation needs. The shipped Web composition carries no Host `time-context` row, and the `standard`, `cordis`, and `ptc` presets declare it beside the reminder tools that consume it, while `minimal` declares neither.
 
 ### What the model gets
 
@@ -72,7 +72,7 @@ This section explains the design of the plugin; the observable behavior is cover
 
 ### Design concept
 
-The plugin prepends an `agent/pre-step` listener that delegates first and appends one sourced `UserMessage` when an injection is due and the downstream decision enters the step. Each reading uses the exact snapshot source `{ kind: 'plugin', plugin: 'time-context', form: 'snapshot', sections: [{ name: 'time-context', text }] }`, and the invariant companion validates that shape, re-derives the current-turn browser policy from the original `user-rpc` messages, and checks the timestamp zone and elapsed baseline.
+The plugin prepends an `agent/pre-step` listener that delegates first and appends one sourced `UserMessage` when an injection is due and the downstream decision enters the step. Each reading uses the exact snapshot source `{ kind: 'time-context', form: 'snapshot', sections: [{ name: 'time-context', text }] }`.
 
 ### Source map
 
@@ -81,7 +81,6 @@ The plugin prepends an `agent/pre-step` listener that delegates first and append
 | [`src/index.ts`](src/index.ts) | Plugin entry: pre-step listener, due scheduling, reading composition |
 | [`src/request-zone.ts`](src/request-zone.ts) | Browser-zone policy derivation from open-turn `user-rpc` sources |
 | [`src/timestamp.ts`](src/timestamp.ts) | `Intl.DateTimeFormat` creation and timestamp formatting |
-| [`src/invariant.ts`](src/invariant.ts) | Invariant companion for the snapshot contract |
 
 ### Main flow
 
@@ -169,11 +168,6 @@ None.
   64	const	Config
   132	fn	apply
 
-### packages/context/time-context/src/invariant.ts  (195 行)
-  23	const	name
-  25	const	inject
-  193	const	apply
-
 ### packages/context/time-context/src/request-zone.ts  (82 行)
   9	type	BrowserTimeZoneContext
   48	fn	deriveBrowserTimeZoneContext
@@ -189,7 +183,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-time-context",
   "description": "Durable per-step context with the current time and elapsed time",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -206,10 +200,6 @@ None.
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
-    "./invariant": {
-      "types": "./lib/types/invariant.d.ts",
-      "default": "./lib/invariant.js"
-    },
     "./src/*": "./src/*",
     "./package.json": "./package.json",
     "./locale/*.json": "./locale/*.json"
@@ -217,7 +207,6 @@ None.
   "files": [
     "locale/*.json",
     "lib/index.js",
-    "lib/invariant.js",
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",
@@ -229,7 +218,6 @@ None.
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/dsh-agent": "workspace:*",
-    "@deepseek-ai/dsh-invariants": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-session-projection": "workspace:*"
@@ -241,9 +229,15 @@ None.
     "@deepseek-ai/dsh-agent-loop-testkit": "workspace:*",
     "@deepseek-ai/dsh-app-boot": "workspace:*",
     "@deepseek-ai/dsh-bash-local": "workspace:*",
-    "@deepseek-ai/dsh-invariants": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-loader-smoke": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-session-checkpoint-policy": "workspace:*",
     "@deepseek-ai/dsh-session-persistence-jsonl": "workspace:*",
+    "@deepseek-ai/dsh-session-projection": "workspace:*",
+    "@deepseek-ai/dsh-subprocess-local": "workspace:*",
+    "@deepseek-ai/dsh-system-prompt": "workspace:*",
+    "@deepseek-ai/dsh-tools": "workspace:*"
+  }
+}
+

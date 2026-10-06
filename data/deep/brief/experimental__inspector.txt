@@ -1,14 +1,14 @@
 # @deepseek-ai/dsh-experimental-inspector
 path: packages/experimental/inspector
 desc: Experimental cross-realm CDP hub for Host debugging and Client Runtime inspection
-deps: @deepseek-ai/dsh-brand, @deepseek-ai/dsh-util-crypto, @deepseek-ai/schemastery
-peers: @deepseek-ai/cordis, @deepseek-ai/cordis-plugin-loader, @deepseek-ai/dsh-client-modules, @deepseek-ai/dsh-host-webserver
-srcFiles: 148  srcLoc: 15741
+deps: @deepseek-ai/dsh-app-boot, @deepseek-ai/dsh-brand, @deepseek-ai/dsh-util-crypto, @deepseek-ai/schemastery
+peers: @deepseek-ai/cordis, @deepseek-ai/cordis-plugin-loader, @deepseek-ai/dsh-client-modules, @deepseek-ai/dsh-client-connection, @deepseek-ai/dsh-host-webserver
+srcFiles: 156  srcLoc: 16325
 
-## README.md (157 行)
+## README.md (181 行)
 ---
 description: "Experimental Chrome DevTools inspection for Host and browser Client Cordis runtimes, including Console evaluation, Sources, Network capture, Elements trees, and a CDP-independent query API."
-kind: "package-bundle"
+kind: "package-reference"
 ---
 
 # @deepseek-ai/dsh-experimental-inspector
@@ -19,10 +19,11 @@ English | [中文](README.zh.md)
 
 Inspect one running dsh Host and its browser Clients in Chrome DevTools: Host and Client Console contexts, Host Sources and debugging, captured Host fetches, and a shared Cordis tree, with all CDP state in a Worker.
 
-The Inspector stays off the default plugin list. Install its bundle explicitly with `dsh plugin --profile web add @deepseek-ai/dsh-experimental-inspector`. Its [`cordis.patch.yml`](cordis.patch.yml) mounts the installed package; `pnpm run demo:inspector` mounts the source tree. The Host row needs a Web server. The Worker never accesses live Cordis objects: the shared collector projects them into validated snapshots before transport.
+The optional [Developer Tools bundle](../inspector-profile/README.md) enables both NodeJS Inspector and Session Log, including Host fetch capture. Web startup does not require or accept `--inspect`.
 
 ## Table of Contents
 
+- [Use this package](#use-this-package)
 - [Runtime layout](#runtime-layout)
 - [Configuration](#configuration)
 - [Observation API](#observation-api)
@@ -35,23 +36,44 @@ The Inspector stays off the default plugin list. Install its bundle explicitly w
 
 -----
 
+<a id="use-this-package"></a>
+## Use this package
+
+For trusted local development, `pnpm run demo:inspector` explicitly mounts the source overlay through the normal Web profile. The Host prints a debugging URL; Chrome is required to inspect that target. Fetch capture includes secrets, and the local debugging endpoint permits arbitrary code execution.
+
+The bundle sets `experimental-inspector` to `disabled: false` with `captureFetch: true`. The Host's optional `--inspect` argument hook only opens an external Chrome window; it does not control whether the Inspector runs.
+
+When this component is enabled, **Ctrl/Cmd+Shift+.** toggles **NodeJS Inspector** in the full-width bottom panel without requiring a selected Session. Drag its top edge to resize it, taking space from the content above; the selected height is retained across collapse and navigation. The focused divider also accepts Up/Down, Home and End. Its iframe loads on the first open and remains mounted while collapsed and across Session or main-panel navigation; unloading the component resets it. The X button and shortcut restore the opening control's focus when that control remains connected. The iframe automatically connects to this Host and opens Console; the manual Connection panel is omitted. Each embedded frontend shows Host and only its embedding page's Client in Console, Sources and the Cordis tree. The printed `devtools://` URL shows all Clients.
+
+The Host serves the mirrored DevTools frontend at the application-relative `inspector/devtools/devtools_app.html` path, using the existing Web login. The `inspector/devtools` prefix redirects to that entry; GET and HEAD serve files, missing resources return 404, and other methods return 405. Its `cdp` WebSocket route authenticates the same browser session and forwards only to this Inspector's Worker page target. The bottom panel supplies its claimed `clientSourceId` to the entry and automatic WebSocket endpoint; the selection follows that logical Client across reconnects. An absent selector includes all Clients, an unavailable selected Client leaves Host visible, and empty or repeated selectors reject the upgrade with 400. Explicit `ws` or `wss` query parameters override the automatic endpoint, including its selection.
+
+The build compiles the official `chrome-devtools-frontend@1.0.1638082` TypeScript sources with the root workspace's Vite `8.0.16`. This npm snapshot is an ancestor of the Chromium 150 release branch, not an exact copy of its later stable release. The [source configuration](scripts/devtools/source.ts) and package manifest fix the version. Normal npm installation supplies the source and toolchain; building needs no appspot access, browser download, browser launch, or PAK extraction. Neither workspace installation nor published-package installation runs a DevTools download hook.
+
+The [distribution build](scripts/build-devtools.ts) emits ESM entries, shared chunks, explicit Workers, injected scripts, and runtime assets into `lib/devtools`. It preserves original module-relative resource URLs, including deployment prefixes. CSS text modules, image variables, and minimal English locale constants replace GN-generated inputs without modifying npm sources. The frontend uses English UIStrings directly from upstream modules, with no translation files or dictionary generator. Other language preferences resolve to English. All upstream panels, including Lighthouse, remain included. Memory retains its parser Worker; Performance records Host CPU. Published packages contain the built assets, integrity manifest, and Chromium license, not the build-time npm source or Vite dependencies.
+
+The frontend uses browser runtime adapters and excludes Node-only transports at build time, without an import map. Its same-origin connection bootstrap precedes the application entry. The bottom panel adds `disableLocaleInfoBar=true`; the bootstrap sets DevTools' own `disable-locale-info-bar` preference without changing its language. Updating the frontend requires changing the npm pin and source configuration together, then rerunning the panel and Worker checks; incompatible source edits fail the build.
+
 <a id="runtime-layout"></a>
 ## Runtime layout
 
-The Host plugin starts the Worker and connects a dedicated `MessagePort`. The Client plugin reads the injected `globalThis.__DSH_INSPECTOR__` bootstrap and opens a separate authenticated WebSocket directly to the Worker; a page opened before the Host row was enabled has no bootstrap, fails its Client plugin with a reload instruction, and inspects only after a reload. Chrome DevTools connects to the Worker's CDP WebSocket. A private `node:inspector.Session` per DevTools connection attaches from the Worker to the Host main thread, so Host Console evaluation, Sources, breakpoints, and resume remain available while Host JavaScript is paused.
+The Worker never accesses live Cordis objects: the shared Host/Client collector projects them into validated snapshots before transport. Cordis owns plugin composition, `ctx.inspector` registration, bootstrap injection, and disposal. A late-loading Client fetches its bootstrap through an authenticated Host route. Bootstrap transport and source-setup failures warn and retain connection-reset recovery for both injected and fetched startup; invalid bootstrap data or service-registration failures reject startup. Source replacement joins old service-consumer cleanup before claiming another source, and unloading an active plugin cancels its pending bootstrap refresh.
+
+The Host plugin starts the Worker and connects a dedicated `MessagePort`. The Client uses injected or fetched browser-source parameters to open an authenticated WebSocket directly to the Worker; it receives no DevTools URL. Chrome DevTools connects to the Worker's CDP WebSocket. A private `node:inspector.Session` per DevTools connection attaches from the Worker to the Host main thread, so Host debugging remains available while Host JavaScript is paused.
 
 The source tree follows those execution environments: `client/` and `host/` provide mirrored adapter entry paths, `worker/` contains only Worker-thread orchestration and Chrome protocol state, and `shared/` contains environment-independent Cordis and network models, normalized realm backend interfaces, and the internal bridge protocol. Worker-side Client and Host adapters are mirrored under `worker/realms/`; a Client adapter in that directory still executes in the Worker.
 
 Host and Client producers send internal observation records rather than CDP messages. Records contain a source generation, sequence, source-clock timestamp, topic, and JSON payload. The Worker validates every process or network frame, owns source state and retention, and translates recognized topics to standard CDP domains.
 
-Client sources declare typed Runtime, Console, and read-only Sources capabilities. `Runtime.enable` publishes the real Host execution context and one synthetic context for every connected Client source. Selecting a Client context routes evaluation, property access, function calls, promise awaiting, and object release to that browser realm. Client Console arguments use the same session-local object table, while `Debugger.enable` publishes the built `lib/client.js` catalog and `Debugger.getScriptSource` reads bounded content chunks. Client-script breakpoints, step, and call frames remain unsupported; target-wide pause and resume control the Host debugger only.
+Client sources declare typed Runtime, Console, and read-only Sources capabilities. `Runtime.enable` publishes only the default Host execution context and one synthetic context for every connected Client included in that DevTools connection; Node's internal and additional VM contexts are not listed. Selecting a Client context routes evaluation, property access, function calls, promise awaiting, and object release to that browser realm. Client Console arguments use the same session-local object table, while `Debugger.enable` publishes the built `lib/client.js` catalog and `Debugger.getScriptSource` reads bounded content chunks. Source-map URLs come from the loaded script's `sourceMappingURL` trailer, including combo URLs and deployment prefixes. Client-script breakpoints, step, and call frames remain unsupported; target-wide pause and resume control the Host debugger only.
+
+A Client synchronously closes its source on `pagehide` and reconnects with the same logical identity on `pageshow` after a cached-page restore. Switching a live page to the background does not disconnect it. Closed generations cannot publish delayed execution contexts or script catalogs.
 
 Both plugin faces run the same browser-safe Cordis collector. It converts reachable Context and Fiber objects into a versioned `CordisTreeSnapshot`; the Worker stores that CDP-independent representation and projects each Host or Client source into the Elements panel.
 
 <a id="configuration"></a>
 ## Configuration
 
-The Host plugin injects `webServer` and accepts these fields:
+The Host plugin injects `webServer` and `connection` and accepts these fields:
 
 | Field | Default | Meaning |
 |---|---:|---|
@@ -106,15 +128,15 @@ Publishing validates lossless JSON and schedules delivery without waiting for th
 <a id="cordis-tree-inspection"></a>
 ## Cordis tree inspection
 
-The Elements document has fixed `<host>` and `<clients>` containers. `<host>` contains the Host root Context; `<clients>` contains one `<client>` per Client source, and each `<client>` contains that realm's root Context. The Cordis root Fiber is omitted. Every other Fiber is a child of `fiber.parent`, owns exactly one Context child for `fiber.ctx`, and carries only `uid="<Cordis Fiber.uid>"`; Context elements have no attributes. Context-only `extend()`, `isolate()`, and `intercept()` layers remain direct Context descendants.
+The Elements document has fixed `<host>` and `<clients>` containers. `<host>` contains the Host root Context; `<clients>` contains one `<client>` per Client source, and each `<client>` contains that realm's root Context. The Cordis root Fiber is omitted. After removing Cordis service-call `shadow` wrappers, every other Fiber is a child of `fiber.parent`, owns exactly one Context child for `fiber.ctx`, and carries only `uid="<Cordis Fiber.uid>"`; Context elements have no attributes. Context-only `extend()`, `isolate()`, and `intercept()` layers remain direct Context descendants.
 
 Host and Client publish the same nested `CordisTreeSnapshot` type. Context and Fiber nodes carry opaque object handles for realm-local object lookup; Fiber nodes additionally carry Cordis `uid`. The Worker composes those realm snapshots into one `{ host, clients }` inspection tree. It assigns `BackendNodeId` values per source generation; each DevTools connection assigns its own `NodeId` values; `DOM.resolveNode` asks the owning Host or Client Runtime for a connection-local `RemoteObjectId`. `DOM.requestNode` maps that object id back to the same Elements node. `ctx.inspector.cordis.getTree()` and `DSHInspector.getCordisTree` read the detached consumer-neutral tree without routing handles or CDP ids.
 
-Node delivery is depth-limited per DevTools connection: `DOM.getDocument` serves three document levels when the caller omits `depth`, withheld levels advertise `childNodeCount`, and expansion fetches them through `DOM.requestChildNodes` (`depth: -1` for a whole subtree). NodeIds leaving through `DOM.performSearch`, `DOM.requestNode`, or `DOM.pushNodesByBackendIdsToFrontend` first push the not-yet-sent ancestor levels as `DOM.setChildNodes` events.
+Node delivery is depth-limited per DevTools connection: `DOM.getDocument` serves three document levels when the caller omits `depth`, withheld levels advertise `childNodeCount`, and expansion fetches them through `DOM.requestChildNodes` (`depth: -1` for a whole subtree). Repeated expansion requests deliver only missing child lists, preserving existing frontend node objects and deeper loaded descendants. NodeIds leaving through `DOM.performSearch`, `DOM.requestNode`, or `DOM.pushNodesByBackendIdsToFrontend` first push the not-yet-sent ancestor levels as `DOM.setChildNodes` events.
 
-Sources publish complete snapshots, while the Worker compares stable backend node identities before notifying DevTools. Unchanged snapshots emit no DOM event; additions, removals, and attribute changes use node-level CDP events, inserted-node payloads withhold their subtree, and sibling reordering replaces only that parent's children. Existing `NodeId` values and unaffected Elements expansion remain stable.
+Sources publish complete snapshots, while the Worker compares stable backend node identities before notifying DevTools. Unchanged snapshots emit no DOM event. Changes to a known node's undelivered child list send only `DOM.childNodeCountUpdated`; expanding it fetches the complete current child list. Delivered child lists receive node-level insertion and removal events, inserted-node payloads withhold their subtree, and sibling reordering replaces only that parent's children. Attribute changes target delivered nodes only. Re-fetching a document replaces its delivered depth; `DOM.describeNode` does not attach nodes to the frontend tree. Existing `NodeId` values and unaffected Elements expansion remain stable.
 
-When a Client disconnects, its Console execution context and live object ids are destroyed immediately. With disconnected-tree retention enabled, Elements keeps the last tree unchanged while connection state remains in the inspection model rather than becoming an unreviewed DOM attribute. Reconnection keeps the logical source id, creates a new synthetic CDP context id for the new transport generation, and replaces the stale tree after its complete snapshot arrives. The Client retains its logical id in `sessionStorage` and claims it through Web Locks for the page lifetime, so refresh reuses the id while a duplicated live tab receives a new one. The Worker retains at most `maxDisconnectedCordisTrees` such snapshots; zero removes them immediately.
+When a Client disconnects, its Console execution context and live object ids are destroyed immediately, removing it from Console's context selector. With disconnected-tree retention enabled, Elements keeps the last tree and adds the boolean `disconnected` attribute to its `<client>` element. Reconnection keeps the logical source id, creates a new synthetic CDP context id for the new transport generation, and removes the attribute when its complete snapshot replaces the stale tree. Attribute changes arrive incrementally without refreshing DevTools. The Client retains its logical id in `sessionStorage` and claims it through Web Locks for the page lifetime, so refresh reuses the id while a duplicated live tab receives a new one. The Worker retains at most `maxDisconnectedCordisTrees` such snapshots; zero removes them immediately.
 
 <a id="host-fetch-capture"></a>
 ## Host fetch capture
@@ -127,6 +149,8 @@ After response headers arrive, a caller-side abort can stop the observer's clone
 
 <a id="security"></a>
 ## Security
+
+Client selection limits one DevTools connection's realm sessions, DOM projection and diagnostic queries; it does not stop collection or change the shared observation API. It is a display filter, not authorization: a trusted debugging user can open an unfiltered connection, and Host evaluation retains its existing authority.
 
 The CDP target grants arbitrary code execution in both Host and connected Client realms through `Runtime.evaluate`; Host Debugger operations provide additional control. Full fetch capture includes secrets. The Worker therefore accepts only a `127.0.0.1` bind address. Client ingest additionally requires a random WebSocket subprotocol token injected by the Host and rejects non-loopback origins unless explicitly configured. The CDP socket itself has no token; loopback binding is its only access control.
 
@@ -143,6 +167,8 @@ None; this package neither assembles nor sends a provider request.
 
 <a id="known-limitations-and-deferred-work"></a>
 
+- **Memory and Performance inspect the Host** — Memory captures the Host heap; Performance records Host CPU samples. Client Runtime contexts do not expose browser heap snapshots or rendering traces.
+- **The same-origin relay runs on the Host main thread** — pausing Host JavaScript also pauses this relay. Use the printed direct Worker DevTools endpoint for breakpoint debugging and resume control.
 - **Client active debugging is unsupported** — Console events, Runtime evaluation, RemoteObject access, and read-only `lib/client.js` Sources work. Client-script debugger requests return explicit unsupported errors; target-wide pause and resume control the Host only.
 - **Client Sources expose the Inspector bundle only** — other page scripts are not cataloged by this package.
 - **Client evaluation uses page JavaScript** — page Content Security Policy can block dynamic evaluation, and the synthetic context does not provide DevTools command-line helpers or native REPL declaration semantics.
@@ -161,21 +187,36 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. Wire parsing, generations, Worker lifecycle, and CDP sessions reject invalid relationships in their owning operations.
-
 
 ## 源文件与导出符号
 
-### packages/experimental/inspector/src/client/bridge/controller.ts  (22 行)
-  12	fn	startInspectorClient
+### packages/experimental/inspector/src/client/bottom/keyboard.ts  (38 行)
+  10	fn	bindInspectorKeyboard
+
+### packages/experimental/inspector/src/client/bottom/locales.ts  (25 行)
+  declare module: declare module '@deepseek-ai/dsh-client-ui-slots' {
+  2	const	zh
+  11	const	en
+
+### packages/experimental/inspector/src/client/bottom/page.tsx  (99 行)
+  58	fn	registerInspectorPage
+
+### packages/experimental/inspector/src/client/bottom/resize.tsx  (51 行)
+  14	fn	InspectorResizeHandle
+
+### packages/experimental/inspector/src/client/bridge/controller.ts  (23 行)
+  13	fn	startInspectorClient
 
 ### packages/experimental/inspector/src/client/bridge/dispatcher.ts  (87 行)
   21	iface	ClientBridgeFrameHandlers
   41	fn	dispatchBridgeFrame
 
-### packages/experimental/inspector/src/client/bridge/lifecycle.ts  (41 行)
+### packages/experimental/inspector/src/client/bridge/lifecycle.ts  (46 行)
   4	class	ClientBridgeLifecycle
-      members: L9 constructor, L15 connected, L23 reconnect, L34 close
+      members: L9 constructor, L15 connected, L23 reconnect, L34 close, L41 cancelReconnect
+
+### packages/experimental/inspector/src/client/bridge/locales.ts  (3 行)
+  2	const	untitledClientLabel
 
 ### packages/experimental/inspector/src/client/bridge/publisher.ts  (111 行)
   15	class	ClientBridgePublisher
@@ -185,9 +226,9 @@ None.
   7	class	ClientBridgeRpc
       members: L13 connectSocket
 
-### packages/experimental/inspector/src/client/bridge/transport.ts  (319 行)
-  33	class	ClientInspectorSource
-      members: L49 constructor, L100 close, L130 connect, L223 executeRuntime, L240 acknowledgeRuntime, L247 cancelRuntime, L255 cancelRuntimeSession, L264 cancelRuntimeRequests, L272 executeSourceRequest
+### packages/experimental/inspector/src/client/bridge/transport.ts  (354 行)
+  34	class	ClientInspectorSource
+      members: L52 sourceId, L65 constructor, L120 close, L138 disconnect, L165 connect, L258 executeRuntime, L275 acknowledgeRuntime, L282 cancelRuntime, L290 cancelRuntimeSession, L299 cancelRuntimeRequests, L307 executeSourceRequest
 
 ### packages/experimental/inspector/src/client/cdp/console.ts  (177 行)
   13	fn	consoleBridgeCapability
@@ -226,14 +267,14 @@ None.
   47	class	ClientRuntimeExecutor
       members: L55 constructor, L67 execute, L111 acknowledge, L123 cancel, L134 closeSession, L147 releaseObjectGroup, L160 consoleEvent, L199 exceptionEvent, L228 reset, L234 session, L251 constructor, L259 beginAllocation, L263 commitAllocation, L267 rollback, L271 execute, L300 close, L304 releaseObjectGroup, L308 serializeAll, L316 describeException, L335 evaluate, L357 callFunction, L379 awaitPromise, L395 resolveArgument, L405 exception, L415 completion, L454 if, L455 if, L456 if, L457 if, L458 if, L464 if, L474 if
 
-### packages/experimental/inspector/src/client/cdp/sources.ts  (243 行)
+### packages/experimental/inspector/src/client/cdp/sources.ts  (249 行)
   22	fn	sourcesBridgeCapability
   27	iface	ClientSourceAsset
-  45	class	ClientSourceCatalogError
-      members: L46 constructor
-  52	class	ClientSourceCatalog
-      members: L55 constructor, L69 scriptKeyForUrl, L83 execute, L119 describe, L137 source, L149 sourceBytes, L154 sourceMapBytes
-  174	fn	discoverInspectorClientSourceCatalog
+  46	class	ClientSourceCatalogError
+      members: L47 constructor
+  53	class	ClientSourceCatalog
+      members: L56 constructor, L70 scriptKeyForUrl, L84 execute, L120 describe, L138 source, L150 sourceBytes, L155 sourceMapBytes
+  176	fn	discoverInspectorClientSourceCatalog
 
 ### packages/experimental/inspector/src/client/cdp/stack.ts  (79 行)
   7	type	ClientScriptKeyResolver
@@ -252,12 +293,15 @@ None.
   12	class	ClientRealmSource
       members: L16 constructor, L31 claim, L50 connect, L62 close, L99 if, L123 if
 
-### packages/experimental/inspector/src/client/plugin.ts  (91 行)
+### packages/experimental/inspector/src/client/plugin.ts  (160 行)
   declare module: declare module '@deepseek-ai/cordis' {
-  21	iface	InspectorService
-  36	const	name
-  39	const	inject
-  45	fn	apply
+  25	iface	InspectorService
+  40	const	name
+  43	const	inject
+  50	fn	apply
+
+### packages/experimental/inspector/src/css-modules.d.ts  (6 行)
+  declare module: declare module '*.module.css' {
 
 ### packages/experimental/inspector/src/host/bridge/controller.ts  (351 行)
   35	iface	InspectorOptions
@@ -338,9 +382,9 @@ None.
 ### packages/experimental/inspector/src/host/inspection/realm.ts  (23 行)
   13	fn	createHostRealmSource
 
-### packages/experimental/inspector/src/host/plugin.ts  (83 行)
-  32	iface	HostPluginConfig
-  38	fn	apply
+### packages/experimental/inspector/src/host/plugin.ts  (165 行)
+  43	iface	HostPluginConfig
+  49	fn	apply
 
 ### packages/experimental/inspector/src/index.ts  (109 行)
   declare module: declare module '@deepseek-ai/cordis' {
@@ -664,6 +708,9 @@ None.
   37	iface	CordisTreeSnapshot
   51	fn	parseCordisTreeSnapshot
 
+### packages/experimental/inspector/src/shared/dispose.ts  (24 行)
+  11	fn	disposeInspectorResources
+
 ### packages/experimental/inspector/src/shared/identity.ts  (20 行)
   6	type	InspectorId
   14	fn	inspectorId
@@ -706,10 +753,16 @@ None.
   67	fn	optionalBoolean
   83	fn	optionalNonNegativeNumber
 
-### packages/experimental/inspector/src/worker/bridge/endpoint.ts  (305 行)
-  19	iface	InspectorEndpointInfo
-  26	class	InspectorEndpoint
-      members: L33 constructor, L50 start, L76 close, L98 handleHttp, L116 handleUpgrade, L139 acceptCdp, L172 acceptIngest, L207 authorizedClient, L223 target, L235 cdpUrl, L239 boundPort, L247 createServer, L253 requireServer, L258 json
+### packages/experimental/inspector/src/shared/web.ts  (27 行)
+  6	const	INSPECTOR_BOOTSTRAP_PATH
+  9	const	INSPECTOR_BOOTSTRAP_ROUTE
+  12	const	INSPECTOR_CLIENT_QUERY
+  20	fn	readInspectorClientSelection
+
+### packages/experimental/inspector/src/worker/bridge/endpoint.ts  (317 行)
+  21	iface	InspectorEndpointInfo
+  28	class	InspectorEndpoint
+      members: L35 constructor, L52 start, L78 close, L100 handleHttp, L118 handleUpgrade, L149 acceptCdp, L184 acceptIngest, L219 authorizedClient, L235 target, L247 cdpUrl, L251 boundPort, L259 createServer, L265 requireServer, L270 json
 
 ### packages/experimental/inspector/src/worker/bridge/hub.ts  (324 行)
   17	iface	IngestedInspectorRecord
@@ -753,27 +806,27 @@ None.
       members: L26 register, L41 resolve, L50 byUrl, L62 byHash, L74 byUrlPattern, L87 wasUnsupported, L95 removeRealm, L104 clear
   115	fn	cdpScriptId
 
-### packages/experimental/inspector/src/worker/cdp/domains/debugger/session.ts  (351 行)
+### packages/experimental/inspector/src/worker/cdp/domains/debugger/session.ts  (352 行)
   24	class	DebuggerDomainSession
-      members: L35 constructor, L53 handle, L86 close, L96 enable, L125 disable, L137 getScriptSource, L148 searchInContent, L177 evaluateOnCallFrame, L186 pause, L193 resume, L202 forwardNative, L215 unsupportedRoute, L241 receiveRealm, L258 enableRealm, L264 attachCapabilities, L278 publishCatalog, L284 publishScript, L289 publishDebuggerEvent, L304 supportedDebugger, L310 detachCapabilities, L317 respond, L323 if, L329 for, L344 for
+      members: L35 constructor, L53 handle, L86 close, L96 enable, L125 disable, L137 getScriptSource, L148 searchInContent, L177 evaluateOnCallFrame, L186 pause, L193 resume, L202 forwardNative, L215 unsupportedRoute, L241 receiveRealm, L258 enableRealm, L264 attachCapabilities, L278 publishCatalog, L284 publishScript, L290 publishDebuggerEvent, L305 supportedDebugger, L311 detachCapabilities, L318 respond, L324 if, L330 for, L345 for
 
 ### packages/experimental/inspector/src/worker/cdp/domains/dom/index.ts  (5 行)
 
-### packages/experimental/inspector/src/worker/cdp/domains/dom/model.ts  (298 行)
-  15	iface	CordisDomNode
-  26	iface	CordisDomDocument
-  34	type	CordisDomMutation
-  65	type	CordisDomChange
-  70	class	CordisDomBackend
-      members: L79 constructor, L94 document, L103 subscribe, L109 close, L120 nodeForObject, L130 nodeForObjectKind, L141 nodeForRealm, L147 build, L181 entity, L196 node, L211 emit, L243 if, L248 for, L252 for, L264 if, L272 for, L277 for, L288 for
+### packages/experimental/inspector/src/worker/cdp/domains/dom/model.ts  (326 行)
+  16	iface	CordisDomNode
+  27	iface	CordisDomDocument
+  35	type	CordisDomMutation
+  66	type	CordisDomChange
+  71	class	CordisDomBackend
+      members: L84 constructor, L102 forClient, L110 document, L119 subscribe, L125 close, L136 nodeForObject, L146 nodeForObjectKind, L155 includesSource, L165 nodeForRealm, L171 build, L209 entity, L224 node, L239 emit, L271 if, L276 for, L280 for, L292 if, L300 for, L305 for, L316 for
 
-### packages/experimental/inspector/src/worker/cdp/domains/dom/session.ts  (523 行)
+### packages/experimental/inspector/src/worker/cdp/domains/dom/session.ts  (556 行)
   41	class	CordisDomSession
-      members: L53 constructor, L66 handle, L76 releaseObject, L91 bindObject, L107 releaseObjectGroup, L114 close, L120 execute, L210 resolveNode, L229 bindObjectId, L243 selectNode, L260 fromNodeId, L267 serialize, L290 pushNodePath, L311 forgetSubtree, L316 nodeId, L326 parentNodeId, L333 resetDocument, L342 updateDocument, L351 sendMutation, L421 pruneDocumentState, L449 releaseSourceObjects, L460 respond, L467 if, L477 if, L482 if, L483 if, L484 if, L489 if, L494 if, L503 if, L508 if
+      members: L54 constructor, L67 handle, L77 releaseObject, L92 bindObject, L108 releaseObjectGroup, L115 close, L121 execute, L208 resolveNode, L227 bindObjectId, L241 selectNode, L258 fromNodeId, L265 serialize, L291 pushChildNodes, L306 pushNodePath, L319 forgetSubtree, L325 nodeId, L335 parentNodeId, L342 resetDocument, L352 updateDocument, L379 sentNodeId, L383 sendMutation, L453 pruneDocumentState, L482 releaseSourceObjects, L493 respond, L500 if, L510 if, L515 if, L516 if, L517 if, L522 if, L527 if, L536 if, L541 if
 
-### packages/experimental/inspector/src/worker/cdp/domains/native.ts  (50 行)
+### packages/experimental/inspector/src/worker/cdp/domains/native.ts  (56 行)
   7	class	HostNativeDomainSession
-      members: L10 constructor, L27 handle, L38 owns, L43 close
+      members: L10 constructor, L33 handle, L44 owns, L49 close
 
 ### packages/experimental/inspector/src/worker/cdp/domains/network/session.ts  (251 行)
   8	iface	NetworkSink
@@ -805,9 +858,9 @@ None.
   62	class	RuntimeObjectTable
       members: L68 constructor, L74 setObserver, L83 resolve, L94 completion, L114 properties, L139 consoleEvent, L176 realmsInGroup, L188 release, L196 releaseGroup, L206 releaseRealm, L213 clear, L224 remote, L245 property, L259 internalProperty, L270 privateProperty, L283 exception, L297 expose
 
-### packages/experimental/inspector/src/worker/cdp/domains/runtime/session.ts  (475 行)
+### packages/experimental/inspector/src/worker/cdp/domains/runtime/session.ts  (476 行)
   26	class	RuntimeDomainSession
-      members: L34 constructor, L47 handle, L88 close, L102 setObjectObserver, L111 objectRoute, L122 projectCompletion, L137 projectRemoteObject, L149 releaseProjectedGroup, L158 nativeParameters, L180 resolveObject, L197 enable, L216 disable, L229 evaluate, L239 getProperties, L252 callFunction, L276 awaitPromise, L289 releaseObject, L303 releaseObjectGroup, L314 globalLexicalScopeNames, L321 discardConsoleEntries, L330 realmFromSelector, L337 realmFromOptionalSelector, L358 backendContext, L371 routeArgument, L383 unsupportedNativeRoute, L407 receiveRealm, L426 attachConsole, L434 announce, L451 destroy, L462 respond, L466 sendError, L472 if
+      members: L34 constructor, L47 handle, L88 close, L102 setObjectObserver, L111 objectRoute, L122 projectCompletion, L137 projectRemoteObject, L149 releaseProjectedGroup, L158 nativeParameters, L180 resolveObject, L197 enable, L216 disable, L229 evaluate, L239 getProperties, L252 callFunction, L276 awaitPromise, L289 releaseObject, L303 releaseObjectGroup, L314 globalLexicalScopeNames, L321 discardConsoleEntries, L330 realmFromSelector, L337 realmFromOptionalSelector, L358 backendContext, L371 routeArgument, L383 unsupportedNativeRoute, L407 receiveRealm, L427 attachConsole, L435 announce, L452 destroy, L463 respond, L467 sendError, L473 if
 
 ### packages/experimental/inspector/src/worker/cdp/ids.ts  (54 行)
   8	type	CdpNumericId
@@ -830,14 +883,14 @@ None.
   62	fn	sendCdpFailure
   73	fn	respondToCdpRequest
 
-### packages/experimental/inspector/src/worker/cdp/realm-sessions.ts  (129 行)
-  12	type	InspectorRealmSessionEvent
-  17	class	InspectorRealmSessionSet
-      members: L25 constructor, L34 all, L44 host, L55 byContextId, L65 byUniqueContextId, L75 bySource, L85 subscribe, L91 close, L100 receiveRealm, L113 open, L119 emit
+### packages/experimental/inspector/src/worker/cdp/realm-sessions.ts  (135 行)
+  13	type	InspectorRealmSessionEvent
+  18	class	InspectorRealmSessionSet
+      members: L26 constructor, L35 all, L45 host, L56 byContextId, L66 byUniqueContextId, L76 bySource, L86 subscribe, L92 close, L101 receiveRealm, L115 includes, L119 open, L125 emit
 
-### packages/experimental/inspector/src/worker/cdp/session.ts  (118 行)
-  16	class	CdpSession
-      members: L25 constructor, L52 receive, L103 sendEvent, L108 close
+### packages/experimental/inspector/src/worker/cdp/session.ts  (135 行)
+  18	class	CdpSession
+      members: L28 constructor, L57 receive, L107 visibleSources, L112 visibleTree, L119 sendEvent, L124 close
 
 ### packages/experimental/inspector/src/worker/cdp/target.ts  (78 行)
   6	const	CDP_METHOD_NOT_HANDLED
@@ -962,19 +1015,18 @@ None.
 ## 其它关键文件
 
 ### cordis.patch.yml
-# Explicitly installed bundle: the cross-realm inspector. The Host row
-# activates only where a Web server exists.
+# Explicit local debugging overlay; the Host prints its debugging URL.
 
 - insert:
     - id: experimental-inspector
-      name: '@deepseek-ai/dsh-experimental-inspector'
+      name: './lib/index.js'
 
 
 ### package.json
 {
   "name": "@deepseek-ai/dsh-experimental-inspector",
   "description": "Experimental cross-realm CDP hub for Host debugging and Client Runtime inspection",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "icon": "./icon.svg",
   "publishConfig": {
     "access": "public"
@@ -996,19 +1048,15 @@ None.
       "types": "./lib/types/client/index.d.ts",
       "default": "./lib/client.js"
     },
+    "./locale/*.json": "./locale/*.json",
     "./src/*": "./src/*",
-    "./package.json": "./package.json",
-    "./cordis.patch.yml": "./cordis.patch.yml",
-    "./locale/*.json": "./locale/*.json"
+    "./package.json": "./package.json"
   },
   "dsh": {
     "client": {
       "inject": [],
       "platform": "web",
       "immediately": true
-    },
-    "bundle": {
-      "patch": "./cordis.patch.yml"
     }
   },
   "files": [
@@ -1016,8 +1064,9 @@ None.
     "locale/*.json",
     "lib/index.js",
     "lib/client.js",
-    "cordis.patch.yml",
+    "lib/client.*.js",
     "lib/worker.js",
+    "lib/devtools/**",
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",
@@ -1026,19 +1075,21 @@ None.
     "@deepseek-ai/dsh-brand": "workspace:*",
     "@deepseek-ai/dsh-util-crypto": "workspace:*",
     "@deepseek-ai/schemastery": "workspace:~",
+    "open": "^11.0.0",
+    "serve-static": "^2.2.1",
     "ws": "^8.21.0"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/cordis-plugin-loader": "workspace:~",
     "@deepseek-ai/dsh-client-modules": "workspace:*",
+    "@deepseek-ai/dsh-client-connection": "workspace:*",
     "@deepseek-ai/dsh-host-webserver": "workspace:*"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "workspace:~",
-    "@deepseek-ai/cordis-plugin-include": "workspace:~",
-    "@deepseek-ai/cordis-plugin-loader": "workspace:~",
-    "@deepseek-ai/dsh-host-webserver": "workspace:*",
-    "@types/ws": "^8.18.1",
-    "playwright": "^1.49.0",
-    "tsx"
+    "chrome-devtools-frontend": "1.0.1638082",
+    "@types/serve-static": "^2.2.0",
+    "@deepseek-ai/dsh-client-test-runtime": "workspace:*",
+    "@testing-library/react": "^16.1.0",
+    "@deepseek-ai/dsh-client-ui-renderer": "workspace:*",
+    "

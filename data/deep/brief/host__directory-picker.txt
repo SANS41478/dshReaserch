@@ -5,7 +5,7 @@ deps: -
 peers: @deepseek-ai/cordis
 srcFiles: 2  srcLoc: 156
 
-## README.md (114 行)
+## README.md (112 行)
 ---
 description: "Workspace-directory picking seam for the web GUI host: the service contract, capability vocabulary, and error codes the native and browse backends implement."
 kind: "package-reference"
@@ -118,8 +118,6 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. This stateless Service Definition owns the capability vocabulary, while backends and the Remote controller own observations.
-
 
 ## 源文件与导出符号
 
@@ -145,7 +143,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-host-directory-picker",
   "description": "Abstract workspace-directory picking seam (ctx.directoryPicker) for the DeepSeek Harness web GUI host",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

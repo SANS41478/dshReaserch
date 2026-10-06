@@ -3,9 +3,9 @@ path: packages/session/session-projection-cache
 desc: Persisted projection cache (ctx.sessionProjectionCache): durable per-session checkpoint records on the session_projcache storage domain (per-record layout), throttled write-behind, and the cached listing read
 deps: @deepseek-ai/dsh-util-values, @deepseek-ai/schemastery
 peers: @deepseek-ai/cordis, @deepseek-ai/dsh-session, @deepseek-ai/dsh-session-projection, @deepseek-ai/dsh-storage-domain
-srcFiles: 2  srcLoc: 552
+srcFiles: 2  srcLoc: 580
 
-## README.md (142 行)
+## README.md (141 行)
 ---
 description: "The persisted session-projection cache for deployments and maintainers choosing, configuring, or debugging durable checkpoints, zero-I/O list reads, and accelerated cold projection folds."
 kind: "package-reference"
@@ -98,7 +98,6 @@ The cache stores one version-stamped document per session in the `session_projca
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: `SessionProjectionCache` service, write-behind listeners, cache reads |
 | [`src/spec.ts`](src/spec.ts) | The `session_projcache` domain spec and record identity types |
-| — | No runtime invariant companion is published; the cache's correctness relation (a stored row equals the registry fold at its `seq` watermark) is only checkable by re-running the fold over the persisted log — duplicating the implementation rather than detecting drift — and its staleness is by design (fail-soft writes). The durable boundary is schema-validated by the cache's own zod parse on every read, and the read ladder's version/watermark guards are proven by the package spec. |
 
 </details>
 
@@ -159,13 +158,13 @@ None.
   104	class	SessionProjectionCache
       members: L112 constructor, L136 recordFor, L161 cachedSnapshot, L186 cachedPredecessorTitle, L200 viewRecord, L222 hydratePrepared, L256 write, L287 coldSnapshot, L311 installWritePath, L369 flushSoft, L378 markClean, L389 put, L397 requireTable, L420 if
 
-### packages/session/session-projection-cache/src/spec.ts  (109 行)
+### packages/session/session-projection-cache/src/spec.ts  (108 行)
   29	const	checkpointRow
   52	const	checkpointIdentity
   61	type	CheckpointIdentity
   69	const	checkpointRecord
   75	type	CheckpointRecord
-  101	const	projectionCacheDomainSpec
+  100	const	projectionCacheDomainSpec
 
 ## 其它关键文件
 
@@ -173,7 +172,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-session-projection-cache",
   "description": "Persisted projection cache (ctx.sessionProjectionCache): durable per-session checkpoint records on the session_projcache storage domain (per-record layout), throttled write-behind, and the cached listing read",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

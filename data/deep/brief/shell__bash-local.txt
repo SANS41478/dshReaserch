@@ -2,10 +2,10 @@
 path: packages/shell/bash-local
 desc: Local-subprocess implementation of the DeepSeek Harness bash executor seam
 deps: @deepseek-ai/schemastery
-peers: @deepseek-ai/dsh-shell, @deepseek-ai/dsh-subprocess, @deepseek-ai/dsh-timeout, @deepseek-ai/cordis, @deepseek-ai/dsh-settings
-srcFiles: 1  srcLoc: 343
+peers: @deepseek-ai/dsh-shell, @deepseek-ai/dsh-subprocess, @deepseek-ai/dsh-timeout, @deepseek-ai/cordis
+srcFiles: 1  srcLoc: 405
 
-## README.md (154 行)
+## README.md (153 行)
 ---
 description: "The default POSIX Bash executor for deployments and maintainers choosing, configuring, or debugging unconfined command execution over the shell seam."
 kind: "package-reference"
@@ -96,7 +96,6 @@ The executor is a Service Provider for the `ctx.shell` seam built on the subproc
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: `LocalBashExecutor`, `Config`, settings-section wiring |
-| — | No runtime invariant companion is published; this package exposes no independent event sequence or mutable data relation beyond contracts enforced at its owning seam. |
 | `tests/executor.spec.ts` | Exercised behavior: budgets, classification, background handles, ownership |
 | `tests/settings.spec.ts` | Settings layering over the composition entry |
 
@@ -177,7 +176,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-bash-local",
   "description": "Local-subprocess implementation of the DeepSeek Harness bash executor seam",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

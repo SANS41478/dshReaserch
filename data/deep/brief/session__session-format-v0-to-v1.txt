@@ -3,7 +3,7 @@ path: packages/session/session-format-v0-to-v1
 desc: Frozen released-v0 Session codec and identity migration to v1
 deps: @deepseek-ai/dsh-session-format, @deepseek-ai/dsh-util-values
 peers: @deepseek-ai/cordis
-srcFiles: 10  srcLoc: 2874
+srcFiles: 10  srcLoc: 2879
 
 ## README.md (114 行)
 ---
@@ -35,7 +35,7 @@ This package restores released v0 Session JSONL by decoding each physical row an
 
 ### When to use it
 
-Persistence obtains this edge through `dsh-session-format-catalog`; feature compositions do not mount it. Import it directly only when assembling or testing the static released-format catalog. No runtime invariant companion is published because the package has no independently observable runtime registrations whose state can diverge; decoder and migration-stage state belongs to one restore.
+Persistence obtains this edge through `dsh-session-format-catalog`; feature compositions do not mount it. Import it directly only when assembling or testing the static released-format catalog.
 
 ### Entry point
 
@@ -176,7 +176,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-session-format-v0-to-v1",
   "description": "Frozen released-v0 Session codec and identity migration to v1",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

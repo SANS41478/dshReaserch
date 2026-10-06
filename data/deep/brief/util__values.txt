@@ -3,9 +3,9 @@ path: packages/util/values
 desc: Duplicate-install-safe value primitives for the DeepSeek Harness
 deps: -
 peers: @deepseek-ai/cordis
-srcFiles: 1  srcLoc: 240
+srcFiles: 2  srcLoc: 976
 
-## README.md (97 行)
+## README.md (103 行)
 ---
 description: "Lossless JSON validation, detached snapshots, deep freezing, structural equality, and exhaustive-union helpers for runtime packages."
 kind: "package-library"
@@ -17,7 +17,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-util-values` gives runtime packages one implementation for lossless JSON values, immutable object graphs, structural JSON equality, and exhaustive closed-union failures. Callers can validate untrusted values, detach a JSON snapshot, freeze a published value, compare JSON-compatible data, or terminate an unreachable branch without importing a capability package. The helpers hold no shared registry, constructor identity, or mutable module state.
+Callers can validate lossless JSON, read streamed arguments, detach a JSON snapshot, freeze a published value, compare JSON-compatible data, or terminate an unreachable branch without importing a capability package. Each streamed call uses its own `PartialArguments` reader; `PartialArguments.EMPTY` is a shared sealed view with no fields.
 
 ## Table of Contents
 
@@ -45,6 +45,12 @@ if (!isJsonValue(input)) throw new TypeError('expected lossless JSON')
 const snapshot = snapshotJsonValue(input) as JsonValue
 ```
 
+### Read streamed arguments
+
+`PartialArguments` reads a JSON object's top-level fields lazily. `append()` retains separate fragments without scanning or concatenating them. Readers index new key/value ranges, skipping unrequested contents; only requested strings are decoded or counted, and only requested complete non-string values are parsed. `complete()` reports a closing delimiter, not validated contents; `invalid` reports errors already discovered by indexing or content reads. It is not a substitute for tool-input validation.
+
+`refresh()` reports changes to previously observed answers at publication time; intervening reads do not acknowledge pending changes. It evaluates content before comparing completion, so decoding errors cannot suppress a completion update. String readers provide decoded text, bounded prefixes, and exact UTF-16 length, with optional step and offset for change detection. `settle(finalText)` compares fragments directly against the complete text: equal input seals the same view and retains its caches; missing or conflicting deltas produce a new sealed view. `fromText()` and `fromObject()` also create sealed views that reject appends. `isSealed` reads that append restriction without scanning or observing content; `closed()` also covers a closed outer object or failed indexing. See [the readers](src/partial-json.ts) for return distinctions.
+
 ### Publish, compare, or retain keyed values
 
 `deepFreeze(value)` freezes an object graph in place and returns the same value. It walks enumerable string-keyed children and deliberately leaves live `AbortSignal` objects mutable. `deepEqualJson(a, b)` compares JSON-compatible arrays and records structurally; callers must validate hostile or unconstrained values before comparison.
@@ -63,14 +69,14 @@ Use `assertNever(value, context?)` in the default branch of a closed discriminat
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The JSON validator uses an explicit work stack and tracks only the active ancestor chain, so deeply nested values do not consume the JavaScript call stack and repeated non-cyclic references remain valid. Snapshot writes use own data properties, including for names such as `__proto__`. Value operations derive their result only from their arguments; `WeakMapWithValues` stores only instance-owned associations.
+The JSON validator uses an explicit work stack and tracks only the active ancestor chain, so deeply nested values do not consume the JavaScript call stack and repeated non-cyclic references remain valid. Intrinsic arrays and plain objects are recognized across JavaScript realms using native constructor representations from the running engine. Snapshot writes use own data properties, including for names such as `__proto__`. Value operations derive their result only from their arguments; `WeakMapWithValues` stores only instance-owned associations.
 
 ### Source map
 
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | JSON value type, validation and snapshot traversal, structural equality, deep freezing, weak-key/strong-value associations, and exhaustive-union failure |
-| — | No runtime invariant companion is published because these value operations have no shared runtime state; unit tests cover their algebra. |
+| [`src/partial-json.ts`](src/partial-json.ts) | Lazy top-level argument scanning and observed-answer change detection |
 
 </details>
 
@@ -106,7 +112,7 @@ None.
 
 ## 源文件与导出符号
 
-### packages/util/values/src/index.ts  (307 行)
+### packages/util/values/src/index.ts  (309 行)
   4	type	JsonValue
   12	fn	assertNever
   172	fn	snapshotJsonValue
@@ -116,13 +122,18 @@ None.
   247	class	WeakMapWithValues
       members: L258 get, L267 has, L277 set, L293 delete, L302 clear
 
+### packages/util/values/src/partial-json.ts  (667 行)
+  13	iface	LengthReadOptions
+  76	class	PartialArguments
+      members: L85 fromText, L97 fromObject, L133 isSealed, L138 invalid, L147 append, L160 settle, L177 refresh, L197 refreshRead, L208 closed, L216 keys, L225 has, L234 complete, L244 stringLength, L257 stringExceeds, L268 text, L278 textPrefix, L289 value, L294 remember, L315 closedNow, L319 keysNow, L323 hasNow, L327 completeNow, L334 lengthNow, L347 textNow, L368 textPrefixNow, L385 valueNow, L405 chunkAt, L417 slice, L429 readString, L489 scan, L508 stringBoundary, L526 step, L577 fail, L583 beginKey, L590 stepKey, L610 open, L616 beginValue, L639 stepScalar, L645 stepNested, L661 closeValue
+
 ## 其它关键文件
 
 ### package.json
 {
   "name": "@deepseek-ai/dsh-util-values",
   "description": "Duplicate-install-safe value primitives for the DeepSeek Harness",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

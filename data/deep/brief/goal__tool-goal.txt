@@ -3,9 +3,9 @@ path: packages/goal/tool-goal
 desc: Model-facing same-session goal tools with execution-time authority checks
 deps: @deepseek-ai/schemastery
 peers: @deepseek-ai/dsh-agent, @deepseek-ai/dsh-goal, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-session, @deepseek-ai/dsh-system-prompt, @deepseek-ai/dsh-tools, @deepseek-ai/cordis, @deepseek-ai/dsh-session-projection
-srcFiles: 3  srcLoc: 506
+srcFiles: 3  srcLoc: 505
 
-## README.md (164 行)
+## README.md (163 行)
 ---
 description: "The model-facing goal tools for users and maintainers choosing, composing, or debugging get_goal, create_goal, and update_goal."
 kind: "package-reference"
@@ -88,7 +88,6 @@ This section explains how the tools enforce authority and render output; the obs
 | [`src/index.ts`](src/index.ts) | Plugin entry: tool registration, config, system-prompt section, result rendering |
 | [`src/authority.ts`](src/authority.ts) | Execution-time authority checks and goal-round acceptance |
 | [`src/wrapup.ts`](src/wrapup.ts) | Closing-message instruction for terminal autonomous updates |
-| — | No runtime invariant companion is published; this model-facing adapter owns no independent state or event protocol; accepted mutations are checked by the goal domain and authority behavior is package-tested. |
 
 ### Tool output
 
@@ -197,7 +196,7 @@ This Dev Note is working context for maintainers; it is explicitly non-authorita
 {
   "name": "@deepseek-ai/dsh-tool-goal",
   "description": "Model-facing same-session goal tools with execution-time authority checks",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

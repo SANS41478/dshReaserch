@@ -11,20 +11,22 @@
 //
 // 渲染器与浏览器共用 assets/deepfmt.js，不存在「校验的是一套、跑的是另一套」。
 import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { SITE, dataPath } from './_paths.mjs'
 
-const BASE = 'D:/临时/dsh研究'
+const BASE = SITE
 // 仓库是 "type":"module"，而 deepfmt.js 是浏览器用的经典脚本（UMD）。
 // 这里以 CJS 语义求值它，拿到的就是浏览器同一份实现（module.exports 分支）。
 const FMT = (() => {
-  const src = readFileSync(`${BASE}/assets/deepfmt.js`, 'utf8')
+  const src = readFileSync(join(BASE, 'assets/deepfmt.js'), 'utf8')
   const mod = { exports: {} }
   new Function('module', 'exports', src)(mod, mod.exports)
   return mod.exports
 })()
 
-const PKGS = JSON.parse(readFileSync(`${BASE}/data/packages.json`, 'utf8'))
-const DEEP = JSON.parse(readFileSync(`${BASE}/data/deep.json`, 'utf8'))
-const FILEMAP = JSON.parse(readFileSync(`${BASE}/data/filemap.json`, 'utf8'))
+const PKGS = JSON.parse(readFileSync(dataPath('packages.json'), 'utf8'))
+const DEEP = JSON.parse(readFileSync(dataPath('deep.json'), 'utf8'))
+const FILEMAP = JSON.parse(readFileSync(dataPath('filemap.json'), 'utf8'))
 
 const REF_RE_SRC = '([A-Za-z0-9_\\-.\\/]+\\.(?:ts|tsx|js|mjs|cjs|yml|yaml|md|py)):(\\d+)'
 const NUL = String.fromCharCode(0)

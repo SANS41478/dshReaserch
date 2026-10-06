@@ -5,7 +5,7 @@ deps: @deepseek-ai/dsh-host-directory-picker, @deepseek-ai/schemastery
 peers: @deepseek-ai/cordis
 srcFiles: 1  srcLoc: 325
 
-## README.md (123 行)
+## README.md (122 行)
 ---
 description: "In-app browsing backend of the directory-picker seam: one-level directory listing and child-directory creation for the web GUI host, serving remote clients too."
 kind: "package-reference"
@@ -80,7 +80,6 @@ Every filesystem await races the caller's signal (`raceAbort`), so a stalled net
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | `BrowseDirectoryPicker` service: listing, creation, bounded window, error mapping |
-| — | No runtime invariant companion is published; each list/create is one stateless filesystem round trip; the filesystem itself is the authoritative state. |
 
 </details>
 
@@ -147,7 +146,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-host-directory-picker-browse",
   "description": "In-app browsing backend of the directory-picker seam (listing/creation primitives over the host filesystem)",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

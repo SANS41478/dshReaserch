@@ -2,10 +2,10 @@
 path: packages/llm/llm-retry
 desc: Provider-routed LLM request retry policy for the DeepSeek Harness
 deps: @deepseek-ai/schemastery
-peers: @deepseek-ai/dsh-brand, @deepseek-ai/dsh-agent, @deepseek-ai/dsh-invariants, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-session, @deepseek-ai/dsh-timeout, @deepseek-ai/cordis, @deepseek-ai/dsh-session-projection
-srcFiles: 5  srcLoc: 533
+peers: @deepseek-ai/dsh-brand, @deepseek-ai/dsh-agent, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-session, @deepseek-ai/dsh-timeout, @deepseek-ai/cordis, @deepseek-ai/dsh-session-projection
+srcFiles: 3  srcLoc: 323
 
-## README.md (150 行)
+## README.md (148 行)
 ---
 description: "The retry executor for users and maintainers configuring provider-routed model-request recovery at durable agent-step boundaries."
 kind: "package-reference"
@@ -84,7 +84,6 @@ The executor is built on one rule: **durable before wait, open-step boundaries.*
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | The function plugin: waterfall listener, policy lookup, backoff, durable event appends |
-| [`src/history.ts`](src/history.ts) | Durable retry-history lookup from the session log |
 | [`src/types.ts`](src/types.ts) | Browser-safe `llm/retry` and `llm/retry-started` event payload types |
 | [`src/brand.ts`](src/brand.ts) | The `RetryId` brand shared by the event payloads |
 
@@ -152,7 +151,6 @@ These limits define where the executor stops and future work begins. They are cu
 This Dev Note is non-authoritative working context: notes for maintainers and open questions. Shipped behavior and accepted rationale live in the sections above, the package code, and the linked Agent Notes.
 
 - Retry numbers continue only across events with the same provider and complete policy key, so a route replacement with different limits, code membership, or backoff starts its own history; the key includes every behavior-affecting field and sorts normal-mode codes because eligibility uses set membership.
-- The separately published `./invariant` companion validates each scheduled retry against the session log — naming the current open turn and latest closed step, matching the failed request's durable provider, and requiring each `llm/retry-started` event to name one prior scheduled attempt with the same retry id, turn, step, and retry number.
 
 </details>
 
@@ -163,9 +161,6 @@ This Dev Note is non-authoritative working context: notes for maintainers and op
   4	type	RetryId
   11	fn	RetryId
 
-### packages/llm/llm-retry/src/history.ts  (34 行)
-  14	fn	providerForOpenStep
-
 ### packages/llm/llm-retry/src/index.ts  (260 行)
   declare module: declare module '@deepseek-ai/dsh-session-projection/types' {
   21	const	name
@@ -174,11 +169,6 @@ This Dev Note is non-authoritative working context: notes for maintainers and op
   28	const	Config
   40	iface	RetryInternals
   123	fn	apply
-
-### packages/llm/llm-retry/src/invariant.ts  (179 行)
-  14	const	name
-  16	const	inject
-  177	const	apply
 
 ### packages/llm/llm-retry/src/types.ts  (49 行)
   declare module: declare module '@deepseek-ai/dsh-session/types' {
@@ -191,7 +181,7 @@ This Dev Note is non-authoritative working context: notes for maintainers and op
 {
   "name": "@deepseek-ai/dsh-llm-retry",
   "description": "Provider-routed LLM request retry policy for the DeepSeek Harness",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -208,10 +198,6 @@ This Dev Note is non-authoritative working context: notes for maintainers and op
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
-    "./invariant": {
-      "types": "./lib/types/invariant.d.ts",
-      "default": "./lib/invariant.js"
-    },
     "./types": {
       "types": "./lib/types/types.d.ts",
       "default": "./lib/types/types.js"
@@ -220,7 +206,6 @@ This Dev Note is non-authoritative working context: notes for maintainers and op
   },
   "files": [
     "lib/index.js",
-    "lib/invariant.js",
     "lib/types/**/*.js",
     "lib/types/**/*.d.ts"
   ],
@@ -228,7 +213,6 @@ This Dev Note is non-authoritative working context: notes for maintainers and op
   "peerDependencies": {
     "@deepseek-ai/dsh-brand": "workspace:*",
     "@deepseek-ai/dsh-agent": "workspace:*",
-    "@deepseek-ai/dsh-invariants": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-timeout": "workspace:*",
@@ -246,8 +230,11 @@ This Dev Note is non-authoritative working context: notes for maintainers and op
     "@deepseek-ai/dsh-agent": "workspace:*",
     "@deepseek-ai/dsh-agent-loop": "workspace:*",
     "@deepseek-ai/dsh-agent-loop-testkit": "workspace:*",
-    "@deepseek-ai/dsh-invariants": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-llm-deepseek": "workspace:*",
     "@deepseek-ai/dsh-llm-deepseek-api-key": "workspace:*",
-    "@deepseek-ai/dsh-ll
+    "@deepseek-ai/dsh-llm-mock-server": "workspace:*",
+    "@deepseek-ai/dsh-session": "workspace:*",
+    "@deepseek-ai/dsh-session-projection": "workspace:*",
+    "@deepseek-ai/dsh-session-persistence-jsonl": "workspace:*",
+    "@deepseek-ai/dsh-system-pr

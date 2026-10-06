@@ -2,8 +2,8 @@
 path: packages/fs/fs
 desc: Abstract filesystem capability seam (ctx.fs) for the DeepSeek Harness — vocabulary types, the FileSystem service (text IO + optional version-guarded atomic mutations), and the fs/* policy event vocabulary
 deps: -
-peers: @deepseek-ai/dsh-brand, @deepseek-ai/dsh-invariants, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-sandbox, @deepseek-ai/cordis
-srcFiles: 3  srcLoc: 534
+peers: @deepseek-ai/dsh-brand, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-sandbox, @deepseek-ai/cordis
+srcFiles: 2  srcLoc: 501
 
 ## README.md (128 行)
 ---
@@ -142,11 +142,6 @@ None.
   87	class	FileSystem
       members: L88 constructor, L100 watch, L119 sandboxMode, L132 resolve, L142 processPath, L152 processPathFromHostPath, L164 fileUrl, L173 contains, L181 stat, L197 lstat, L205 readText, L216 streamText, L228 readBytes, L243 readByteRange, L252 listDir, L266 writeText, L287 editText
 
-### packages/fs/fs/src/invariant.ts  (49 行)
-  10	const	name
-  12	const	inject
-  47	const	apply
-
 ### packages/fs/fs/src/types.ts  (204 行)
   16	type	FsTargetKey
   24	fn	FsTargetKey
@@ -171,7 +166,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-fs",
   "description": "Abstract filesystem capability seam (ctx.fs) for the DeepSeek Harness — vocabulary types, the FileSystem service (text IO + optional version-guarded atomic mutations), and the fs/* policy event vocabulary",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -188,29 +183,22 @@ None.
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
-    "./invariant": {
-      "types": "./lib/types/invariant.d.ts",
-      "default": "./lib/invariant.js"
-    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
   "files": [
     "lib/index.js",
-    "lib/invariant.js",
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",
   "peerDependencies": {
     "@deepseek-ai/dsh-brand": "workspace:*",
-    "@deepseek-ai/dsh-invariants": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-sandbox": "workspace:*",
     "@deepseek-ai/cordis": "workspace:~"
   },
   "devDependencies": {
     "@deepseek-ai/dsh-brand": "workspace:*",
-    "@deepseek-ai/dsh-invariants": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-sandbox": "workspace:*",
     "@deepseek-ai/cordis": "workspace:~"

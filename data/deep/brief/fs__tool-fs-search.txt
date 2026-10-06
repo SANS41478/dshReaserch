@@ -5,7 +5,7 @@ deps: @deepseek-ai/schemastery
 peers: @deepseek-ai/dsh-llm, @deepseek-ai/dsh-output-retention, @deepseek-ai/dsh-session, @deepseek-ai/dsh-spill, @deepseek-ai/dsh-subprocess, @deepseek-ai/dsh-system-prompt, @deepseek-ai/dsh-timeout, @deepseek-ai/dsh-tools, @deepseek-ai/cordis
 srcFiles: 7  srcLoc: 1558
 
-## README.md (224 行)
+## README.md (222 行)
 ---
 description: "The model-facing glob and grep discovery tools for users and maintainers composing or debugging workspace search for agents."
 kind: "package-reference"
@@ -228,8 +228,6 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. This model-facing adapter has no independent lifecycle stream; execution relations are owned by the capability seam it calls.
-
 
 ## 源文件与导出符号
 
@@ -307,7 +305,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-tool-fs-search",
   "description": "Model-facing filesystem discovery tools (glob, grep) backed by the packaged ripgrep binary (@vscode/ripgrep)",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

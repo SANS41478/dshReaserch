@@ -1,11 +1,11 @@
 # @deepseek-ai/dsh-client-ui-slots
 path: packages/client/ui-slots
-desc: Slot registry pure core: SlotMap declaration merging, single register composition API, four-share props types, store-seat types, renderer install seam
+desc: Slot registry pure core: typed ordinary Slots and reusable Component Factories, derived props, Store seats, and renderer installation
 deps: -
 peers: @deepseek-ai/cordis
-srcFiles: 3  srcLoc: 1477
+srcFiles: 3  srcLoc: 1967
 
-## README.md (112 行)
+## README.md (110 行)
 ---
 description: "Slot registry pure core for the dsh web client: ordinary extension slots, reusable Component Factories, derived props types, store seats, and the renderer install contract."
 kind: "package-library"
@@ -83,7 +83,7 @@ These pages cover the engine, the renderer, and the composition model.
 - [ui-renderer](../ui-renderer/README.md) — the React slot renderer implementing this package's install contract.
 - [Slot system standard](../../../.agents/notes/implemented/architecture/2026-07-22-slot-type-chain-implementation.md) — the definitive composition model.
 - [Component Factories](../../../.agents/notes/implemented/architecture/2026-09-10-component-factories-and-local-slots.md) — reusable definitions, local Component selection, and occurrence lifetimes.
-- [Web client architecture](../../../.agents/notes/implemented/architecture/2026-07-19-gui-web-client-architecture.md) — the loading chain and object layer this registry plugs into.
+- [Web client architecture](../../../docs/subsystems/web-client.md) — the loading chain and object layer this registry plugs into.
 
 -----
 
@@ -115,8 +115,6 @@ These limits define the registry's scaling behavior and accepted type noise; the
 None.
 
 </details>
-
-**Runtime invariant:** No companion is published. This is a zero-dependency pure registry core; it emits no Cordis events itself (the `ui-renderer` SlotRegistry owns the event bridge and its invariants); define/register/dispose sequencing is asserted directly by this package's behavior specs.
 
 
 ## 源文件与导出符号
@@ -219,7 +217,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-client-ui-slots",
   "description": "Slot registry pure core: typed ordinary Slots and reusable Component Factories, derived props, Store seats, and renderer installation",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

@@ -1,10 +1,11 @@
 /* 分屏功能的视觉截图：宽屏分屏 / 文件树定位 / 窄屏覆盖 / 全屏模式 */
-import { createRequire } from 'node:module'
-const require = createRequire(import.meta.url)
-const { chromium } = require('C:/Users/admin/.workbuddy/binaries/node/workspace/node_modules/playwright/index.js')
+import { mkdirSync } from 'node:fs'
+import { PORT, SHOTS as OUT, launchBrowser } from './_paths.mjs'
 
-const BASE = 'http://127.0.0.1:5319/'
-const browser = await chromium.launch()
+mkdirSync(OUT, { recursive: true })
+
+const BASE = `http://127.0.0.1:${PORT}/`
+const browser = await launchBrowser()
 const page = await browser.newPage({ viewport: { width: 1680, height: 950 } })
 const settled = async () => {
   await page.waitForFunction(() => {

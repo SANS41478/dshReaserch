@@ -1,6 +1,9 @@
 // API smoke test — uses node's http directly (bypasses sandbox proxy on curl).
+import { createRequire } from 'node:module'
+import { PORT } from './_paths.mjs'
+const require = createRequire(import.meta.url)
 const get = p => new Promise((resolve, reject) => {
-  const req = require('node:http').get({ host: '127.0.0.1', port: 5319, path: p }, res => {
+  const req = require('node:http').get({ host: '127.0.0.1', port: PORT, path: p }, res => {
     let s = ''
     res.on('data', d => s += d)
     res.on('end', () => { try { resolve(JSON.parse(s)) } catch (e) { reject(new Error(p + ' -> ' + s.slice(0, 200))) } })
@@ -8,8 +11,6 @@ const get = p => new Promise((resolve, reject) => {
   req.on('error', reject)
   req.setTimeout(120000, () => req.destroy(new Error('timeout ' + p)))
 })
-const { createRequire } = await import('node:module')
-const require = createRequire(import.meta.url)
 
 console.log('--- /api/meta ---')
 const meta = await get('/api/meta')
@@ -22,7 +23,7 @@ console.log('packages 分组数:', pkgs.children.length)
 const core = pkgs.children.find(c => c.name === 'core')
 console.log('core 包:', core.children.map(c => c.name).join(', '))
 const al = core.children.find(c => c.name === 'agent-loop')
-console.log('agent-loop 子节点:', al.children.map(c => c.name + '(' + c.kind || c.type + ')').join(', '))
+console.log('agent-loop 子节点:', al.children.map(c => `${c.name}[${c.type}]`).join(', '))
 const alSrc = al.children.find(c => c.name === 'src')
 console.log('agent-loop/src:', alSrc.children.map(c => `${c.name}[${c.kind}]`).join(', '))
 

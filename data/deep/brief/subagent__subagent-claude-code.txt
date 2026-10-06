@@ -5,7 +5,7 @@ deps: @deepseek-ai/dsh-brand, @deepseek-ai/schemastery
 peers: @deepseek-ai/cordis, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-session, @deepseek-ai/dsh-subagent, @deepseek-ai/dsh-subprocess, @deepseek-ai/dsh-timeout
 srcFiles: 3  srcLoc: 906
 
-## README.md (198 行)
+## README.md (196 行)
 ---
 description: "The one-shot Claude Code subagent provider for users and maintainers choosing a product backend, installing a Profile bundle, or configuring an unattended Claude Code delegation."
 kind: "package-bundle"
@@ -136,7 +136,7 @@ Read these pages when the package-level contract is not enough. They move from t
 - [Subagent subsystem](../../../docs/subsystems/subagent.md) — the service contract, provider contract, and terminal result semantics.
 - [dsh-subagent seam](../subagent/README.md) — the registry and start API this provider registers on.
 - [Codex subagent provider](../subagent-codex/README.md) — the sibling product backend over the official app-server protocol.
-- [Claude Code and Codex backends](../../../.agents/notes/implemented/feature/2026-08-04-claude-code-and-codex-subagent-backends.md) — the design record for the product providers.
+- [historical Claude Code and Codex backends](../../../.agents/notes/archived/feature/2026-08-04-claude-code-and-codex-subagent-backends.md) — the design record for the product providers.
 - [Generated configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-subagent-claude-code) — every accepted config field and its source declaration.
 
 -----
@@ -202,8 +202,6 @@ This Dev Note is working context for maintainers: open questions and undecided d
 
 </details>
 
-**Runtime invariant:** No companion is published. Lifecycle pairing belongs to the shared subagent service, and managed-range ownership belongs to the subprocess service.
-
 
 ## 源文件与导出符号
 
@@ -249,7 +247,7 @@ This Dev Note is working context for maintainers: open questions and undecided d
 {
   "name": "@deepseek-ai/dsh-subagent-claude-code",
   "description": "One-shot Claude Code subagent provider over the official Agent SDK",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -308,4 +306,4 @@ This Dev Note is working context for maintainers: open questions and undecided d
     "@deepseek-ai/dsh-session-projection": "workspace:*",
     "@deepseek-ai/dsh-subagent": "workspace:*",
     "@deepseek-ai/dsh-subagent-codex": "workspace:*",
-    "@deepsee
+    "@deep

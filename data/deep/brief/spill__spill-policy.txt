@@ -1,11 +1,11 @@
 # @deepseek-ai/dsh-spill-policy
 path: packages/spill/spill-policy
-desc: Tool-result spill policy for the DeepSeek Harness — replaces oversized plain-text tool results with a retained preview plus a spill-file path (no service API)
+desc: Token-budgeted tool-result retention with recoverable text and image paths
 deps: @deepseek-ai/schemastery
-peers: @deepseek-ai/dsh-llm, @deepseek-ai/dsh-output-retention, @deepseek-ai/dsh-session, @deepseek-ai/dsh-spill, @deepseek-ai/dsh-tools, @deepseek-ai/cordis
-srcFiles: 3  srcLoc: 308
+peers: @deepseek-ai/dsh-llm, @deepseek-ai/dsh-output-retention, @deepseek-ai/dsh-session, @deepseek-ai/dsh-spill, @deepseek-ai/dsh-tools, @deepseek-ai/cordis, @deepseek-ai/dsh-attachment, @deepseek-ai/dsh-fs, @deepseek-ai/dsh-token-meter
+srcFiles: 4  srcLoc: 349
 
-## README.md (168 行)
+## README.md (167 行)
 ---
 description: "Tool-result retention with a shared text/image token budget and readable recovery files."
 kind: "package-reference"
@@ -106,7 +106,6 @@ The browser-safe `./notice` entry owns `formatSpillNotice(omitted, ref, images)`
 | [`src/index.ts`](src/index.ts) | Plugin entry: `Config` validation, the two waterfall listeners, the shared replacement helper |
 | [`src/notice.ts`](src/notice.ts) | Browser-safe notice formatting and recognition, published as `./notice` |
 | [`src/retention.ts`](src/retention.ts) | Pure ordered text/image head-tail retention |
-| — | No runtime invariant companion is published; this package exposes no independent event sequence or mutable data relation beyond contracts enforced at its owning seam. |
 
 ### Failure modes
 
@@ -202,7 +201,7 @@ The policy only sees final accepted content. Earlier provider truncation and too
 {
   "name": "@deepseek-ai/dsh-spill-policy",
   "description": "Token-budgeted tool-result retention with recoverable text and image paths",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -259,4 +258,4 @@ The policy only sees final accepted content. Earlier provider truncation and too
     "@deepseek-ai/dsh-subprocess-local": "workspace:*",
     "@deepseek-ai/dsh-sandbox-local": "workspace:*",
     "@deepseek-ai/dsh-sandbox-policy": "workspace:*",
-    "@deepseek-a
+    "@deepsee

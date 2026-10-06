@@ -2,10 +2,10 @@
 path: packages/interaction/commands
 desc: Plugin-owned human command registry for DeepSeek Harness UIs
 deps: @deepseek-ai/dsh-util-crypto
-peers: @deepseek-ai/dsh-agent, @deepseek-ai/dsh-attachment, @deepseek-ai/dsh-brand, @deepseek-ai/dsh-invariants, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-scope, @deepseek-ai/dsh-session, @deepseek-ai/dsh-typert-protocol, @deepseek-ai/cordis
-srcFiles: 4  srcLoc: 743
+peers: @deepseek-ai/dsh-agent, @deepseek-ai/dsh-attachment, @deepseek-ai/dsh-brand, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-scope, @deepseek-ai/dsh-session, @deepseek-ai/dsh-typert-protocol, @deepseek-ai/cordis
+srcFiles: 3  srcLoc: 695
 
-## README.md (151 行)
+## README.md (150 行)
 ---
 description: "Human slash-command registry for interactive UIs: plugin-owned commands that run directly against an agent without creating a model message, for users and maintainers composing or extending command surfaces."
 kind: "package-reference"
@@ -90,7 +90,6 @@ The observable behavior is covered in [Use this package](#use-this-package); thi
 | [`src/index.ts`](src/index.ts) | `CommandRuntime` service: registration, scoping, dispatch, lifecycle events |
 | [`src/types.ts`](src/types.ts) | Command definition, descriptor, execution, and result types |
 | [`src/brand.ts`](src/brand.ts) | Stable command-definition identities and per-execution lifecycle ids |
-| [`src/invariant.ts`](src/invariant.ts) | Invariant companion pairing `command/run` with `command/done` per session log |
 
 ### Lifecycle events
 
@@ -114,7 +113,7 @@ Attachment enforcement happens in the executor: images are committed through `ad
 Read these pages when the package-level contract is not enough. They move from the shared command vocabulary to the design evidence and adjacent surfaces.
 
 - [Commands subsystem reference](../../../docs/subsystems/commands.md) — registry semantics, input metadata, and the `ctx.commands` Cordis surface.
-- [Command registration Agent Note](../../../.agents/notes/implemented/feature/2026-07-19-plugin-command-registration.md) — the boundary and dispatch contract behind this service.
+- [historical Command registration Agent Note](../../../.agents/notes/archived/feature/2026-07-19-plugin-command-registration.md) — the boundary and dispatch contract behind this service.
 - [Interaction group map](../README.md) — adjacent approval, permission, and question packages.
 - [Plan mode package](../../plan/plan-mode/README.md) — a shipped command producer that drives model-visible work.
 
@@ -177,11 +176,6 @@ None.
   263	class	CommandRuntime
       members: L276 constructor, L285 register, L299 registerFileReceiptResolver, L315 list, L328 find, L361 execute, L434 settleThrown, L446 mintCommandId, L457 appendLifecycle, L470 view, L475 notifyChange, L499 for, L508 for, L519 for
 
-### packages/interaction/commands/src/invariant.ts  (68 行)
-  14	const	name
-  16	const	inject
-  66	const	apply
-
 ### packages/interaction/commands/src/types.ts  (120 行)
   declare module: declare module '@deepseek-ai/cordis' { | declare module '@deepseek-ai/dsh-session/types' {
   15	type	CommandSubmitAttachment
@@ -198,7 +192,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-commands",
   "description": "Plugin-owned human command registry for DeepSeek Harness UIs",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -214,10 +208,6 @@ None.
     ".": {
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
-    },
-    "./invariant": {
-      "types": "./lib/types/invariant.d.ts",
-      "default": "./lib/invariant.js"
     },
     "./types": {
       "types": "./lib/types/types.d.ts",
@@ -240,7 +230,6 @@ None.
   },
   "files": [
     "lib/index.js",
-    "lib/invariant.js",
     "lib/types/**/*.js",
     "lib/types/**/*.d.ts",
     "lib/typert.host.js",
@@ -253,7 +242,6 @@ None.
     "@deepseek-ai/dsh-agent": "workspace:*",
     "@deepseek-ai/dsh-attachment": "workspace:*",
     "@deepseek-ai/dsh-brand": "workspace:*",
-    "@deepseek-ai/dsh-invariants": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-scope": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
@@ -265,4 +253,8 @@ None.
     "zod": "^4.4.3"
   },
   "devDependencies": {
-   
+    "@deepseek-ai/dsh-agent": "workspace:*",
+    "@deepseek-ai/dsh-attachment": "workspace:*",
+    "@deepseek-ai/dsh-brand": "workspace:*",
+    "@deepseek-ai/dsh-llm": "workspace:*",
+  

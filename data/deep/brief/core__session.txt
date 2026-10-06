@@ -3,9 +3,9 @@ path: packages/core/session
 desc: Event-sourced session store for the DeepSeek Harness
 deps: @deepseek-ai/dsh-llm, @deepseek-ai/dsh-brand, @deepseek-ai/dsh-util-values
 peers: @deepseek-ai/dsh-scope, @deepseek-ai/cordis
-srcFiles: 9  srcLoc: 3000
+srcFiles: 10  srcLoc: 3163
 
-## README.md (205 行)
+## README.md (204 行)
 ---
 description: "The event-sourced session log and in-memory store for users and maintainers building, inspecting, or extending the durable record behind every agent interaction."
 kind: "package-reference"
@@ -109,7 +109,6 @@ The package is built on event sourcing: a `Session` is an append-only log of typ
 | [`src/request-header.ts`](src/request-header.ts) | `request/header` folding and reconstruction |
 | [`dsh-util-values`](../../util/values/README.md) | Shared lossless JSON validation and detached snapshots |
 | [`src/repair.ts`](src/repair.ts) | Shared tool-result recovery for failed steps, interrupted logs, and fork seeds |
-| [`src/invariant.ts`](src/invariant.ts) | Invariant companion: seq, turn/step enclosure, tool call/result pairing |
 
 ### Append validation
 
@@ -117,11 +116,11 @@ Every append uses the shared iterative `snapshotJsonValue()` pass, which reads, 
 
 ### Shared recovery
 
-`ToolCallRecovery` tracks unanswered requests from committed events without retaining event history. AgentLoop observes live steps; crash recovery and fork-seed construction replay their prefixes through `openTurnClosers`. Live failures and crash recovery use interrupted-result wording by default; fork construction passes the fork cause to select its distinct retry guidance. The caller appends recovery results before closing the step ([decision](../../../.agents/notes/implemented/bug-fix/2026-09-19-failed-step-tool-results.md)).
+`ToolCallRecovery` tracks unanswered requests from committed events without retaining event history. AgentLoop observes live steps; crash recovery and fork-seed construction replay their prefixes through `openTurnClosers`. Live failures and crash recovery use interrupted-result wording by default; fork construction passes the fork cause to select its distinct retry guidance. The caller appends recovery results before closing the step ([reference](../agent-loop/README.md)).
 
 ### Derived history
 
-`deriveMessages()` caches deep-frozen projections and returns a fresh array per call. The surface event types (`system/message`, `developer/message`, `user/message`, `assistant/message`, `tool/result`) supply their recorded message identities and content; empty-content system and developer nodes project to no message. Plugin-owned projections change derived content without mutating recorded messages. Replacements and projection decisions invalidate the cache. Embedded Assistant streams and `assistant/attempt` events remain replay and diagnostic data only.
+`deriveMessages()` caches deep-frozen projections and returns a fresh array per call. The surface event types (`system/message`, `developer/message`, `user/message`, `assistant/message`, `tool/result`) supply their recorded message identities and content; empty-content system and developer nodes project to no message. Plugin-owned projections change derived content without mutating recorded messages. Replacements and projection decisions invalidate the cache. Embedded Assistant streams and `assistant/attempt` events remain replay and diagnostic data only. Ordinary prompts and injected context project without automatic type- or source-specific wrappers. Producers own any framing in their recorded content.
 
 ### The request header
 
@@ -165,7 +164,7 @@ Appended surface entries preserve reusable prefixes. A `replace` operation inval
 
 #### What the model sees
 
-If recovery finds an assistant tool request with no durable `tool/call`, its synthetic `TOOL_NOT_STARTED` result says `The tool call was interrupted before the Harness recorded it as started. Retry it if it is still needed.` If a durable `tool/call` has no result, its `TOOL_OUTCOME_UNKNOWN` result says `The tool call was interrupted after it was recorded, but no result was durably recorded. Its outcome is unknown. Decide whether to retry from the tool semantics: retry only if the operation is read-only or idempotent; if it may have side effects, first verify external state or ask the user. Do not retry blindly.` Fork-generated results describe only the inherited records: the parent may have started or completed a call after the selected event. `TOOL_NOT_STARTED` means the prefix contains no start record; `TOOL_OUTCOME_UNKNOWN` means it contains a start but no result. Both tell the model to retry only read-only or idempotent operations without further checks; operations with side effects require external verification or user input. See the [fork decision](../../../.agents/notes/implemented/feature/2026-08-18-arbitrary-seq-session-fork.md).
+If recovery finds an assistant tool request with no durable `tool/call`, its synthetic `TOOL_NOT_STARTED` result says `The tool call was interrupted before the Harness recorded it as started. Retry it if it is still needed.` If a durable `tool/call` has no result, its `TOOL_OUTCOME_UNKNOWN` result says `The tool call was interrupted after it was recorded, but no result was durably recorded. Its outcome is unknown. Decide whether to retry from the tool semantics: retry only if the operation is read-only or idempotent; if it may have side effects, first verify external state or ask the user. Do not retry blindly.` Fork-generated results describe only the inherited records: the parent may have started or completed a call after the selected event. `TOOL_NOT_STARTED` means the prefix contains no start record; `TOOL_OUTCOME_UNKNOWN` means it contains a start but no result. Both tell the model to retry only read-only or idempotent operations without further checks; operations with side effects require external verification or user input. See the [fork reference](src/fork.ts).
 
 #### Token effect
 
@@ -217,23 +216,18 @@ None.
 ### packages/core/session/src/fork.ts  (31 行)
   21	fn	buildForkSeed
 
-### packages/core/session/src/index.ts  (1329 行)
+### packages/core/session/src/index.ts  (1325 行)
   declare module: declare module '@deepseek-ai/cordis' { | declare module '@deepseek-ai/dsh-typert-protocol' {
-  171	fn	adoptSessionEvent
-  200	fn	snapshotSessionEvent
-  446	class	Session
-      members: L452 surface, L470 id, L507 create, L532 fromRestore, L550 constructor, L635 eventAt, L649 snapshotEvents, L666 ownEvents, L676 isOwnSeq, L681 seq, L722 append, L788 requestHeader, L809 requestContext, L829 toolHistory, L860 deriveMessages, L889 deriveEventMessage
-  895	type	SessionForkSource
-  904	type	SessionForkErrorCode
-  911	class	SessionForkError
-      members: L912 constructor
-  925	class	SessionStore
-      members: L931 messageProjections, L942 registerMessageProjection, L952 constructor, L986 create, L1018 prepare, L1085 enter, L1122 detachEntered, L1140 announce, L1171 emitDisposed, L1194 flush, L1214 liveEntryFor, L1227 get, L1235 list, L1255 fork, L1275 _forkBoundary, L1310 _resolveForkSource
-
-### packages/core/session/src/invariant.ts  (259 行)
-  18	const	name
-  20	const	inject
-  257	const	apply
+  167	fn	adoptSessionEvent
+  196	fn	snapshotSessionEvent
+  442	class	Session
+      members: L448 surface, L466 id, L503 create, L528 fromRestore, L546 constructor, L631 eventAt, L645 snapshotEvents, L662 ownEvents, L672 isOwnSeq, L677 seq, L718 append, L784 requestHeader, L805 requestContext, L825 toolHistory, L856 deriveMessages, L885 deriveEventMessage
+  891	type	SessionForkSource
+  900	type	SessionForkErrorCode
+  907	class	SessionForkError
+      members: L908 constructor
+  921	class	SessionStore
+      members: L927 messageProjections, L938 registerMessageProjection, L948 constructor, L982 create, L1014 prepare, L1081 enter, L1118 detachEntered, L1136 announce, L1167 emitDisposed, L1190 flush, L1210 liveEntryFor, L1223 get, L1231 list, L1251 fork, L1271 _forkBoundary, L1306 _resolveForkSource
 
 ### packages/core/session/src/known-event-types.ts  (88 行)
   22	const	KNOWN_SESSION_EVENT_TYPES
@@ -263,7 +257,7 @@ None.
   18	fn	encodeSeqRanges
   37	fn	decodeSeqRanges
 
-### packages/core/session/src/surface.ts  (719 行)
+### packages/core/session/src/surface.ts  (713 行)
   23	iface	SessionMessageProjectionContext
   35	iface	SessionMessageProjection
   63	fn	isSurfaceEligibleType
@@ -271,14 +265,14 @@ None.
   89	fn	isAppendSurfaceEvent
   102	fn	isReplacementSurfaceEvent
   120	fn	deriveEventMessage
-  172	fn	validateSessionEventData
-  229	iface	SurfaceFoldReplacement
-  241	iface	SurfaceFoldResult
-  251	iface	SessionSurface
-  410	fn	validateSurfaceMetadata
-  600	fn	foldSurface
-  618	class	SurfaceManager
-      members: L631 constructor, L643 validateNext, L655 replaceGeneration, L662 contentGeneration, L673 deriveEventMessage, L680 nodes, L687 _processDelta, L705 _assertProjections
+  166	fn	validateSessionEventData
+  223	iface	SurfaceFoldReplacement
+  235	iface	SurfaceFoldResult
+  245	iface	SessionSurface
+  404	fn	validateSurfaceMetadata
+  594	fn	foldSurface
+  612	class	SurfaceManager
+      members: L625 constructor, L637 validateNext, L649 replaceGeneration, L656 contentGeneration, L667 deriveEventMessage, L674 nodes, L681 _processDelta, L699 _assertProjections
 
 ### packages/core/session/src/tool-history.ts  (76 行)
   8	class	ToolHistoryProjection
@@ -321,7 +315,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-session",
   "description": "Event-sourced session store for the DeepSeek Harness",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -337,10 +331,6 @@ None.
     ".": {
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
-    },
-    "./invariant": {
-      "types": "./lib/types/invariant.d.ts",
-      "default": "./lib/invariant.js"
     },
     "./types": {
       "types": "./lib/types/types.d.ts",
@@ -359,7 +349,6 @@ None.
   },
   "files": [
     "lib/index.js",
-    "lib/invariant.js",
     "lib/types/**/*.js",
     "lib/types/**/*.d.ts"
   ],
@@ -369,7 +358,6 @@ None.
     "@deepseek-ai/cordis": "workspace:~"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-invariants": "workspace:*",
     "@deepseek-ai/dsh-scope": "workspace:*",
     "@deepseek-ai/dsh-typert-protocol": "workspace:*",
     "@deepseek-ai/dsh-typert-registry": "workspace:*",

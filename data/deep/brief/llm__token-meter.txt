@@ -2,8 +2,8 @@
 path: packages/llm/token-meter
 desc: Replay-aware token measurement service (ctx.tokenMeter) for the DeepSeek Harness
 deps: @deepseek-ai/dsh-util-values, @deepseek-ai/schemastery
-peers: @deepseek-ai/cordis, @deepseek-ai/dsh-compaction, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-llm-retry, @deepseek-ai/dsh-session, @deepseek-ai/dsh-session-projection
-srcFiles: 11  srcLoc: 1471
+peers: @deepseek-ai/cordis, @deepseek-ai/dsh-compaction, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-llm-retry, @deepseek-ai/dsh-session, @deepseek-ai/dsh-session-projection, @deepseek-ai/dsh-compaction-image-offload
+srcFiles: 11  srcLoc: 1482
 
 ## README.md (160 行)
 ---
@@ -164,7 +164,7 @@ This Dev Note is non-authoritative working context: notes for maintainers and op
 
 </details>
 
-**Runtime invariant:** No companion is published. Usage folds replace samples within each attempt; totals need not be monotone. Composition and measurement share the positional replacement planner and fixed estimator, so their heuristic surface totals agree by construction rather than through independent mutable observations. Route-priced totals deliberately differ.
+Usage folds replace samples within each attempt; totals need not be monotone. Composition and measurement share the positional replacement planner and fixed estimator, so their heuristic surface totals agree by construction. Route-priced totals deliberately differ.
 
 
 ## 源文件与导出符号
@@ -232,7 +232,7 @@ This Dev Note is non-authoritative working context: notes for maintainers and op
 {
   "name": "@deepseek-ai/dsh-token-meter",
   "description": "Replay-aware token measurement service (ctx.tokenMeter) for the DeepSeek Harness",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

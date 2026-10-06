@@ -1,11 +1,11 @@
 # @deepseek-ai/dsh-sdk-minimal
 path: packages/bundle/sdk-minimal
-desc: The standalone minimal SDK profile bundle: JSON-RPC, one DeepSeek adapter, persistent shell, editor, and JSONL sessions
-deps: @deepseek-ai/cordis-plugin-timer, @deepseek-ai/dsh-agent, @deepseek-ai/dsh-agent-loop, @deepseek-ai/dsh-deepseek-llm-api-extensions, @deepseek-ai/dsh-fs-local, @deepseek-ai/dsh-invariants, @deepseek-ai/dsh-jobs-local, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-llm-deepseek, @deepseek-ai/dsh-llm-retry, @deepseek-ai/dsh-plugin-package-inventory-deepseek, @deepseek-ai/dsh-sandbox-local, @deepseek-ai/dsh-sandbox-policy, @deepseek-ai/dsh-scope, @deepseek-ai/dsh-sdk-app, @deepseek-ai/dsh-sdk-jsonrpc-server, @deepseek-ai/dsh-session, @deepseek-ai/dsh-session-log-deepseek, @deepseek-ai/dsh-session-persistence-jsonl, @deepseek-ai/dsh-session-projection, @deepseek-ai/dsh-session-title, @deepseek-ai/dsh-subprocess-local, @deepseek-ai/dsh-system-prompt, @deepseek-ai/dsh-terminal, @deepseek-ai/dsh-terminal-bash, @deepseek-ai/dsh-tool-bash-persistent, @deepseek-ai/dsh-tool-pwsh-persistent, @deepseek-ai/dsh-tool-str-replace-editor, @deepseek-ai/dsh-tools
+desc: The standalone minimal SDK profile bundle: JSON-RPC, one DeepSeek adapter, persistent shell, and JSONL sessions
+deps: @deepseek-ai/cordis-plugin-timer, @deepseek-ai/dsh-agent, @deepseek-ai/dsh-agent-loop, @deepseek-ai/dsh-deepseek-llm-api-extensions, @deepseek-ai/dsh-jobs-local, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-llm-deepseek-api-key, @deepseek-ai/dsh-llm-retry, @deepseek-ai/dsh-mcp-resources, @deepseek-ai/dsh-plugin-package-inventory-deepseek, @deepseek-ai/dsh-sandbox-local, @deepseek-ai/dsh-sandbox-policy, @deepseek-ai/dsh-sdk-app, @deepseek-ai/dsh-sdk-jsonrpc-server, @deepseek-ai/dsh-session, @deepseek-ai/dsh-session-log-deepseek, @deepseek-ai/dsh-session-persistence-jsonl, @deepseek-ai/dsh-session-projection, @deepseek-ai/dsh-session-title, @deepseek-ai/dsh-subprocess-local, @deepseek-ai/dsh-system-prompt, @deepseek-ai/dsh-terminal, @deepseek-ai/dsh-terminal-bash, @deepseek-ai/dsh-tool-bash-persistent, @deepseek-ai/dsh-tool-pwsh-persistent, @deepseek-ai/dsh-tools
 peers: @deepseek-ai/cordis
 srcFiles: 1  srcLoc: 10
 
-## README.md (108 行)
+## README.md (107 行)
 ---
 description: "Standalone SDK profile with one default shell tool for users who need a minimal cross-platform coding agent without the shared base bundle."
 kind: "package-bundle"
@@ -64,7 +64,6 @@ The bundle's single insert is the complete application tree: SDK stdio startup a
 |---|---|
 | [`cordis.patch.yml`](cordis.patch.yml) | Complete standalone profile tree and its environment-backed defaults |
 | [`src/index.ts`](src/index.ts) | Bundle package entry |
-| — | No runtime invariant companion is published; the package is a static patch-list carrier whose inserted rows own their runtime relationships and invariant companions. |
 | [`tests/sdk-minimal.spec.ts`](tests/sdk-minimal.spec.ts) | Exact composition, profile-name, and platform-selection checks |
 
 </details>
@@ -193,7 +192,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-sdk-minimal",
   "description": "The standalone minimal SDK profile bundle: JSON-RPC, one DeepSeek adapter, persistent shell, and JSONL sessions",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -230,7 +229,6 @@ None.
     "@deepseek-ai/dsh-agent": "workspace:*",
     "@deepseek-ai/dsh-agent-loop": "workspace:*",
     "@deepseek-ai/dsh-deepseek-llm-api-extensions": "workspace:*",
-    "@deepseek-ai/dsh-invariants": "workspace:*",
     "@deepseek-ai/dsh-jobs-local": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-llm-deepseek-api-key": "workspace:*",
@@ -239,10 +237,11 @@ None.
     "@deepseek-ai/dsh-plugin-package-inventory-deepseek": "workspace:*",
     "@deepseek-ai/dsh-sandbox-local": "workspace:*",
     "@deepseek-ai/dsh-sandbox-policy": "workspace:*",
-    "@deepseek-ai/dsh-scope": "workspace:*",
     "@deepseek-ai/dsh-sdk-app": "workspace:*",
     "@deepseek-ai/dsh-sdk-jsonrpc-server": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-session-log-deepseek": "workspace:*",
     "@deepseek-ai/dsh-session-persistence-jsonl": "workspace:*",
-    "@deepseek-ai/dsh-session-projection": "workspace:*"
+    "@deepseek-ai/dsh-session-projection": "workspace:*",
+    "@deepseek-ai/dsh-session-title": "workspace:*",
+    "@deepseek-ai/dsh-subprocess-loca

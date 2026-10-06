@@ -3,9 +3,9 @@ path: packages/session/session-title-llm
 desc: Shared LLM generation policy for DeepSeek Harness session-title providers
 deps: @deepseek-ai/dsh-util-values, @deepseek-ai/schemastery
 peers: @deepseek-ai/cordis, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-session, @deepseek-ai/dsh-session-title, @deepseek-ai/dsh-timeout
-srcFiles: 1  srcLoc: 297
+srcFiles: 1  srcLoc: 304
 
-## README.md (132 行)
+## README.md (130 行)
 ---
 description: "Shared model-backed title generation policy for users and maintainers configuring title providers or debugging auxiliary LLM requests."
 kind: "package-library"
@@ -136,8 +136,6 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. This stateless helper validates and freezes each auxiliary request before dispatch; deadline, stream, cited message seqs, and provider/model fields are checked synchronously and by tests.
-
 
 ## 源文件与导出符号
 
@@ -160,7 +158,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-session-title-llm",
   "description": "Shared LLM generation policy for DeepSeek Harness session-title providers",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

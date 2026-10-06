@@ -1,12 +1,10 @@
 // 精读解读页回归：抽样包页断言（章节齐全/带读表/通俗复述/角标）+ 带读链接点击开分屏 + 控制台零报错。
-// 用法：先起服务（node server.mjs），再 NODE_PATH=托管workspace node scripts/verify-deep.mjs
+// 用法：node scripts/verify-deep.mjs（脚本自己会起服务；需要 playwright）
 import { spawn } from 'node:child_process'
-import { createRequire } from 'node:module'
-const require = createRequire(import.meta.url)
-const { chromium } = require('C:/Users/admin/.workbuddy/binaries/node/workspace/node_modules/playwright/index.js')
+import { join } from 'node:path'
+import { SITE, PORT, launchBrowser } from './_paths.mjs'
 
-const BASE = 'http://127.0.0.1:5319'
-const SITE = 'D:/临时/dsh研究'
+const BASE = `http://127.0.0.1:${PORT}`
 
 // 等服务就绪
 async function waitServer() {
@@ -17,7 +15,7 @@ async function waitServer() {
   throw new Error('server not reachable at ' + BASE)
 }
 
-const server = spawn(process.execPath, [`${SITE}/server.mjs`], { stdio: 'ignore' })
+const server = spawn(process.execPath, [join(SITE, 'server.mjs')], { stdio: 'ignore' })
 process.on('exit', () => server.kill())
 try { await waitServer() } catch { console.error('服务起不来（可能端口被旧进程占用）'); process.exit(1) }
 
@@ -35,7 +33,7 @@ const SAMPLES = [
   ['api/session-controller', '最大控制器'],
 ]
 
-const browser = await chromium.launch()
+const browser = await launchBrowser()
 const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } })
 const errors = []
 page.on('console', m => { if (m.type() === 'error') errors.push(`[console] ${m.text().slice(0, 160)}`) })
@@ -47,6 +45,7 @@ const ok = m => console.log('  ✓ ' + m)
 
 console.log('== 抽样包页章节断言 ==')
 for (const [path, label] of SAMPLES) {
+  const before = fails
   await page.goto(`${BASE}/#/pkg/${path}`, { waitUntil: 'load' })
   await page.waitForFunction(() => document.getElementById('content')?.innerHTML.length > 500, null, { timeout: 15000 })
     .catch(() => {})
@@ -76,8 +75,8 @@ for (const [path, label] of SAMPLES) {
   if (!r.badge) fail(`${path} 缺「已逐包精读」角标`)
   if (!r.summaryDetails) fail(`${path} 缺官方摘要折叠块`)
   if (r.overflow) fail(`${path} 横向溢出`)
-  if (fails === 0 || !fails) ok(`${path}（${label}）— 章节齐全，带读 ${r.tour} 条`)
-  else ok(`${path}（${label}）— 见上方问题`)
+  if (fails === before) ok(`${path}（${label}）— 章节齐全，带读 ${r.tour} 条`)
+  else console.log(`  → ${path}（${label}）问题见上方 ✗`)
 }
 
 console.log('== 带读链接点击 → 右栏分屏 ==')
@@ -96,18 +95,37 @@ else fail(`左栏被替换了（${before} → ${after}）`)
 if (paneLen > 1000) ok(`右栏分屏打开了源码（${paneLen} 字符）`)
 else fail('右栏分屏没打开')
 
-console.log('== 全量 265 包页渲染零报错扫查 ==')
-const deep = await (await fetch(BASE + '/data/bundle.js')).text()
-const keys = [...deep.matchAll(/"(group)":"([^"]+)","dir":"([^"]+)"/g)].map(m => `${m[2]}/${m[3]}`)
+/* 扫查范围取自「包清单」本身。
+   注意不能用正则去 bundle.js 里捞 "group"/"dir" —— deep.json 的每条精读也带这两个字段，
+   那样会把每个包扫两遍（319 包扫成 572 页），看起来"覆盖全"其实只是重复。 */
+const bundleSrc = await (await fetch(BASE + '/data/bundle.js')).text()
+const win = {}
+new Function('window', bundleSrc)(win)
+const PKGS = win.DSH_DATA?.packages || []
+const keys = PKGS.map(p => `${p.group}/${p.dir}`)
+const nDeep = Object.keys(win.DSH_DATA?.deep || {}).length
+console.log(`== 全量 ${keys.length} 包页渲染零报错扫查（其中 ${nDeep} 个有精读、${keys.length - nDeep} 个待精读）==`)
 let scanned = 0
+const broken = []
 for (const k of keys) {
   await page.goto(`${BASE}/#/pkg/${k}`, { waitUntil: 'load' })
   await page.waitForTimeout(40)
   scanned++
-  if (errors.length) break
+  /* 光看控制台不够：route() 会把渲染期异常吞成「出错了」页面，控制台一条不报。
+     所以必须正面断言页面没落进错误页、且正文真的渲染出来了。 */
+  const bad = await page.evaluate(() => {
+    const c = document.getElementById('content')
+    const t = c?.textContent || ''
+    if (t.includes('出错了')) return t.match(/出错了\s*([^\n]{0,80})/)?.[1] || '渲染异常'
+    if (!c || c.innerHTML.length < 300) return '正文过短'
+    return ''
+  })
+  if (bad) broken.push(`${k}: ${bad}`)
+  if (errors.length || broken.length >= 5) break
 }
-console.log(`  扫了 ${scanned} 个包页，控制台错误 ${errors.length} 条`)
+console.log(`  扫了 ${scanned} 个包页，控制台错误 ${errors.length} 条，落进错误页 ${broken.length} 个`)
 if (errors.length) { fails++; errors.slice(0, 5).forEach(e => console.log('  ✗ ' + e)) }
+if (broken.length) { fails++; broken.slice(0, 8).forEach(e => console.log('  ✗ ' + e)) }
 
 await browser.close()
 console.log(fails ? `\n❌ ${fails} 项失败` : '\n✅ 精读页回归全部通过')

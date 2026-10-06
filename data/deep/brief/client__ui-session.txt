@@ -3,9 +3,9 @@ path: packages/client/ui-session
 desc: Session Controller adapter for React and session-scoped slots
 deps: -
 peers: @deepseek-ai/cordis
-srcFiles: 3  srcLoc: 552
+srcFiles: 3  srcLoc: 731
 
-## README.md (50 行)
+## README.md (48 行)
 ---
 description: "React and Slot adapters for Session Controller lists, interaction state, and per-session context."
 kind: "package-reference"
@@ -54,8 +54,6 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. The adapter materialization path enforces Session binding consistency.
-
 
 ## 源文件与导出符号
 
@@ -91,7 +89,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-client-ui-session",
   "description": "Session Controller adapter for React and session-scoped slots",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

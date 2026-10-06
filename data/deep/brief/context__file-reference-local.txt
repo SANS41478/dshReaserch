@@ -3,9 +3,9 @@ path: packages/context/file-reference-local
 desc: Local-filesystem ctx.fileReferences provider with bounded fuzzy indexes
 deps: @deepseek-ai/schemastery
 peers: @deepseek-ai/dsh-agent, @deepseek-ai/dsh-file-reference, @deepseek-ai/dsh-system-prompt, @deepseek-ai/dsh-tools, @deepseek-ai/cordis
-srcFiles: 2  srcLoc: 528
+srcFiles: 2  srcLoc: 530
 
-## README.md (140 行)
+## README.md (139 行)
 ---
 description: "Local-workspace @file completion provider for users and maintainers enabling, sizing, or debugging ctx.fileReferences discovery."
 kind: "package-reference"
@@ -79,7 +79,6 @@ The provider maintains one reusable `WorkspaceFileSearch` per agent, rooted at t
 |---|---|
 | [`src/index.ts`](src/index.ts) | `LocalFileReferenceService`: config validation, per-agent searches, prompt install |
 | [`src/search.ts`](src/search.ts) | `WorkspaceFileSearch`: traversal, ranking, exclusion, staleness and background rebuild |
-| — | No runtime invariant companion is published; per-agent indexes are private advisory caches whose invalidation and disposal are observed directly through service tests. |
 
 ### Main flow
 
@@ -169,7 +168,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-file-reference-local",
   "description": "Local-filesystem ctx.fileReferences provider with bounded fuzzy indexes",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

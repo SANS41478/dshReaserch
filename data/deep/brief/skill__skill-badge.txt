@@ -5,7 +5,7 @@ deps: -
 peers: @deepseek-ai/dsh-skill, @deepseek-ai/cordis
 srcFiles: 1  srcLoc: 61
 
-## README.md (118 行)
+## README.md (117 行)
 ---
 description: "The bundled 'powered by dsh' badge skill for users and maintainers enabling, using, or debugging the optional badge provider."
 kind: "package-reference"
@@ -77,7 +77,6 @@ The provider is an immutable, synchronously registered skill source: it register
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry and the immutable provider: one candidate, resource base, body load |
-| — | No runtime invariant companion is published; the package owns one immutable provider registration, while the skill registry owns registration uniqueness and lifecycle checks. |
 | [`assets/`](assets/) | Packaged skill body (`dsh-badge.md`) and PNG asset (`dsh-badge.png`) |
 
 </details>
@@ -138,7 +137,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-skill-badge",
   "description": "Bundled dsh badge skill provider for DeepSeek Harness",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

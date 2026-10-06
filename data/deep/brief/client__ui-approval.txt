@@ -3,9 +3,9 @@ path: packages/client/ui-approval
 desc: Approval composer takeover over the scoped Remote Event waterfall
 deps: -
 peers: @deepseek-ai/cordis
-srcFiles: 6  srcLoc: 351
+srcFiles: 6  srcLoc: 425
 
-## README.md (50 行)
+## README.md (48 行)
 ---
 description: "Browser approval UI that answers Host permission requests through the scoped interaction path."
 kind: "package-reference"
@@ -54,8 +54,6 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. Registries own and observe the Remote listener and temporary Slot entry.
-
 
 ## 源文件与导出符号
 
@@ -94,7 +92,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-client-ui-approval",
   "description": "Approval composer takeover over the scoped Remote Event waterfall",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -154,4 +152,4 @@ None.
     "@deepseek-ai/dsh-typert-protocol": "workspace:*",
     "@types/react": "~18.3.1",
     "react": "^18.2.0",
-    "@dee
+    "@

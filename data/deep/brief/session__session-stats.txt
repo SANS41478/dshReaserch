@@ -5,7 +5,7 @@ deps: -
 peers: @deepseek-ai/dsh-llm, @deepseek-ai/dsh-session, @deepseek-ai/dsh-session-projection, @deepseek-ai/cordis
 srcFiles: 4  srcLoc: 301
 
-## README.md (135 行)
+## README.md (133 行)
 ---
 description: "Whole-log conversation counts and wall times for clients and maintainers choosing, composing, or debugging the sessionStats projection unit."
 kind: "package-reference"
@@ -139,8 +139,6 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. The package owns a single pure projection fold whose wire payload is schema-validated by the projection registry at every snapshot and change-feed emission, and the event relations the fold relies on (`step/end` exactly once per entered step, monotonic host-assigned turn numbers, chunk and tool events carrying their step coordinates and call ids) are owned and runtime-checked by dsh-agent-loop and the session surface, not here.
-
 
 ## 源文件与导出符号
 
@@ -165,7 +163,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-session-stats",
   "description": "Whole-log conversation counts and wall times projection (sessionStats) for the DeepSeek Harness",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

@@ -1,11 +1,11 @@
 # @deepseek-ai/dsh-headless
 path: packages/bundle/headless
 desc: The dsh one-shot bundle: a direct core Agent/Session runner over dsh-base with no Host, HTTP, or browser layer
-deps: @deepseek-ai/dsh-brand, @deepseek-ai/dsh-cmdline, @deepseek-ai/dsh-code-runtime-worker-thread, @deepseek-ai/dsh-util-values, @deepseek-ai/schemastery
-peers: @deepseek-ai/cordis, @deepseek-ai/cordis-plugin-loader, @deepseek-ai/dsh-agent, @deepseek-ai/dsh-agent-default-model, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-session
-srcFiles: 2  srcLoc: 287
+deps: @deepseek-ai/dsh-brand, @deepseek-ai/dsh-cmdline, @deepseek-ai/dsh-util-values, @deepseek-ai/schemastery
+peers: @deepseek-ai/cordis, @deepseek-ai/cordis-plugin-loader, @deepseek-ai/dsh-agent, @deepseek-ai/dsh-agent-default-model, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-session, @deepseek-ai/dsh-session-query, @deepseek-ai/dsh-fs
+srcFiles: 5  srcLoc: 893
 
-## README.md (157 行)
+## README.md (152 行)
 ---
 description: "One-shot task mode for dsh: run a single task from the command line and get the final answer printed, for users scripting or automating dsh."
 kind: "package-bundle"
@@ -103,14 +103,9 @@ A completed final `turn/end` exits 0; any other outcome — aborted, error, or n
 | [`src/startup.ts`](src/startup.ts) | The `headless-startup` provider: task positional, `--session-id`, `--json`, and `--help` |
 | [`src/json-stream.ts`](src/json-stream.ts) | The `--json` projection: event vocabulary, commit-point emission, string bounding |
 | [`cordis.patch.yml`](cordis.patch.yml) | The one-shot patch over `dsh-base` |
-| — | No runtime invariant companion is published; the runner's observable contract (provider reasoning on stderr, final text on stdout, exit code by turn-end reason) is process-level and owned by the launcher e2e; it registers nothing and holds no mutable relation to audit inside the tree. |
 | [`tests/headless.spec.ts`](tests/headless.spec.ts) | Run flow, aggregation, flush, session adoption, and exit mapping |
 | [`tests/json-stream.spec.ts`](tests/json-stream.spec.ts) | Projection ordering, commit-point emission, bounding, and disposal |
 | [`tests/startup.spec.ts`](tests/startup.spec.ts) | Command-line parsing over a real Loader tree |
-
-### Invariant ownership
-
-No invariant companion is published because the runner's observable contract (final text on stdout, exit code by turn-end reason) is process-level and owned by the launcher e2e; the plugin registers nothing and holds no mutable relation to audit inside the tree.
 
 </details>
 
@@ -238,7 +233,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-headless",
   "description": "The dsh one-shot bundle: a direct core Agent/Session runner over dsh-base with no Host, HTTP, or browser layer",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -299,4 +294,4 @@ None.
     "@deepseek-ai/dsh-agent": "workspace:*",
     "@deepseek-ai/dsh-agent-default-model": "workspace:*",
     "@deepseek-ai/dsh-agent-loop": "workspace:*",
-    "@deepseek-ai/ds
+    "@deepseek-ai

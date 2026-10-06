@@ -5,7 +5,7 @@ deps: @deepseek-ai/schemastery
 peers: @deepseek-ai/dsh-launch-environment, @deepseek-ai/dsh-web, @deepseek-ai/cordis
 srcFiles: 3  srcLoc: 267
 
-## README.md (167 行)
+## README.md (166 行)
 ---
 description: "The Perplexity-backed search provider for ctx.web: how deployments mount OpenAI-compatible Perplexity search with generated answers and citations."
 kind: "package-reference"
@@ -92,7 +92,6 @@ The provider is a thin adapter over Perplexity's chat-completions endpoint with 
 | [`src/index.ts`](src/index.ts) | Plugin entry: config schema, environment fallback, provider registration |
 | [`src/provider.ts`](src/provider.ts) | The `PerplexitySearchProvider`: request dispatch, abort classification, answer and source mapping |
 | [`src/types.ts`](src/types.ts) | Perplexity wire types for the chat-completions response |
-| — | No runtime invariant companion is published; this package exposes no independent event sequence or mutable data relation beyond contracts enforced at its owning seam. |
 
 ### Request and mapping flow
 
@@ -207,7 +206,7 @@ Perplexity's domain filters, `web_search_options` context size, and image suppor
 {
   "name": "@deepseek-ai/dsh-web-search-perplexity",
   "description": "Perplexity-backed search provider for the DeepSeek Harness web capability seam (ctx.web)",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

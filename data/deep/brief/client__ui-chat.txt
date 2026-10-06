@@ -3,9 +3,9 @@ path: packages/client/ui-chat
 desc: Chat Conversation target, node definitions, renderers, and details surface
 deps: @deepseek-ai/schemastery
 peers: @deepseek-ai/cordis
-srcFiles: 69  srcLoc: 9713
+srcFiles: 92  srcLoc: 12521
 
-## README.md (178 行)
+## README.md (185 行)
 ---
 description: "Browser Chat target that renders Session conversation nodes, historical images, actions, localization, and scroll state."
 kind: "package-reference"
@@ -45,12 +45,12 @@ Chat supplies file and HTTP(S) navigation through one `MarkdownDelegateProvider`
 
 Standalone Markdown images show contained previews and open the shared image lightbox; local paths resolve against the viewed workspace after settlement. Image file links keep their sidebar activation and show a thumbnail after hover dwell or keyboard focus. Escape dismisses the thumbnail. Failed images retain a localized status and their description; no duplicate-image filtering is applied.
 
-Settings → General → Open chat links in selects the destination for ordinary clicks on Chat HTTP(S) links: In-App Sidebar (default) opens a new right-Sidebar Browser tab, while Default Browser opens an external tab. The setting is shown only while the Sidebar Browser is available. If the Sidebar Browser is not registered, both choices use the external browser; modified clicks retain native behavior. The `ui-chat.linkOpening` preference persists on loopback browsers and stays process-local when settings cannot persist writes. Sent file references and skills confirmed by the message’s logged invocation also open in the right Sidebar. File paths use the viewed Session; skill names resolve through its current input-trigger source. Both use the prose file-link dotted underline on hover or focus. Sessions, directories, and command labels remain non-navigating references.
+Settings → General → Open chat links in selects the destination for ordinary clicks on Chat HTTP(S) links: In-App Sidebar (default) opens a new right-Sidebar Browser tab, while Default Browser opens an external tab. The setting follows Keyboard shortcuts and is shown only while the Sidebar Browser is available. If the Sidebar Browser is not registered, both choices use the external browser; modified clicks retain native behavior. The `ui-chat.linkOpening` preference persists on loopback browsers and stays process-local when settings cannot persist writes. Sent file references and skills confirmed by the message’s logged invocation also open in the right Sidebar. File paths use the viewed Session; skill names resolve through its current input-trigger source. Both use the prose file-link dotted underline on hover or focus. Sessions, directories, and command labels remain non-navigating references.
 
 <a id="system-prompt-row"></a>
 ## Hidden Chat rows
 
-Chat omits system-prompt, ordinary Context injection, and `permission` command rows in every work-details mode. Context containing tool additions or removals remains visible. The filter changes neither recorded Session events nor Trajectory inspection. Non-human Turn triggers remain independent notices; other command rows remain in Chat.
+Chat omits system-prompt, ordinary Context injection, and `permission` command rows in every work-details mode. Context containing tool additions or removals remains visible. The filter changes neither recorded Session events nor Trajectory inspection. Non-human Turn triggers remain independent, bordered notices with a contrasting neutral background; other command rows remain in Chat.
 
 When an Assistant attempt retires without a visible message, Chat hides its already-published Node instead of removing its key. A retry in the same Step reuses that key when visible content returns. This also applies when the loaded window lacks the Step start.
 
@@ -66,7 +66,9 @@ Generic command rows retain the ordinary command glyph in every lifecycle state;
 
 A completed Turn shows an expandable usage row only when the loaded window includes `turn/start` and every started model attempt reports safe, exact usage. The row omits unavailable optional buckets. Incomplete or contradictory accounting hides the complete disclosure instead of presenting a partial total.
 
-Settings → General → Performance & usage stores `ui-chat.performanceUsage` as `detailed` (default) or `compact`. Compact shows only available output speed and cache-hit percentage beneath the composer, without interactive statistic dialogs or per-Turn usage. Detailed exposes session statistics and per-Turn token usage. Neither mode shows elapsed time in the completed-turn footer. The preference changes presentation only; accounting and Session events remain intact.
+Settings → General → Performance & usage appears after Send behavior while busy and before Session Log upload, and stores `ui-chat.performanceUsage` as `detailed` (default) or `compact`. Compact shows only available output speed and cache-hit percentage beneath the composer, without interactive statistic dialogs or per-Turn usage. Detailed exposes session statistics and per-Turn token usage. Neither mode shows elapsed time in the completed-turn footer. The preference changes presentation only; accounting and Session events remain intact.
+
+The composer statistics are two `conversation.composer.dock` list entries: `activity` (order 0, turn and step counts and output speed, with LLM time, tool time, and TTFT) and `usage` (order 1, token total and cache hit). Another plugin replaces one pill by registering the same id and the same `order`; the dock orders rows by `order`, while a lower `priority` picks the replacement: a dynamic plugin receives one automatically, and a statically composed plugin passes it explicitly. A new id adds a pill. Each pill carries its id in `data-composer-stat`. An open pill dialog closes on Escape or on a pointerdown or click outside it, so activating another pill by pointer or keyboard swaps dialogs instead of stacking them.
 
 On non-loopback browsers, the preference remains process-local because the settings scope cannot persist writes. Explicit selections update every consumer immediately; accepted Host settings reconcile the live value on loopback browsers.
 
@@ -99,15 +101,21 @@ Chat registers its process Group Definition through `uiConversation.groups`. Rea
 
 `groupPart` selects reasoning or response in the Assistant renderer without copying Node payloads. A Tool node owns its preparing, dispatched, and result stages under one callId. Each part has a distinct DOM anchor for reading-position restoration; Turn navigation addresses the original Node key and lands on its first visible part. Group sources, member parents, and keys survive display-mode changes and newly loaded prefixes that extend an intact group. The source Node Store remains the only Node-data owner, and a replaced Builder rebinds keyed subscriptions without remounting seats. Mode changes retain size observers and reuse the Turn-state selector.
 
-Live tool deltas share reasoning's frame-batched publication; durable calls and results publish immediately. Repeated named deltas retain the Tool node and its data when the projected call, anchor, location, and visibility are unchanged.
+Live tool deltas share reasoning's frame-batched publication; durable calls and results publish immediately. Repeated deltas retain the Tool node when observed argument answers, the anchor, location, and visibility are unchanged. The Definition supplies the same lazy argument reader to tool rows and group detail, without tool-specific registration.
 
 The process group uses a stable `div` layout box, a scroll body, and an uncapped content box that reports growth inside the body. Business styles must adapt spacing within and across groups, including hidden or empty members and the answer-spacing exception. CSS variables do not belong in the Group Definition.
+
+Running group titles, reasoning previews, tool and command rows, the active retry line, and the bottom running status use the shared [TextShimmer](../ui-primitives/README.md#component-catalog). Each row’s text shares one left-to-right highlight, including collapsed group titles; icons and hover chevrons retain their base appearance. Tool and process rows sit 6px apart. An expanded group title has 8px before its content, Assistant responses have 12px from adjacent process rows, and completed-Turn duration/status controls have 16px around them. Hidden and empty rows, including retained empty slot anchors, add no gap. The running “Deep diving” text retains its blue base while its theme-specific highlight sweeps across it.
+
+The running status shows a whale whose APNG mask inherits the text color. CSS selects the static SVG when reduced motion or forced colors are active, or alpha masks are unsupported. The build embeds the image in the plugin stylesheet; React does not pass image data through DOM styles.
 
 Scroll-edge fades initialize when `ResizeObserver` reports the open group's layout; opening the group performs no immediate scroll-dimension read in a layout effect.
 
 Each group owns local `useDisclosure` state that survives mode changes while its component stays mounted.
 
 The Chat-node slot injects a reset-bound `useDisclosure` Hook for reasoning and tools. Intermediate renderers forward it without subscribing; each invocation owns independent open state. Source callbacks retain their receiver and stable identity. When an enclosing Turn actually hides a process member, its seat resets those disclosures without replacing component keys or changing the Hook reference. Display-mode changes preserve their open state.
+
+Process rows share one text and icon color in every Work details mode: tertiary at rest and secondary on hover, while error and warning text keeps its semantic color. Leading icons, disclosure chevrons, and their boxes scale with the content font-size delta.
 
 -----
 
@@ -163,6 +171,7 @@ None; Chat presentation does not assemble or mutate provider requests.
 
 <a id="known-limitations-and-deferred-work"></a>
 
+- **Running-icon resolution** — the animated whale uses a 28×28 image at a default 14×14 CSS size. Larger content fonts or device pixel ratios above 2 can soften the raster stroke; the static fallback remains vector-based. Browser image caching owns the animation clock, so remounting does not guarantee playback restarts at the first frame.
 
 - **Tool-change presentation** — The `developer-message` Definition shares context presentation with `input-message`. Tool-only developer messages name a single added or removed tool inline without expansion. Multiple changes show added/removed counts and expand to comma-separated tool lists, one line per change kind. Mixed content uses the generic context presentation.
 
@@ -181,8 +190,6 @@ None; Chat presentation does not assemble or mutate provider requests.
 None.
 
 </details>
-
-**Runtime invariant:** No companion is published. Conversation and Slot registration enforce Chat target consistency.
 
 
 ## 源文件与导出符号
@@ -204,7 +211,7 @@ None.
   60	const	ChatSettingsFields
   68	const	ChatSettingsSchema
 
-### packages/client/ui-chat/src/client/apply.ts  (294 行)
+### packages/client/ui-chat/src/client/apply.ts  (299 行)
   57	const	inject
   66	fn	apply
 
@@ -220,8 +227,8 @@ None.
 ### packages/client/ui-chat/src/client/chat/AssistantNodeView.tsx  (48 行)
   9	const	AssistantNodeView
 
-### packages/client/ui-chat/src/client/chat/ChatGroupSeat.tsx  (190 行)
-  129	const	ChatGroupSeat
+### packages/client/ui-chat/src/client/chat/ChatGroupSeat.tsx  (192 行)
+  131	const	ChatGroupSeat
 
 ### packages/client/ui-chat/src/client/chat/ChatNodeSeat.tsx  (175 行)
   45	const	ChatNodeSeat
@@ -253,7 +260,7 @@ None.
   9	iface	ContextInjectionRowProps
   31	fn	ContextInjectionRow
 
-### packages/client/ui-chat/src/client/chat/GenericCommandCard.tsx  (78 行)
+### packages/client/ui-chat/src/client/chat/GenericCommandCard.tsx  (76 行)
   18	iface	GenericCommandCardProps
   29	const	GenericCommandCard
 
@@ -261,36 +268,37 @@ None.
   13	iface	MessageIconActionsProps
   45	fn	MessageIconActions
 
-### packages/client/ui-chat/src/client/chat/MessageItem.tsx  (391 行)
-  240	fn	PendingSteeringBubble
-  271	fn	PendingSubmissionBubble
-  318	const	UserMessageNodeView
-  344	const	ContextMessageNodeView
-  358	const	CompactionNodeView
-  363	const	RetryNodeView
-  369	const	TurnErrorNodeView
-  374	const	TurnMaxTokensNodeView
-  379	const	UnknownNodeView
+### packages/client/ui-chat/src/client/chat/MessageItem.tsx  (393 行)
+  242	fn	PendingSteeringBubble
+  273	fn	PendingSubmissionBubble
+  320	const	UserMessageNodeView
+  346	const	ContextMessageNodeView
+  360	const	CompactionNodeView
+  365	const	RetryNodeView
+  371	const	TurnErrorNodeView
+  376	const	TurnMaxTokensNodeView
+  381	const	UnknownNodeView
 
 ### packages/client/ui-chat/src/client/chat/QuotaNoticeHost.tsx  (28 行)
   14	fn	QuotaNoticeHost
 
-### packages/client/ui-chat/src/client/chat/ReasoningRow.tsx  (101 行)
+### packages/client/ui-chat/src/client/chat/ReasoningRow.tsx  (103 行)
   47	const	ReasoningRow
 
 ### packages/client/ui-chat/src/client/chat/RunningStatus.tsx  (42 行)
   20	const	RunningStatus
 
-### packages/client/ui-chat/src/client/chat/RunningWhaleTail.tsx  (50 行)
-  37	fn	RunningWhaleTail
+### packages/client/ui-chat/src/client/chat/RunningWhaleTail.tsx  (20 行)
+  10	fn	RunningWhaleTail
 
-### packages/client/ui-chat/src/client/chat/StatsPills.tsx  (373 行)
+### packages/client/ui-chat/src/client/chat/StatsPills.tsx  (335 行)
   53	fn	deriveStats
   91	fn	formatDuration
   108	fn	cacheHitPercent
   118	fn	billedInputTokens
-  123	iface	StatsPillsProps
-  316	const	StatsPills
+  125	iface	StatPillProps
+  237	const	ActivityPill
+  282	const	UsagePill
 
 ### packages/client/ui-chat/src/client/chat/SystemPromptRow.tsx  (51 行)
   8	iface	SystemPromptRowProps
@@ -301,7 +309,7 @@ None.
   21	iface	TurnNavigatorHandle
   295	const	TurnNavigator
 
-### packages/client/ui-chat/src/client/chat/TurnProcessNodeView.tsx  (57 行)
+### packages/client/ui-chat/src/client/chat/TurnProcessNodeView.tsx  (62 行)
   10	const	TurnProcessNodeView
 
 ### packages/client/ui-chat/src/client/chat/TurnTailNodeView.tsx  (81 行)
@@ -314,16 +322,16 @@ None.
   12	iface	TurnUsagePanelProps
   31	fn	TurnUsagePanel
 
-### packages/client/ui-chat/src/client/chat/message-chrome.ts  (115 行)
+### packages/client/ui-chat/src/client/chat/message-chrome.ts  (101 行)
   6	type	ClockTranslate
   9	type	RunDurationTranslate
   13	const	LIVE_RUN_CLOCK_INTERVAL_MS
   24	fn	startOfLocalDay
   35	fn	msUntilNextLocalMidnight
-  49	fn	formatRunDuration
-  69	fn	formatLiveRunDuration
-  85	fn	formatTokensPerSecond
-  100	fn	formatMessageClock
+  42	iface	RunDurationPart
+  54	fn	formatRunDuration
+  71	fn	formatTokensPerSecond
+  86	fn	formatMessageClock
 
 ### packages/client/ui-chat/src/client/chat/register-node-renderers.ts  (77 行)
   25	fn	registerChatNodeRenderers
@@ -334,10 +342,10 @@ None.
 ### packages/client/ui-chat/src/client/chat/searchable-hidden.ts  (32 行)
   9	fn	useSearchableHidden
 
-### packages/client/ui-chat/src/client/chat/stat-dialog.ts  (67 行)
+### packages/client/ui-chat/src/client/chat/stat-dialog.ts  (77 行)
   18	const	MEASURE_STYLE
   21	iface	StatDialogSeat
-  35	fn	useStatDialog
+  33	fn	useStatDialog
 
 ### packages/client/ui-chat/src/client/chat/step-process.ts  (29 行)
   11	fn	processTitle
@@ -492,10 +500,10 @@ None.
   60	fn	isSubagentDelegationTool
   69	fn	turnProcessAlwaysOpen
 
-### packages/client/ui-chat/src/client/conversation-nodes/assistant.ts  (361 行)
+### packages/client/ui-chat/src/client/conversation-nodes/assistant.ts  (374 行)
   declare module: declare module '../contract/chat-nodes.ts' { | declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
-  289	const	assistantDefinition
-  358	fn	registerAssistantConversationNode
+  293	const	assistantDefinition
+  362	fn	registerAssistantConversationNode
 
 ### packages/client/ui-chat/src/client/conversation-nodes/chat-snapshot-builder.ts  (1216 行)
   496	fn	orderedVisibleChatNodes
@@ -552,18 +560,13 @@ None.
   123	const	developerMessageDefinition
   140	fn	registerMessageConversationNode
 
-### packages/client/ui-chat/src/client/conversation-nodes/partial.ts  (102 行)
-  12	fn	isVisibleAssistantChunk
-  21	class	PartialAccumulator
-      members: L32 constructor, L46 push, L93 toPartial
+### packages/client/ui-chat/src/client/conversation-nodes/process-activity.ts  (168 行)
+  134	fn	processActivity
 
-### packages/client/ui-chat/src/client/conversation-nodes/process-activity.ts  (130 行)
-  94	fn	processActivity
-
-### packages/client/ui-chat/src/client/conversation-nodes/process-groups.ts  (304 行)
-  200	class	ProcessState
-      members: L209 accept, L279 rootEntries, L293 output
-  297	const	processGroupDefinition
+### packages/client/ui-chat/src/client/conversation-nodes/process-groups.ts  (323 行)
+  214	class	ProcessState
+      members: L223 accept, L293 rootEntries, L312 output
+  316	const	processGroupDefinition
 
 ### packages/client/ui-chat/src/client/conversation-nodes/register.ts  (39 行)
   22	fn	registerConversationNodes
@@ -580,10 +583,10 @@ None.
   41	const	retryDefinition
   95	fn	registerRetryConversationNode
 
-### packages/client/ui-chat/src/client/conversation-nodes/tool.ts  (307 行)
+### packages/client/ui-chat/src/client/conversation-nodes/tool.ts  (370 行)
   declare module: declare module '../contract/chat-nodes.ts' {
-  247	const	toolDefinition
-  304	fn	registerToolConversationNode
+  290	const	toolDefinition
+  357	fn	registerToolConversationNode
 
 ### packages/client/ui-chat/src/client/conversation-nodes/turn-error.ts  (105 行)
   declare module: declare module '../contract/chat-nodes.ts' {
@@ -603,12 +606,12 @@ None.
   80	class	ChatTurnProcessProjector
       members: L88 get, L100 replace, L126 update, L138 set
 
-### packages/client/ui-chat/src/client/conversation-nodes/turn-process.ts  (310 行)
+### packages/client/ui-chat/src/client/conversation-nodes/turn-process.ts  (324 行)
   declare module: declare module '../contract/chat-nodes.ts' { | declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
   209	const	turnProcessDefinition
   307	fn	registerTurnProcess
 
-### packages/client/ui-chat/src/client/conversation-nodes/turn-tail.ts  (149 行)
+### packages/client/ui-chat/src/client/conversation-nodes/turn-tail.ts  (165 行)
   declare module: declare module '../contract/chat-nodes.ts' { | declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
   104	const	turnTailDefinition
   146	fn	registerTurnTailConversationNode
@@ -634,10 +637,10 @@ None.
   26	class	SteeringHistory
       members: L35 reset, L46 apply, L58 applySplice
 
-### packages/client/ui-chat/src/client/model/tool-call-tree.ts  (201 行)
-  14	const	MAX_TOOL_CALL_TREE_DEPTH
-  28	class	ToolCallTree
-      members: L45 reset, L57 apply, L110 projectNodes, L128 projectRunningCalls, L138 projectBlock, L164 acceptEdge, L186 wouldCreateCycle
+### packages/client/ui-chat/src/client/model/tool-call-tree.ts  (205 行)
+  15	const	MAX_TOOL_CALL_TREE_DEPTH
+  29	class	ToolCallTree
+      members: L46 reset, L58 apply, L114 projectNodes, L132 projectRunningCalls, L142 projectBlock, L168 acceptEdge, L190 wouldCreateCycle
 
 ### packages/client/ui-chat/src/client/performance-usage.ts  (35 行)
   7	class	PerformanceUsagePolicy
@@ -688,7 +691,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-client-ui-chat",
   "description": "Chat Conversation target, node definitions, renderers, and details surface",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -747,4 +750,4 @@ None.
     "@deepseek-ai/dsh-api-workspace-files": "workspace:*",
     "@deepseek-ai/dsh-attachment": "workspace:*",
     "@deepseek-ai/dsh-brand": "workspace:*",
-    "@deepseek-ai/dsh-client-loca
+    "@deepseek-ai/dsh-client-l

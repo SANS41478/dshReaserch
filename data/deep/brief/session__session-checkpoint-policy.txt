@@ -5,7 +5,7 @@ deps: -
 peers: @deepseek-ai/cordis, @deepseek-ai/dsh-agent, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-session, @deepseek-ai/dsh-session-persistence, @deepseek-ai/dsh-tools
 srcFiles: 1  srcLoc: 84
 
-## README.md (128 行)
+## README.md (127 行)
 ---
 description: "Semantic session durability checkpoints for users and maintainers deploying persisted agents that must not lose a model request or tool side effect on crash."
 kind: "package-reference"
@@ -78,7 +78,6 @@ The plugin is a listener-only composition over three seams, with no state of its
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: `apply` installs the three checkpoint listeners |
-| — | No runtime invariant companion is published; checkpoint ordering is enforced at the intercepted waterfall and persistence seams; this stateless policy owns no independent mutable relation. |
 
 </details>
 
@@ -148,7 +147,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-session-checkpoint-policy",
   "description": "Semantic session durability checkpoints before model requests and tool side effects",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

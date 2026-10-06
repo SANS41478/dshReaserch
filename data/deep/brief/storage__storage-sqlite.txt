@@ -5,7 +5,7 @@ deps: @deepseek-ai/schemastery
 peers: @deepseek-ai/dsh-storage, @deepseek-ai/cordis
 srcFiles: 3  srcLoc: 446
 
-## README.md (143 行)
+## README.md (142 行)
 ---
 description: "SQLite storage backend for hosts and maintainers choosing, configuring, or debugging document-per-row KV storage in one database file."
 kind: "package-reference"
@@ -92,7 +92,6 @@ Opening the database creates the parent as `0o700`, exclusively creates a missin
 | [`src/index.ts`](src/index.ts) | Plugin entry: backend registration, `path`/`journalMode` config, unit table |
 | [`src/schema.ts`](src/schema.ts) | Open sequence, physical layout version, metadata tables, record table naming |
 | [`src/unit.ts`](src/unit.ts) | One opened unit: prepared statements, JSON value parse, close |
-| — | No runtime invariant companion is published; schema-version and unit-version consistency are open-time checks that reject before a unit exists, and durability needs the backend round-trip tests in the shared KV conformance suite; this package exposes no continuously observable in-process relation. |
 
 </details>
 
@@ -177,7 +176,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-storage-sqlite",
   "description": "SQLite storage backend (kv facet) for the DeepSeek Harness storage hub",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

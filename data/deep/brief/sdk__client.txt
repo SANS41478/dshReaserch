@@ -5,7 +5,7 @@ deps: @deepseek-ai/dsh
 peers: @deepseek-ai/dsh-llm, @deepseek-ai/dsh-sdk-protocol, @deepseek-ai/dsh-session, @deepseek-ai/cordis
 srcFiles: 6  srcLoc: 1176
 
-## README.md (136 行)
+## README.md (135 行)
 ---
 description: "The TypeScript SDK client for callers that spawn a DeepSeek Harness runtime subprocess and drive agent turns over stdio JSON-RPC: the DeepSeekHarness run API and the lower-level HarnessClient."
 kind: "package-library"
@@ -84,7 +84,6 @@ The client is two layers over one wire: `DeepSeekHarness` (owned runs) over `Har
 | [`src/dispose.ts`](src/dispose.ts) | Private teardown ladder: stdin EOF → SIGTERM → SIGKILL to actual exit |
 | [`src/types.ts`](src/types.ts) | Launch and timeout options, notification shapes, `RunResult` |
 | [`src/index.ts`](src/index.ts) | Consumer interface: the two client layers and caller-facing types |
-| — | No runtime invariant companion is published; this client library runs outside any harness context (its peer is a separate runtime process); the runtime's own packages own the event-stream relations. |
 
 ### Owned activity flow
 
@@ -195,7 +194,7 @@ This Dev Note is working context for maintainers and is explicitly non-authorita
 {
   "name": "@deepseek-ai/dsh-sdk-client",
   "description": "TypeScript client SDK for driving a DeepSeek Harness runtime subprocess over stdio JSON-RPC: the DeepSeekHarness high-level turns API and the lower-level HarnessClient",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

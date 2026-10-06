@@ -2,10 +2,10 @@
 path: packages/shell/tool-bash-persistent
 desc: Model-facing owner-scoped persistent Bash tool backed by the Harness PTY service
 deps: @deepseek-ai/schemastery
-peers: @deepseek-ai/dsh-agent, @deepseek-ai/dsh-terminal, @deepseek-ai/dsh-timeout, @deepseek-ai/dsh-tools, @deepseek-ai/cordis
-srcFiles: 1  srcLoc: 473
+peers: @deepseek-ai/dsh-agent, @deepseek-ai/dsh-output-retention, @deepseek-ai/dsh-terminal, @deepseek-ai/dsh-timeout, @deepseek-ai/dsh-tools, @deepseek-ai/cordis
+srcFiles: 1  srcLoc: 485
 
-## README.md (160 行)
+## README.md (159 行)
 ---
 description: "The model-facing persistent bash tool for users and maintainers choosing, configuring, or debugging owner-scoped shell state that survives across calls."
 kind: "package-reference"
@@ -88,7 +88,6 @@ This section explains the design decisions behind the tool and points at the cod
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: shell registry, command wrapping, scrollback polling, extraction and rendering |
-| — | No runtime invariant companion is published; the adapter's private owner-to-shell cache has no observable event or data relation. Shell reuse remains observable through tool execution. Lifecycle tests prove its cleanup without adding a public API solely for an invariant. |
 
 ### Command flow
 
@@ -182,7 +181,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-tool-bash-persistent",
   "description": "Model-facing owner-scoped persistent Bash tool backed by the Harness PTY service",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

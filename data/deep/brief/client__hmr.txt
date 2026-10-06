@@ -1,9 +1,9 @@
 # @deepseek-ai/dsh-client-hmr
 path: packages/client/hmr
-desc: Dev-only hot-reload driver for script-loaded client entries: SSE rebuilt frames → invalidate/prefetch → fiber swap through the vendored Loader entry
+desc: Web client graph synchronization and rebuilt-bundle reload transport
 deps: @deepseek-ai/schemastery
 peers: @deepseek-ai/cordis
-srcFiles: 4  srcLoc: 493
+srcFiles: 3  srcLoc: 308
 
 ## README.md (129 行)
 ---
@@ -157,18 +157,13 @@ None.
   35	const	Config
   68	fn	apply
 
-### packages/client/hmr/src/invariant.ts  (60 行)
-  12	const	name
-  14	const	inject
-  58	const	apply
-
 ## 其它关键文件
 
 ### package.json
 {
   "name": "@deepseek-ai/dsh-client-hmr",
   "description": "Web client graph synchronization and rebuilt-bundle reload transport",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -184,10 +179,6 @@ None.
     ".": {
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
-    },
-    "./invariant": {
-      "types": "./lib/types/invariant.d.ts",
-      "default": "./lib/invariant.js"
     },
     "./client": {
       "types": "./lib/types/client/index.d.ts",
@@ -216,12 +207,10 @@ None.
     "@deepseek-ai/cordis-plugin-loader": "workspace:~",
     "@deepseek-ai/dsh-client-modules": "workspace:*",
     "@deepseek-ai/dsh-host-webserver": "workspace:*",
-    "@deepseek-ai/dsh-invariants": "workspace:*",
     "@deepseek-ai/cordis": "workspace:~"
   },
   "files": [
     "lib/index.js",
-    "lib/invariant.js",
     "lib/client.js",
     "lib/types/**/*.d.ts"
   ]

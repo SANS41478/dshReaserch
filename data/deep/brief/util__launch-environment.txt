@@ -5,7 +5,7 @@ deps: -
 peers: @deepseek-ai/cordis
 srcFiles: 1  srcLoc: 138
 
-## README.md (115 行)
+## README.md (114 行)
 ---
 description: "An immutable snapshot of this run's environment that remembers which layer supplied each value, for packages that must resolve user-facing values without trusting a flattened process.env."
 kind: "package-library"
@@ -76,7 +76,6 @@ The snapshot is built on one separation: the launcher owns which files exist, an
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | `createLaunchEnvironmentSnapshot`, `launchEnvironmentOf`, and the `ctx.launchEnvironment` slot |
-| — | No runtime invariant companion is published; the snapshot is frozen before any fiber starts and this package owns no event stream or mutable runtime data; its lookup and rejection rules are enforced by unit tests. |
 
 ### How the snapshot stays frozen
 
@@ -141,7 +140,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-launch-environment",
   "description": "Immutable DeepSeek Harness launch environment that records which layer supplied each value",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

@@ -5,7 +5,7 @@ deps: @deepseek-ai/dsh-util-values, @deepseek-ai/schemastery
 peers: @deepseek-ai/cordis, @deepseek-ai/dsh-credentials, @deepseek-ai/dsh-host-webserver, @deepseek-ai/dsh-session, @deepseek-ai/dsh-webhook
 srcFiles: 4  srcLoc: 287
 
-## README.md (89 行)
+## README.md (87 行)
 ---
 description: "Signed GitHub webhook adapter for deployments routing authenticated JSON events into the webhook runtime."
 kind: "package-reference"
@@ -93,8 +93,6 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. Authentication and input validation occur at the exact HTTP operation; dsh-host-webserver owns route/disposer symmetry.
-
 
 ## 源文件与导出符号
 
@@ -125,7 +123,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-webhook-github",
   "description": "Signed GitHub HTTP webhook adapter for the DeepSeek Harness webhook runtime",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

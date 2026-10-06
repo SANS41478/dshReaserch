@@ -5,7 +5,7 @@ deps: @deepseek-ai/schemastery
 peers: @deepseek-ai/dsh-system-prompt, @deepseek-ai/cordis
 srcFiles: 1  srcLoc: 76
 
-## README.md (129 行)
+## README.md (128 行)
 ---
 description: "The composable persona row presets mount to give one agent its own system-prompt persona, for users and maintainers configuring or debugging it."
 kind: "package-reference"
@@ -81,7 +81,6 @@ The row registers scoped persona prefix and suffix sections using the registry's
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: `Config` schema, persona section registration, runtime-context suppression |
-| — | No runtime invariant companion is published; this row owns no event stream or mutable runtime data — it registers prompt sections and the prompt registry owns identity, complete-prompt enforcement, shadowing, and disposal. |
 
 </details>
 
@@ -151,7 +150,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-persona",
   "description": "Composition-authored deployment persona section for the DeepSeek Harness",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

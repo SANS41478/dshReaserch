@@ -2,10 +2,10 @@
 path: packages/core/system-prompt
 desc: System prompt assembly registry for the DeepSeek Harness
 deps: @deepseek-ai/schemastery
-peers: @deepseek-ai/dsh-invariants, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-scope, @deepseek-ai/cordis
-srcFiles: 2  srcLoc: 692
+peers: @deepseek-ai/dsh-llm, @deepseek-ai/dsh-scope, @deepseek-ai/cordis
+srcFiles: 1  srcLoc: 639
 
-## README.md (188 行)
+## README.md (187 行)
 ---
 description: "System-prompt assembly for users and maintainers adding prompt sections, variables, tool-schema sources, or configuring the model-facing prompt."
 kind: "package-reference"
@@ -108,7 +108,6 @@ The package is a registry plus a cooperative assembly pipeline. One `assemble()`
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: `SystemPrompt` service, config, assembly pipeline, `renderPrompt` |
-| [`src/invariant.ts`](src/invariant.ts) | Invariant companion |
 
 ### Assembly and rendering
 
@@ -219,18 +218,13 @@ None.
   405	class	SystemPrompt
       members: L421 constructor, L454 section, L470 getSectionOrder, L479 getContextOrder, L489 context, L506 suppressRuntimeContext, L521 tools, L537 variable, L558 assemble
 
-### packages/core/system-prompt/src/invariant.ts  (61 行)
-  11	const	name
-  13	const	inject
-  59	const	apply
-
 ## 其它关键文件
 
 ### package.json
 {
   "name": "@deepseek-ai/dsh-system-prompt",
   "description": "System prompt assembly registry for the DeepSeek Harness",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -247,21 +241,15 @@ None.
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
-    "./invariant": {
-      "types": "./lib/types/invariant.d.ts",
-      "default": "./lib/invariant.js"
-    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
   "files": [
     "lib/index.js",
-    "lib/invariant.js",
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-invariants": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-scope": "workspace:*",
     "@deepseek-ai/cordis": "workspace:~"
@@ -270,7 +258,6 @@ None.
     "@deepseek-ai/schemastery": "workspace:~"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-invariants": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-scope": "workspace:*",
     "@deepseek-ai/cordis": "workspace:~"

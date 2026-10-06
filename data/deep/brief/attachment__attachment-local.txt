@@ -1,11 +1,11 @@
 # @deepseek-ai/dsh-attachment-local
 path: packages/attachment/attachment-local
 desc: Private content-addressed DSH_HOME attachment storage
-deps: @deepseek-ai/schemastery
+deps: @deepseek-ai/dsh-lazy-require, @deepseek-ai/schemastery
 peers: @deepseek-ai/dsh-attachment, @deepseek-ai/dsh-home-paths, @deepseek-ai/cordis
-srcFiles: 8  srcLoc: 1537
+srcFiles: 9  srcLoc: 1561
 
-## README.md (154 行)
+## README.md (153 行)
 ---
 description: "Local storage for your attached images below DSH_HOME, for users and maintainers choosing or debugging where image attachments are kept."
 kind: "package-reference"
@@ -107,7 +107,6 @@ Generic-file bytes have one canonical object at `<DSH_HOME>/attachments/v1/file-
 | [`src/normalization.ts`](src/normalization.ts) + [`src/encoding.ts`](src/encoding.ts) | Provider-independent normalization and bounded format/quality candidates |
 | [`src/request-image.ts`](src/request-image.ts) | Route-specific request transforms, cache identity, and singleflight |
 | [`src/image.ts`](src/image.ts) | Full raster decode and metadata verification |
-| — | No runtime invariant companion is published; immutable writes and verified reads are enforced directly at the backend boundary. |
 
 </details>
 
@@ -240,7 +239,7 @@ Retention and garbage collection are deferred because resumed and forked session
 {
   "name": "@deepseek-ai/dsh-attachment-local",
   "description": "Private content-addressed DSH_HOME attachment storage",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

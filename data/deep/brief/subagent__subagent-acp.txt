@@ -5,7 +5,7 @@ deps: @deepseek-ai/dsh-brand, @deepseek-ai/schemastery
 peers: @deepseek-ai/cordis, @deepseek-ai/dsh-agent, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-session, @deepseek-ai/dsh-subagent, @deepseek-ai/dsh-subprocess, @deepseek-ai/dsh-timeout
 srcFiles: 2  srcLoc: 827
 
-## README.md (180 行)
+## README.md (178 行)
 ---
 description: "The out-of-process ACP subagent backend for users and maintainers choosing a delegation provider, configuring a child ACP agent command, or debugging remote child runs."
 kind: "package-reference"
@@ -184,8 +184,6 @@ This Dev Note is working context for maintainers: open questions and undecided d
 
 </details>
 
-**Runtime invariant:** No companion is published. This package exposes no independent event sequence or mutable data relation beyond contracts enforced at its owning seam.
-
 
 ## 源文件与导出符号
 
@@ -214,7 +212,7 @@ This Dev Note is working context for maintainers: open questions and undecided d
 {
   "name": "@deepseek-ai/dsh-subagent-acp",
   "description": "Out-of-process ACP subagent backend: drives a child agent in a spawned subprocess over the Agent Client Protocol",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -267,4 +265,4 @@ This Dev Note is working context for maintainers: open questions and undecided d
     "@deepseek-ai/dsh-subagent": "workspace:*",
     "@deepseek-ai/dsh-subprocess": "workspace:*",
     "@deepseek-ai/dsh-subprocess-local": "workspace:*",
-    "@deepseek-ai/dsh-timeout": "wor
+    "@deepseek-ai/dsh-timeout": "

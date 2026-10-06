@@ -3,7 +3,7 @@ path: packages/llm/llm
 desc: Provider-neutral LLM service interface for the DeepSeek Harness
 deps: @deepseek-ai/dsh-util-crypto, @deepseek-ai/schemastery, @deepseek-ai/dsh-timeout, @deepseek-ai/dsh-brand, @deepseek-ai/dsh-util-values, @deepseek-ai/dsh-typert-protocol
 peers: @deepseek-ai/cordis
-srcFiles: 14  srcLoc: 3832
+srcFiles: 13  srcLoc: 4016
 
 ## README.md (179 行)
 ---
@@ -115,7 +115,7 @@ The service is built on one separation: **the logical contract is provider-neutr
 
 A request is validated against its exact model's capability — context window, output default, reasoning efforts, input modalities, and `systemPromptUpdate` mode — and any adapter-configured defaults are materialized. The runtime preserves freezing for already-frozen input; hand-built callers own input immutability. `prepareCall()` binds those facts, detached context, and retry policy to the exact adapter generation that performs terminal dispatch, so HMR or dynamic settings cannot combine one generation's image capability with another generation's endpoint. An image-capable adapter projects durable references into route-specific request versions; `resolveImageAttachmentAccess()` separately maps an attachment provider's optional host object into the current tool execution world without changing the request image or its `variantId`. A text-only route receives deterministic per-image placeholders, including tool-role result images, without rewriting append-only session history. Durable `FileBlock` references never reach any adapter: request assembly replaces each one, including tool-role result occurrences, with deterministic handle text naming the file and its saved read-only path, resolved through the mounted attachment and filesystem providers. `ctx.llm.fileRequestText(ref)` exposes that exact synchronous projection to request measurement. An image occurrence derived with `offloaded: true` reaches every route as placeholder text through `projectOffloadedImages()`. An image-capable route whose retained occurrences exceed its `LlmImageRequestBudget` at their exact bytes fails with `IMAGE_OFFLOAD_REQUIRED` naming the additional oldest occurrences (`requiredImageOffload()`), never with an unlogged projection; `dsh-compaction-image-offload` logs the selected occurrences in one `image/offload` event and retries. Adapters that charge visual tokens declare per-route `imageRequestPricing`, which `ctx.llm.imageRequestPricing(provider, model)` resolves synchronously for the token meter. Dispatch goes through the `llm/stream` waterfall, then chunks return as token-level deltas and every adapter outcome reaches the consumer as one terminal `finish` chunk.
 
-File detection reads current content, including tool-role result content, on every request without caching message identities or freeze state. The [file-scan decision](../../../.agents/notes/implemented/simplification/2026-09-07-file-content-scan.md) records the measured traversal cost.
+File detection reads current content, including tool-role result content, on every request without caching message identities or freeze state. The [archived file-scan decision](../../../.agents/notes/archived/simplification/2026-09-07-file-content-scan.md) records the measured traversal cost.
 
 ### Invariants
 
@@ -283,7 +283,7 @@ This Dev Note is non-authoritative working context: open questions and undecided
   164	fn	isHarnessError
   175	const	IMAGE_OFFLOAD_REQUIRED_CODE
 
-### packages/llm/llm/src/index.ts  (1177 行)
+### packages/llm/llm/src/index.ts  (1170 行)
   declare module: declare module '@deepseek-ai/cordis' {
   81	iface	LlmErrorOptions
   96	class	LlmError
@@ -296,12 +296,7 @@ This Dev Note is non-authoritative working context: open questions and undecided
   297	iface	AdapterRegistrationHandle
   321	iface	DirectoryRegistrationHandle
   342	class	LlmRuntime
-      members: L350 constructor, L355 emitAdaptersUpdated, L383 warnAdaptersListenerFailure, L396 registerAdapter, L432 prepareRoutes, L463 commitRoutes, L478 listProviders, L490 registerConfigurableProviders, L550 listConfigurableProviders, L564 registerModelDiscovery, L596 discoverModels, L638 remoteDiscoverModels, L663 providerRetryPolicy, L676 imageRequestPricing, L686 fileRequestText, L691 detachedModalities, L702 listModels, L740 resolveModelInfo, L748 resolveModelInfoFor, L758 normalizeModelInfo, L878 resolveCallConfig, L882 resolveCallFor, L892 resolveCallWithInfo, L936 prepareCall, L985 registration, L992 forAdapter, L1012 fileReadPath, L1135 stream, L1139 streamWithRegistration
-
-### packages/llm/llm/src/invariant.ts  (113 行)
-  10	const	name
-  12	const	inject
-  111	const	apply
+      members: L350 constructor, L355 emitAdaptersUpdated, L376 warnAdaptersListenerFailure, L389 registerAdapter, L425 prepareRoutes, L456 commitRoutes, L471 listProviders, L483 registerConfigurableProviders, L543 listConfigurableProviders, L557 registerModelDiscovery, L589 discoverModels, L631 remoteDiscoverModels, L656 providerRetryPolicy, L669 imageRequestPricing, L679 fileRequestText, L684 detachedModalities, L695 listModels, L733 resolveModelInfo, L741 resolveModelInfoFor, L751 normalizeModelInfo, L871 resolveCallConfig, L875 resolveCallFor, L885 resolveCallWithInfo, L929 prepareCall, L978 registration, L985 forAdapter, L1005 fileReadPath, L1128 stream, L1132 streamWithRegistration
 
 ### packages/llm/llm/src/message.ts  (308 行)
   10	iface	AssistantProviderMetadata
@@ -390,7 +385,7 @@ This Dev Note is non-authoritative working context: open questions and undecided
 {
   "name": "@deepseek-ai/dsh-llm",
   "description": "Provider-neutral LLM service interface for the DeepSeek Harness",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -406,10 +401,6 @@ This Dev Note is non-authoritative working context: open questions and undecided
     ".": {
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
-    },
-    "./invariant": {
-      "types": "./lib/types/invariant.d.ts",
-      "default": "./lib/invariant.js"
     },
     "./types": {
       "types": "./lib/types/types.d.ts",
@@ -440,7 +431,6 @@ This Dev Note is non-authoritative working context: open questions and undecided
   },
   "files": [
     "lib/index.js",
-    "lib/invariant.js",
     "lib/types/**/*.js",
     "lib/types/**/*.d.ts",
     "lib/typert.host.js",
@@ -458,4 +448,8 @@ This Dev Note is non-authoritative working context: open questions and undecided
     "zod": "^4.4.3",
     "@deepseek-ai/dsh-timeout": "workspace:*",
     "@deepseek-ai/dsh-brand": "workspace:*",
-    "@deepseek-ai/dsh-util-values": "
+    "@deepseek-ai/dsh-util-values": "workspace:*",
+    "@deepseek-ai/dsh-typert-protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-attachment": "

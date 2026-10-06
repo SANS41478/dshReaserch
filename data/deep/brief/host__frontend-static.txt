@@ -3,9 +3,9 @@ path: packages/host/frontend-static
 desc: SPA dist server for the Web shell: owns the webserver fallback seat, serving explicit index entries and static assets with traversal rejection and 404 misses
 deps: @deepseek-ai/schemastery
 peers: @deepseek-ai/dsh-host-webserver, @deepseek-ai/dsh-client-connection, @deepseek-ai/cordis
-srcFiles: 1  srcLoc: 144
+srcFiles: 1  srcLoc: 141
 
-## README.md (120 行)
+## README.md (118 行)
 ---
 description: "SPA dist server for the Web shell: claims the webserver fallback seat and serves the built frontend with traversal rejection and SPA index fallback."
 kind: "package-reference"
@@ -124,8 +124,6 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. The only owned relation is the single fallback seat, which cannot be probed from the teardown stream — `internal/plugin` fires before the disposing fiber's effects run, so the legitimate owner still holds the seat at notification time and any claim probe would false-positive on every correct disposal (unlike the webserver companion, whose reserved-path probes never collide with a live registration). The seat's register/release symmetry is covered by the package's real-composition HMR-safety test instead.
-
 
 ## 源文件与导出符号
 
@@ -143,7 +141,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-host-frontend-static",
   "description": "SPA dist server for the Web shell: owns the webserver fallback seat, serving explicit index entries and static assets with traversal rejection and 404 misses",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

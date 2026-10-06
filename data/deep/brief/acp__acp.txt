@@ -3,9 +3,9 @@ path: packages/acp/acp
 desc: Automation-only Agent Client Protocol server for driving DeepSeek Harness agents over JSON-RPC stdio
 deps: @deepseek-ai/dsh-brand, @deepseek-ai/schemastery
 peers: @deepseek-ai/cordis, @deepseek-ai/dsh-agent, @deepseek-ai/dsh-attachment, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-mcp-client, @deepseek-ai/dsh-session, @deepseek-ai/dsh-session-persistence, @deepseek-ai/dsh-token-meter, @deepseek-ai/dsh-user-approval
-srcFiles: 7  srcLoc: 1829
+srcFiles: 7  srcLoc: 1830
 
-## README.md (183 行)
+## README.md (182 行)
 ---
 description: "Automation-only ACP (Agent Client Protocol) server for programmatic clients and maintainers driving DeepSeek Harness agents over JSON-RPC stdio."
 kind: "package-reference"
@@ -110,7 +110,6 @@ The decision history lives in the [ACP as an automation-only protocol note](../.
 | [`src/index.ts`](src/index.ts) | Plugin entry: `Config` schema, `AgentSideConnection` wiring, per-session records, admission and settlement, teardown |
 | [`src/content.ts`](src/content.ts) | Wire-content admission and projection: image validation, route recheck, prompt reconstruction, assistant block conversion |
 | [`src/codec.ts`](src/codec.ts) | Pure turn-ending to ACP `stopReason` mapping |
-| — | No runtime invariant companion is published; this transport owns no durable package-local event stream; protocol and lifecycle tests cover its mapping. |
 
 ### Admission and prompt settlement
 
@@ -238,7 +237,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-acp",
   "description": "Automation-only Agent Client Protocol server for driving DeepSeek Harness agents over JSON-RPC stdio",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -295,4 +294,4 @@ None.
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-session-persistence": "workspace:*",
     "@deepseek-ai/dsh-session-persistence-jsonl": "workspace:*",
-    "@deepseek-ai/d
+    "@deepseek-a

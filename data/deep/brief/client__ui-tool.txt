@@ -3,9 +3,9 @@ path: packages/client/ui-tool
 desc: Client Tool call-tree renderer and keyed per-tool presentation slot
 deps: -
 peers: @deepseek-ai/cordis
-srcFiles: 30  srcLoc: 2997
+srcFiles: 40  srcLoc: 4695
 
-## README.md (137 行)
+## README.md (147 行)
 ---
 description: "Client Tool presentation plugin for the dsh web client: whole-call tree composition, the keyed per-tool view slot, and the built-in atomic tool cards."
 kind: "package-reference"
@@ -37,7 +37,7 @@ Tool calls appear in the conversation as cards: a root call tree with its nested
 
 Shared Tool rows and Bash rows retain error and warning colors for failed and stopped summaries, including on hover. Hover darkens only summaries without those states.
 
-Before dispatch, a named model call appears as one non-expandable row with its tool-owned icon and title. A generic row shows `Tool call · <tool name>`. Preparation exposes no complete arguments, file link, result, or parameter-dependent interaction. Write/edit show `Preparing content NKB` in the summary; N is `Math.ceil(raw.length / 1024)`, an integer estimate of the raw argument string length, not the file's byte size. `tool/call` enables the existing call presentation; completing an argument block alone does not start execution.
+Before dispatch, a named model call appears as one non-expandable row with its tool-owned icon and title. A generic row shows `Tool call · <tool name>`. Read/write/edit show an openable path once `file_path` closes and decodes without errors; write/edit show `NKB` after that path once content arrives, retaining it during execution and after success, before any diff totals. N rounds the decoded input's UTF-16 length up in units of 1024, summing old and new text for edit; it is not file bytes. Error and stopped rows omit the size and diff totals. Command rows show the streamed description. `tool/call` enables the existing call presentation; completing an argument block alone does not start execution.
 
 ### Registering a business tool view
 
@@ -51,13 +51,19 @@ ctx.slots.inject('tool.call.toolview', () =>
   }, BusinessToolRow))
 ```
 
-The owner payload is `ToolCallOwnerProps`: `callId`, `toolName`, the `phase` discriminant and its frozen stage-specific `block`, optional `cwd` and `home`, the session-authorized `loadImage` loader (for a view whose result carries durable images), and plain `openFile`/`inspect` callbacks. A PTC dispatch block retains its event's `parentCallId`; a root Session call has no such field, so descendants route through the same keyed dispatch — a registered view such as `read_image` renders its card there, and unregistered descendants keep the generic flattened form. Path summaries relativize to the Session cwd first, then replace a leftover POSIX Host home with `~`; `filePath` and Host open keep the authored filesystem path. The registration receives the normal Session slot runtime share but no React node or Runtime service.
+The owner payload is `ToolCallOwnerProps`: `callId`, `toolName`, the `phase` discriminant and its stage-specific `block`, optional `cwd` and `home`, the session-authorized `loadImage` loader (for a view whose result carries durable images), and plain `openFile`/`inspect` callbacks. A PTC dispatch block retains its event's `parentCallId`; a root Session call has no such field, so descendants route through the same keyed dispatch — a registered view such as `read_image` renders its card there, and unregistered descendants keep the generic flattened form. Path summaries relativize to the Session cwd first, then replace a leftover POSIX Host home with `~`; `filePath` and Host open keep the authored filesystem path. The registration receives the normal Session slot runtime share but no React node or Runtime service.
 
 ### Built-in views
 
-Every registered view receives the explicit `preparing`, `start`, and `result` props declared in [the Tool slot types](src/client/contract/slots.ts). Shared rows use the same `ToolRow` in all stages. Their row model selects the title and combines any generic tool-name prefix with the available argument summary independently of lifecycle state. Tool-owned titles omit the English name. The shared argument parser returns no call during preparation and does not parse partial JSON. Write/edit use separate preparing and dispatched components, so only the preparing component invokes `useToolCallArgumentsPartial`; start and result share the dispatched component. Custom renderers such as Bash, Skill, and Cordis handle preparation separately; their argument-dependent components accept `StartedToolCallViewProps`.
+Every registered view receives the explicit `preparing`, `start`, and `result` props declared in [the Tool slot types](src/client/contract/slots.ts). All blocks expose `name` and a lazy `args` reader; legacy `argsRaw` and result `call` fields remain available. The row model selects the title and combines any generic tool-name prefix with the available argument summary independently of lifecycle state. Tool-owned titles omit the English name. Write/edit and Bash share their component across stages. Custom renderers may retain separate preparation branches; argument-dependent components accept `StartedToolCallViewProps`.
 
-This package owns the generic fallback and the built-in shell/pwsh, read, read_image, write/edit, running `str_replace_editor` `create`/`str_replace`, grep/glob, web, todo, question, and PTC dispatch presentations. Structured cards derive directly from first-party raw event fields; Host `presentCall` and `presentResult` values never enter the Client. Running and settled foreground standard `bash`/`pwsh` and `terminal_send` calls use terminal cards at the root and in PTC dispatch children, subject to the same argument, result, and error checks. Persistent `bash`/`pwsh` calls use terminal cards only while running. Shell output ending in a recognized spill-policy notice uses expandable generic output in shell rows and generic output in Details; a displaced or omitted exit marker cannot establish success. Settled persistent-shell results stay generic because reset and partial-output diagnostics do not always describe one process exit status; root persistent results are expandable, while background acknowledgements remain collapsed. A native or PTC dispatch failure carrying `AUTO_REVIEW_DENIED` shows the Auto review verdict in its collapsed row and one normalized not-executed reason when expanded; a missing or whitespace-only reason uses localized fallback text. A successful question row pairs call questions with result answers by their stable ids and shows readable question/answer lines when expanded. A cancelled or interrupted row shows its verdict and original questions without inventing answers. Unsupported, malformed, or ambiguous inputs fall back to flattened Tool input/result text. `ui-skill` demonstrates a business-owned registration for `skill`.
+File-tool rows prefer a complete `file_path`; other generic rows, including search and unregistered tools, prefer a non-empty `description` before their variant-specific argument fallback. Read `args` during rendering or view construction: a preparing reader grows in place, and only previously observed answer changes trigger subsequent block publication.
+
+This package owns the generic fallback and the built-in shell/pwsh, read, read_image, write/edit, running `str_replace_editor` `create`/`str_replace`, grep/glob, web, todo, question, and PTC dispatch presentations. Structured cards derive directly from first-party raw event fields; Host `presentCall` and `presentResult` values never enter the Client. Running atomic rows share one left-to-right highlight across their titles, separators, summaries, and suffixes, while settled rows stay static. Running and settled foreground standard `bash`/`pwsh` and `terminal_send` calls use terminal cards at the root and in PTC dispatch children, subject to the same argument, result, and error checks. Persistent `bash`/`pwsh` calls use terminal cards only while running. Shell output ending in a recognized spill-policy notice uses expandable generic output in shell rows and generic output in Details; a displaced or omitted exit marker cannot establish success. Settled persistent-shell results stay generic because reset and partial-output diagnostics do not always describe one process exit status; root persistent results are expandable, while background acknowledgements remain collapsed. A native or PTC dispatch failure carrying `AUTO_REVIEW_DENIED` shows the Auto review verdict in its collapsed row and one normalized not-executed reason when expanded; a missing or whitespace-only reason uses localized fallback text. `ui-skill` demonstrates a business-owned registration for `skill`.
+
+Question rows pair answers with questions by id, using the tool result or the `userQuestions` projection for late replies. An answerable call has a button to reopen its panel. Once a late reply is in the agent Inbox, the row shows its submitted answers; “View answers” expands its read-only transcript while admission is pending. A settled call with answers opens the panel read-only. Closed calls without answers and invalid records offer no button. Cancelled and interrupted rows show their verdict without inventing answers. If no panel provider accepts the button action, it expands the row. Unsupported or ambiguous input falls back to flattened Tool text.
+
+Answer-panel buttons belong to the question renderer. It composes `DisclosureRow` with its own action and transcript; generic `ToolRow` does not select or dispatch question actions.
 
 -----
 
@@ -76,22 +82,27 @@ The package realizes one dispatch rule: atomic Tool views are keyed by wire Tool
 Tool owner props forward Chat's stable `useDisclosure` Hook through root and nested calls. Rows invoke it where they own their expanded bodies; intermediate renderers do not subscribe. Each invocation has independent open state that resets when the enclosing Turn collapses, without replacing React identity. Presentation-mode switches preserve it.
 
 
-The slot-injected `useToolCallArgumentsPartial` Hook lazily subscribes to the owning Step's `assistant-step` source and selects this callId's raw argument prefix. Missing sources or calls return an empty string. Other calls in the same Step may trigger a snapshot check, but an unchanged selected string does not refresh the consumer. Tools that do not invoke the Hook add no subscription; dispatched calls have no argument-prefix source.
+Tool Definitions own the [lazy argument view](../../util/values/README.md). Rows choose their fields and update granularity through its readers, without a separate subscription or registration. Deltas append without scanning; frame-batched publication refreshes observed answers and replaces the block only when an answer changes. Card models that need dispatched arguments continue to read `argsRaw`.
 
 ### Cards
 
 
 Every card is read in place in the call tree; there is no second, full-height presentation of a selected call. Row renderers share one pure card model for each terminal, read, diff, search, and web card, and the image card's gallery renders through the tool-owned `tool.call.images` slot. These models validate raw call arguments, result content, failure state, persisted metadata, PTC dispatch `parentCallId`, and Session path facts. Unsupported or malformed inputs use flattened Tool result text. A file-path summary opens the file through the owner's `openFile`, which the chat view routes to the right Sidebar's text preview; `inspect` opens the trajectory view and is absent when that View is unavailable; cards then omit Inspect. Card-specific limits and fallback rules for the terminal, diff, read, search, and web cards remain in [the ui-primitives README](../ui-primitives/README.md); the image card's model in this package carries its own fallback rules.
 
-Chat diff cards keep nine rows before folding, enough for a file header, one removed/added pair, and three context lines on either side. The tool row shows the primitive's exact or coarse-replacement counts; the expanded card contains the diff body without a totals footer.
+Chat diff cards keep nine rows before folding, enough for a file header, one removed/added pair, and three context lines on either side. The tool row shows the primitive's exact or coarse-replacement counts; the expanded card contains the diff body without a totals footer. Hovering the tool header colors its added count green and removed count red; both retain those colors while the card is expanded.
 
 An Auto denial takes precedence over keyed specialized views. Its generic row preserves the call identity, omits raw arguments, and normalizes the stored reason only for display: trim surrounding whitespace and collapse line separators to spaces, with localized fallback for an empty result. Session and SDK error details keep the original reason.
 
-Recorded tool details cover goal and schedule tools, Cordis inspection, workflow and Ralph reports, Session event/search/trace queries, agent and teammate controls, background jobs, persistent terminals, and LSP navigation. These expanded bodies read successful logged results, preserve generic input/output for failures or unsupported data, and keep Inspect available. Dates include the viewer's time zone, and statuses reflect the call result rather than current session state. Session traces preserve descendant indentation. LSP results open filesystem paths through the Host callback and display other URIs as text. The browser adapter consumes recorded producer text and JSON; Host service objects and presenter callbacks do not cross into the Client. [Compact tool details](../../../.agents/notes/implemented/architecture/2026-09-10-compact-tool-details.md) records the presentation trade-offs.
+Recorded tool details cover goal and schedule tools, Cordis inspection, workflow and Ralph reports, Session event/search/trace queries, agent and teammate controls, background jobs, persistent terminals, and LSP navigation. These expanded bodies read successful logged results, preserve generic input/output for failures or unsupported data, and keep Inspect available. Dates include the viewer's time zone, and statuses reflect the call result rather than current session state. Session traces preserve descendant indentation. LSP results open filesystem paths through the Host callback and display other URIs as text. The browser adapter consumes recorded producer text and JSON; Host service objects and presenter callbacks do not cross into the Client.
 
 Expanded status dots and labels use static semantic colors. Receipt and job-output headers keep neutral text and omit the status while expanded. An interruption receipt confirms only that interruption was requested.
 
 The terminal model uses `hasSpillNotice` from the browser-safe `@deepseek-ai/dsh-spill-policy/notice` entry, not an independent UI pattern. The [spill-policy README](../../spill/spill-policy/README.md#shared-notice-ownership) owns notice formatting and recognition. This check conservatively selects generic output; matching text cannot authenticate its source, and replay leaves recorded result bytes untouched.
+
+### Declared optional capabilities
+
+This package declares the optional `UserQuestionPanels` capability; `ui-user-questions` provides it. `reveal(sessionId, callId)` opens an answerable panel, and `review(sessionId, callId, record)` opens recorded answers read-only. The row reads the capability through `ctx.get('userQuestionPanels')` and keeps its transcript when no question UI is composed.
+
 </details>
 
 -----
@@ -104,6 +115,7 @@ These pages cover the conversation host, the view slots, and the card models.
 - [ui-conversation](../ui-conversation/README.md) — the chat surface dispatching `tool-call` nodes to this package.
 - [ui-primitives](../ui-primitives/README.md) — the output card atoms the built-in views compose.
 - [ui-skill](../ui-skill/README.md) — a business-owned registration for the `skill` tool.
+- [ui-user-questions](../ui-user-questions/README.md) — the question panels the `ask_user_question` row reopens.
 - [Auto review](../../experimental/auto-review/README.md) — the structured denial identity and user-visible reason owner.
 - [Conversation subsystem](../../../docs/subsystems/conversation.md) — how a business-owned feature registers a Conversation node.
 - [Slot system standard](../../../.agents/notes/implemented/architecture/2026-07-22-slot-type-chain-implementation.md) — the composition model behind the keyed slot.
@@ -141,42 +153,39 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. Tool composition is browser-only and contributes no events or cross-plugin mutable state; slot ownership is checked by ui-slots.
-
 
 ## 源文件与导出符号
 
-### packages/client/ui-tool/src/client/apply.ts  (58 行)
-  23	const	inject
-  29	fn	apply
+### packages/client/ui-tool/src/client/apply.ts  (54 行)
+  22	const	inject
+  28	fn	apply
 
-### packages/client/ui-tool/src/client/contract/slots.ts  (129 行)
-  declare module: declare module '@deepseek-ai/dsh-client-ui-slots' {
-  50	type	UseToolCallArgumentsPartial
-  53	iface	ToolCallHookContext
-  60	iface	ToolCallInjected
-  67	iface	ToolImagesOwnerProps
-  77	iface	ToolCallCommonProps
-  97	type	ToolCallPhaseProps
-  103	type	ToolCallOwnerProps
-  106	type	ToolCallViewProps
-  109	type	StartedToolCallViewProps
-  112	type	ToolHostInfoInjected
-  125	type	ToolTreeProps
+### packages/client/ui-tool/src/client/contract/slots.ts  (158 行)
+  declare module: declare module '@deepseek-ai/dsh-client-ui-slots' { | declare module '@deepseek-ai/cordis' {
+  49	iface	ToolImagesOwnerProps
+  59	iface	ToolCallCommonProps
+  79	type	ToolCallPhaseProps
+  85	type	ToolCallOwnerProps
+  88	type	ToolCallViewProps
+  91	type	StartedToolCallViewProps
+  99	iface	UserQuestionRecord
+  112	iface	UserQuestionPanels
+  141	type	ToolHostInfoInjected
+  154	type	ToolTreeProps
 
 ### packages/client/ui-tool/src/client/index.ts  (7 行)
 
 ### packages/client/ui-tool/src/client/locale.ts  (3 行)
   2	const	CONVERSATION_NS
 
-### packages/client/ui-tool/src/client/tool/ToolCallTree.tsx  (139 行)
-  119	fn	ToolCallTree
+### packages/client/ui-tool/src/client/tool/ToolCallTree.tsx  (128 行)
+  110	fn	ToolCallTree
 
 ### packages/client/ui-tool/src/client/tool/components/AskQuestionCard.tsx  (41 行)
   11	fn	AskQuestionCard
 
-### packages/client/ui-tool/src/client/tool/components/PreparingToolRow.tsx  (24 行)
-  20	fn	PreparingToolRow
+### packages/client/ui-tool/src/client/tool/components/QuestionToolRow.tsx  (65 行)
+  20	fn	QuestionToolRow
 
 ### packages/client/ui-tool/src/client/tool/components/ToolDetails.tsx  (140 行)
   11	iface	ToolDetailItem
@@ -213,10 +222,10 @@ None.
   33	fn	todosDetail
   156	fn	detailsCardModel
 
-### packages/client/ui-tool/src/client/tool/models/diff-card-model.ts  (113 行)
+### packages/client/ui-tool/src/client/tool/models/diff-card-model.ts  (112 行)
   7	const	CHAT_DIFF_MAX_LINES
   14	iface	DiffCardModel
-  100	fn	diffCardModel
+  99	fn	diffCardModel
 
 ### packages/client/ui-tool/src/client/tool/models/image-card-model.ts  (242 行)
   15	iface	ImageCardModel
@@ -233,11 +242,10 @@ None.
   76	fn	searchBlockLabels
   101	fn	webBlockLabels
 
-### packages/client/ui-tool/src/client/tool/models/raw-tool-call.ts  (67 行)
+### packages/client/ui-tool/src/client/tool/models/raw-tool-call.ts  (53 行)
   6	iface	ParsedToolCall
   18	fn	parsedToolCall
   48	fn	singleResultText
-  60	fn	validEscalationFields
 
 ### packages/client/ui-tool/src/client/tool/models/read-card-model.ts  (120 行)
   17	const	CHAT_READ_MAX_LINES
@@ -250,14 +258,14 @@ None.
   15	iface	SearchCardModel
   82	fn	searchCardModel
 
-### packages/client/ui-tool/src/client/tool/models/terminal-card-model.ts  (324 行)
+### packages/client/ui-tool/src/client/tool/models/terminal-card-model.ts  (326 行)
   17	fn	terminalBlockLabels
   40	iface	TerminalCardModel
   67	fn	localizeTerminalCardModel
   95	fn	terminalFailed
-  217	fn	isSettledPersistentShellCall
-  229	fn	isSpilledShellCall
-  284	fn	terminalCardModel
+  219	fn	isSettledPersistentShellCall
+  231	fn	isSpilledShellCall
+  286	fn	terminalCardModel
 
 ### packages/client/ui-tool/src/client/tool/models/todo-diff-model.ts  (80 行)
   17	fn	todoDiffModel
@@ -271,7 +279,7 @@ None.
   63	const	todoHistoryView
   85	fn	registerTodoHistory
 
-### packages/client/ui-tool/src/client/tool/models/tool-call-model.ts  (313 行)
+### packages/client/ui-tool/src/client/tool/models/tool-call-model.ts  (334 行)
   15	type	ToolRowVariant
   18	type	ToolRowState
   21	iface	AutoReviewDenial
@@ -279,37 +287,34 @@ None.
   128	fn	classifyTool
   137	fn	toolTitleKey
   142	iface	ToolRowModel
-  180	fn	resultText
-  262	fn	formatToolBody
-  283	fn	toolRowModel
+  181	fn	resultText
+  281	fn	formatToolBody
+  302	fn	toolRowModel
 
 ### packages/client/ui-tool/src/client/tool/models/web-card-model.ts  (101 行)
   9	type	WebCardModelProps
   58	fn	webCardModel
   89	fn	webFetchHref
 
-### packages/client/ui-tool/src/client/tool/tool-call-arguments-partial.ts  (26 行)
-  13	const	bindToolCallArgumentsPartial
-
 ### packages/client/ui-tool/src/client/tool/toolviews/GenericToolCard.tsx  (76 行)
   28	type	GenericToolCardProps
   33	fn	GenericToolCard
 
-### packages/client/ui-tool/src/client/tool/toolviews/ask-question-row.tsx  (209 行)
-  140	fn	AskQuestionRow
-  200	const	askQuestionToolview
+### packages/client/ui-tool/src/client/tool/toolviews/ask-question-row.tsx  (387 行)
+  214	fn	AskQuestionRow
+  371	const	askQuestionToolview
 
-### packages/client/ui-tool/src/client/tool/toolviews/bash-sample.tsx  (175 行)
-  42	const	BashRow
-  167	const	bashToolviewSample
+### packages/client/ui-tool/src/client/tool/toolviews/bash-sample.tsx  (172 行)
+  43	const	BashRow
+  164	const	bashToolviewSample
 
 ### packages/client/ui-tool/src/client/tool/toolviews/details-row.tsx  (120 行)
   46	fn	DetailsRow
   75	const	detailsToolview
 
-### packages/client/ui-tool/src/client/tool/toolviews/file-mutation-row.tsx  (64 行)
-  17	fn	FileMutationRow
-  54	const	fileMutationToolview
+### packages/client/ui-tool/src/client/tool/toolviews/file-mutation-row.tsx  (70 行)
+  33	fn	FileMutationRow
+  60	const	fileMutationToolview
 
 ### packages/client/ui-tool/src/client/tool/toolviews/plan-summary.ts  (61 行)
   15	iface	PlanItemLike
@@ -354,7 +359,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-client-ui-tool",
   "description": "Client Tool call-tree renderer and keyed per-tool presentation slot",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -413,4 +418,4 @@ None.
     "@deepseek-ai/dsh-client-connection": "workspace:*",
     "@deepseek-ai/dsh-client-locale": "workspace:*",
     "@deepseek-ai/dsh-client-test-runtime": "workspace:*",
-    "@deepseek-ai/dsh-client-ui-conversation": "
+    "@deepseek-ai/dsh-client-ui-conversation"

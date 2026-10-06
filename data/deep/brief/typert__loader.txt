@@ -3,9 +3,9 @@ path: packages/typert/loader
 desc: Loader integration for generated Typert package contributions
 deps: @deepseek-ai/schemastery
 peers: @deepseek-ai/cordis-plugin-loader, @deepseek-ai/dsh-typert-registry, @deepseek-ai/cordis
-srcFiles: 1  srcLoc: 443
+srcFiles: 1  srcLoc: 470
 
-## README.md (127 行)
+## README.md (126 行)
 ---
 description: "Loader integration for generated Typert artifacts: how mounted packages automatically contribute their host-face reflection and schemas to the runtime registry."
 kind: "package-reference"
@@ -85,7 +85,6 @@ Verdicts (resolvable specifier, export presence) and imported manifests are cach
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: `Config`, scanner, manifest validation, registration wiring |
-| — | No runtime invariant companion is published; the Loader entry lifecycle directly owns each exact registry disposer, and integration tests observe registration and removal. |
 
 </details>
 
@@ -151,7 +150,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-typert-loader",
   "description": "Loader integration for generated Typert package contributions",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

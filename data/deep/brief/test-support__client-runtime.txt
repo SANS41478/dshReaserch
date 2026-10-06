@@ -1,11 +1,11 @@
 # @deepseek-ai/dsh-client-test-runtime
 path: packages/test-support/client-runtime
-desc: jsdom slot test runtime: real Cordis Context + SlotRegistry + UI renderer with test-owned session/workspace doubles for feature specs
+desc: Browser test runtimes: a jsdom slot bench with test-owned Session and Workspace doubles, and a whole-client tier that boots the web roster through the production bootClient over an endpoint-named Remote mock
 deps: -
-peers: @deepseek-ai/dsh-api-session-controller, @deepseek-ai/dsh-api-workspace-controller, @deepseek-ai/dsh-attachment, @deepseek-ai/dsh-client-connection, @deepseek-ai/dsh-client-store, @deepseek-ai/dsh-client-ui-chat, @deepseek-ai/dsh-client-ui-conversation, @deepseek-ai/dsh-client-ui-renderer, @deepseek-ai/dsh-client-ui-session, @deepseek-ai/dsh-client-ui-settings, @deepseek-ai/dsh-client-ui-slots, @deepseek-ai/dsh-session, @deepseek-ai/dsh-subagent, @deepseek-ai/dsh-typert-protocol, @deepseek-ai/cordis
-srcFiles: 10  srcLoc: 1642
+peers: @deepseek-ai/cordis, @deepseek-ai/cordis-plugin-include, @deepseek-ai/cordis-plugin-loader, @deepseek-ai/dsh-api-gateway, @deepseek-ai/dsh-api-session-controller, @deepseek-ai/dsh-api-workspace-controller, @deepseek-ai/dsh-attachment, @deepseek-ai/dsh-client-connection, @deepseek-ai/dsh-client-hmr, @deepseek-ai/dsh-client-modules, @deepseek-ai/dsh-client-store, @deepseek-ai/dsh-client-ui-chat, @deepseek-ai/dsh-client-ui-conversation, @deepseek-ai/dsh-client-ui-renderer, @deepseek-ai/dsh-client-ui-session, @deepseek-ai/dsh-client-ui-settings, @deepseek-ai/dsh-client-ui-slots, @deepseek-ai/dsh-client-web, @deepseek-ai/dsh-remote-mock, @deepseek-ai/dsh-session, @deepseek-ai/dsh-subagent, @deepseek-ai/dsh-typert-protocol
+srcFiles: 17  srcLoc: 2946
 
-## README.md (192 行)
+## README.md (191 行)
 ---
 description: "jsdom slot test runtime for browser feature specs, for test authors exercising slots, stores, and rendering against production machinery."
 kind: "package-library"
@@ -143,7 +143,6 @@ The bench copies no production logic: it mounts the production `SlotRegistry`, p
 | [`src/assembly/remote-default-responses.ts`](src/assembly/remote-default-responses.ts) | `remoteDefaultResponses`: default responses of the Remote endpoints the roster calls at boot |
 | [`src/assembly/remote-proxies.ts`](src/assembly/remote-proxies.ts) | Contract-free `remote.<ns>` proxies over the Connection: `remoteNamespacesOf`, `remoteProxiesPlugin` |
 | [`src/assembly/bundle-roster.ts`](src/assembly/bundle-roster.ts) | `bundleRoster` and `webApp`: the browser roster read from bundle patch files with the include plugin's own schema and patch application |
-| — | No runtime invariant companion is published; this test-support package owns no production event stream or mutable data — it assembles the runtime SlotRegistry and renderer (whose packages own their invariants) around test doubles; its own behavior is exercised by its package tests. |
 
 ### Lifecycle
 
@@ -297,7 +296,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-client-test-runtime",
   "description": "Browser test runtimes: a jsdom slot bench with test-owned Session and Workspace doubles, and a whole-client tier that boots the web roster through the production bootClient over an endpoint-named Remote mock",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -343,4 +342,4 @@ None.
     "@deepseek-ai/dsh-client-ui-settings": "workspace:*",
     "@deepseek-ai/dsh-client-ui-slots": "workspace:*",
     "@deepseek-ai/dsh-client-web": "workspace:*",
-    "@deepseek-ai/dsh-remote-mo
+    "@deepseek-ai/dsh-remote

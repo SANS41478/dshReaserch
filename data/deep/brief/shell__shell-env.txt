@@ -2,10 +2,10 @@
 path: packages/shell/shell-env
 desc: Tool-independent managed DSH_* shell environment registry
 deps: @deepseek-ai/schemastery
-peers: @deepseek-ai/dsh-shell, @deepseek-ai/dsh-home-paths, @deepseek-ai/dsh-tools, @deepseek-ai/cordis
-srcFiles: 1  srcLoc: 201
+peers: @deepseek-ai/cordis, @deepseek-ai/dsh-app-boot, @deepseek-ai/dsh-home-paths, @deepseek-ai/dsh-shell, @deepseek-ai/dsh-tools
+srcFiles: 1  srcLoc: 212
 
-## README.md (141 行)
+## README.md (140 行)
 ---
 description: "The managed DSH_* shell environment for users and maintainers choosing, configuring, or extending the environment every model shell call runs with."
 kind: "package-reference"
@@ -95,7 +95,6 @@ This section explains the design decisions behind the registry and points at the
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry, `ShellEnvRegistry` service, and the built-in facts |
-| — | No runtime invariant companion is published; the environment registry validates ownership and collected values at each registration/collection; it publishes no independent snapshot that a companion could cross-check. |
 
 ### Collection
 
@@ -169,7 +168,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-shell-env",
   "description": "Tool-independent managed DSH_* shell environment registry",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

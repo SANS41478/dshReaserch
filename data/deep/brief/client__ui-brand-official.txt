@@ -5,7 +5,7 @@ deps: -
 peers: @deepseek-ai/cordis
 srcFiles: 3  srcLoc: 52
 
-## README.md (93 行)
+## README.md (91 行)
 ---
 description: "Official DeepSeek Harness brand occupants for the sidebar, active only in official builds; for users and maintainers choosing or replacing brand presentation."
 kind: "package-reference"
@@ -64,7 +64,7 @@ Read these pages when the brand surface is not enough. They move from the slots 
 
 - [ui-sidebar](../ui-sidebar/README.md) — declares `sidebar.brand.mark` and `sidebar.brand.name` and renders their fallbacks.
 - [ui-conversation](../ui-conversation/README.md) — declares `conversation.hero.brand.mark` in the hero.
-- [Web client architecture](../../../.agents/notes/implemented/architecture/2026-07-19-gui-web-client-architecture.md) — how browser plugin rows load and register slots.
+- [Web client architecture](../../../docs/subsystems/web-client.md) — how browser plugin rows load and register slots.
 
 -----
 
@@ -97,8 +97,6 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. The package retains no mutable state, and its three slot occupants install and leave through one transactional effect.
-
 
 ## 源文件与导出符号
 
@@ -119,7 +117,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-client-ui-brand-official",
   "description": "Official DeepSeek Harness brand occupants for the Web client's sidebar slots",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

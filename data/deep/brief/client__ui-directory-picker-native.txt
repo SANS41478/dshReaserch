@@ -1,11 +1,11 @@
 # @deepseek-ai/dsh-client-ui-directory-picker-native
 path: packages/client/ui-directory-picker-native
-desc: Native directory-picker surface: the renderless workspace directory-flow occupant driving the host's OS chooser
+desc: Native directory-picker surface: the renderless workspace directory-flow occupant driving the local Desktop or Host OS chooser
 deps: -
 peers: @deepseek-ai/cordis
-srcFiles: 3  srcLoc: 120
+srcFiles: 3  srcLoc: 116
 
-## README.md (93 行)
+## README.md (91 行)
 ---
 description: "Native directory-picker surface: the browser half that drives the local Desktop or Host OS chooser for workspace-directory flows; for users and maintainers choosing a picking interaction."
 kind: "package-reference"
@@ -63,7 +63,7 @@ Read these pages when the picking surface is not enough. They move from the brow
 - [dsh-host-directory-picker-native](../../host/directory-picker-native/README.md) — the OS chooser backend this surface drives.
 - [ui-workspace](../ui-workspace/README.md) — declares the directory-flow slots and owns the picking conversation.
 - [ui-directory-picker-browse](../ui-directory-picker-browse/README.md) — the in-app browsing alternative for remote and in-process deployments.
-- [Web client architecture](../../../.agents/notes/implemented/architecture/2026-07-19-gui-web-client-architecture.md) — how browser plugin rows load and register slots.
+- [Web client architecture](../../../docs/subsystems/web-client.md) — how browser plugin rows load and register slots.
 
 -----
 
@@ -97,8 +97,6 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. The plugin registers a renderless flow occupant into two workspace holes as one transactional effect, whose disposal the HMR-safety spec proves, and it retains no state between picks.
-
 
 ## 源文件与导出符号
 
@@ -119,7 +117,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-client-ui-directory-picker-native",
   "description": "Native directory-picker surface: the renderless workspace directory-flow occupant driving the local Desktop or Host OS chooser",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

@@ -5,7 +5,7 @@ deps: @deepseek-ai/schemastery
 peers: @deepseek-ai/dsh-spill, @deepseek-ai/cordis
 srcFiles: 3  srcLoc: 729
 
-## README.md (143 行)
+## README.md (142 行)
 ---
 description: "The local filesystem spill backend: how spilled text is saved to private session-scoped files and retrieved with read or grep."
 kind: "package-reference"
@@ -93,7 +93,6 @@ The backend owns storage details only, on one principle: **a spilled artifact mu
 | [`src/index.ts`](src/index.ts) | Plugin entry: `Config`, the `LocalSpillStore` service, cleanup lifecycle, locator and retrieval-hint assembly |
 | [`src/cleanup.ts`](src/cleanup.ts) | One-shot age sweep, filesystem-identity checks, symlink and ownership safeguards |
 | [`src/store.ts`](src/store.ts) | Cordis-free storage mechanics: private root, session directory, safe-name encoding, exclusive write |
-| — | No runtime invariant companion is published; this package exposes no independent event sequence or mutable data relation beyond contracts enforced at its owning seam. |
 
 ### File naming and write
 
@@ -181,7 +180,7 @@ The retrieval model assumes the model's `read`/`grep` tools can inspect the retu
 {
   "name": "@deepseek-ai/dsh-spill-local",
   "description": "Local-filesystem implementation of the DeepSeek Harness spill storage seam (private session-scoped files)",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

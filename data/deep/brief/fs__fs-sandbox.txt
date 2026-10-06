@@ -5,7 +5,7 @@ deps: -
 peers: @deepseek-ai/dsh-fs, @deepseek-ai/dsh-fs-local, @deepseek-ai/dsh-sandbox, @deepseek-ai/dsh-sandbox-policy, @deepseek-ai/cordis
 srcFiles: 2  srcLoc: 225
 
-## README.md (138 行)
+## README.md (136 行)
 ---
 description: "The sandbox-enforcing ctx.fs backend for deployments and maintainers confining model file mutations to a session workspace."
 kind: "package-reference"
@@ -100,7 +100,7 @@ Read these pages when the package-level contract is not enough. They move from t
 - [fs-local](../fs-local/README.md) — the local backend this one extends.
 - [sandbox-policy](../../sandbox/sandbox-policy/README.md) — the shared per-session policy resolver this backend requires.
 - [Process sandbox subsystem](../../../docs/subsystems/sandbox.md) — modes, per-call policy, and fail-closed errors.
-- [Cross-family fs sandbox decision](../../../.agents/notes/implemented/feature/2026-07-14-cross-family-fs-sandbox.md) — the shared mode fence and its escalation choreography.
+- [Cross-family fs sandbox reference](../../sandbox/sandbox-policy/README.md) — the shared mode fence and its escalation choreography.
 
 -----
 
@@ -142,8 +142,6 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. This stateless adapter delegates policy and filesystem relations to their owning seams.
-
 
 ## 源文件与导出符号
 
@@ -162,7 +160,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-fs-sandbox",
   "description": "Sandbox-enforcing implementation of the DeepSeek Harness filesystem seam: fences write/edit by the per-call sandbox mode (read-only denies mutation, workspace-write contains it to the workspace + temp roots) while reads pass through",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

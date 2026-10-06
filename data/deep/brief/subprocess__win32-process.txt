@@ -1,11 +1,11 @@
 # @deepseek-ai/dsh-win32-process
 path: packages/subprocess/win32-process
 desc: Shared low-level Win32 process, stdio, and Job Object primitives
-deps: -
+deps: @deepseek-ai/dsh-lazy-require
 peers: @deepseek-ai/cordis
-srcFiles: 5  srcLoc: 1075
+srcFiles: 7  srcLoc: 1192
 
-## README.md (92 行)
+## README.md (90 行)
 ---
 description: "Low-level Win32 process primitives for maintainers implementing or debugging the Windows ACL sandbox and ordinary subprocess Job runner."
 kind: "package-library"
@@ -95,8 +95,6 @@ The package contributes no stable request prefix, so it does not invalidate mode
 None.
 
 </details>
-
-**Runtime invariant:** No companion is published. Operations own only call-local native handles.
 
 
 ## 源文件与导出符号
@@ -191,7 +189,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-win32-process",
   "description": "Shared low-level Win32 process, stdio, and Job Object primitives",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -221,7 +219,7 @@ None.
   },
   "dependencies": {
     "@deepseek-ai/dsh-lazy-require": "workspace:*",
-    "koffi": "^3.1.0"
+    "koffi": "3.1.1"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:~"

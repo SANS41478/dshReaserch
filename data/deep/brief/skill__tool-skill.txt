@@ -3,9 +3,9 @@ path: packages/skill/tool-skill
 desc: Model-facing skill loading tool for the DeepSeek Harness
 deps: @deepseek-ai/schemastery
 peers: @deepseek-ai/dsh-agent, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-skill, @deepseek-ai/dsh-tools, @deepseek-ai/cordis
-srcFiles: 1  srcLoc: 431
+srcFiles: 1  srcLoc: 432
 
-## README.md (259 行)
+## README.md (258 行)
 ---
 description: "The model-facing skill catalog and loader tool for users and maintainers understanding what agents see, or configuring the session skill catalog."
 kind: "package-reference"
@@ -85,7 +85,6 @@ The package is built on two ideas. First, the catalog is a durable projection, d
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: tool registration, catalog and gesture pre-step listeners, rendering and digest |
-| — | No runtime invariant companion is published; this model-facing adapter has no independent lifecycle stream; execution relations are owned by the capability seam it calls. |
 
 ### Catalog lifecycle
 
@@ -283,7 +282,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-tool-skill",
   "description": "Model-facing skill loading tool for the DeepSeek Harness",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

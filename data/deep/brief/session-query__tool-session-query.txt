@@ -5,7 +5,7 @@ deps: @deepseek-ai/dsh-brand, @deepseek-ai/schemastery
 peers: @deepseek-ai/cordis, @deepseek-ai/dsh-agent, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-session, @deepseek-ai/dsh-session-projection, @deepseek-ai/dsh-session-query, @deepseek-ai/dsh-system-prompt, @deepseek-ai/dsh-timeout, @deepseek-ai/dsh-tools
 srcFiles: 6  srcLoc: 1426
 
-## README.md (189 行)
+## README.md (187 行)
 ---
 description: "Workspace-authorized model-facing session history tools for agent developers and maintainers choosing, configuring, or debugging prior-session search, tracing, and event reads."
 kind: "package-reference"
@@ -193,8 +193,6 @@ Exact-string `cwd` equality is deliberately conservative; symlink-aware or canon
 
 </details>
 
-**Runtime invariant:** No companion is published. This read-only model adapter owns no event or mutable data relationship beyond the registries that already validate registration.
-
 
 ## 源文件与导出符号
 
@@ -228,7 +226,7 @@ Exact-string `cwd` equality is deliberately conservative; symlink-aware or canon
 {
   "name": "@deepseek-ai/dsh-tool-session-query",
   "description": "Workspace-authorized model-facing session history search, trace, and event read tools",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -281,4 +279,4 @@ Exact-string `cwd` equality is deliberately conservative; symlink-aware or canon
     "@deepseek-ai/dsh-session-query-sqlite": "workspace:*",
     "@deepseek-ai/dsh-session-title": "workspace:*",
     "@deepseek-ai/dsh-system-prompt": "workspace:*",
-    "@deepseek-ai/dsh-t
+    "@deepseek-ai/ds

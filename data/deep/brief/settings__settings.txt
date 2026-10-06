@@ -1,9 +1,9 @@
 # @deepseek-ai/dsh-settings
 path: packages/settings/settings
 desc: Abstract user-settings seam (ctx.settings) for the DeepSeek Harness
-deps: @deepseek-ai/dsh-util-values
-peers: @deepseek-ai/cordis, @deepseek-ai/dsh-brand, @deepseek-ai/dsh-invariants, @deepseek-ai/dsh-session, @deepseek-ai/schemastery
-srcFiles: 4  srcLoc: 1161
+deps: @deepseek-ai/dsh-util-values, @deepseek-ai/dsh-config-editor, @deepseek-ai/cordis-plugin-loader, @deepseek-ai/cosmokit
+peers: @deepseek-ai/cordis, @deepseek-ai/dsh-brand, @deepseek-ai/dsh-session, @deepseek-ai/schemastery
+srcFiles: 4  srcLoc: 707
 
 ## README.md (85 行)
 ---
@@ -54,7 +54,7 @@ Each form reports `autoGenerate`, enabled by default, for clients that build pag
 
 The [form projection](src/schema.ts) strips runtime references and ordinary fields. The [service](src/index.ts) supplies revisioned descriptors and validates edits against the full plugin Config before delegating persistence. Business plugins read their Config references directly.
 
-Secret roles are redacted from values, inherited values, profile overrides, and schema defaults; clients receive presence markers. Path edits preserve fields a client did not receive. No invariant companion is published because the service projects Loader configuration rather than maintaining an independent authoritative value.
+Secret roles are redacted from values, inherited values, profile overrides, and schema defaults; clients receive presence markers. Path edits preserve fields a client did not receive.
 
 </details>
 
@@ -130,7 +130,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-settings",
   "description": "Abstract user-settings seam (ctx.settings) for the DeepSeek Harness",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -163,14 +163,12 @@ None.
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/dsh-brand": "workspace:*",
-    "@deepseek-ai/dsh-invariants": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/schemastery": "workspace:~"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/dsh-brand": "workspace:*",
-    "@deepseek-ai/dsh-invariants": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/schemastery": "workspace:~",
     "@deepseek-ai/cordis-plugin-timer": "workspace:~",

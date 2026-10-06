@@ -5,7 +5,7 @@ deps: -
 peers: @deepseek-ai/dsh-llm, @deepseek-ai/dsh-timeout, @deepseek-ai/dsh-tools, @deepseek-ai/cordis
 srcFiles: 1  srcLoc: 82
 
-## README.md (136 行)
+## README.md (135 行)
 ---
 description: "Cooperative time limit for cancellation-aware tool calls, mapping a settled timeout to a clear model error for users and maintainers choosing or debugging the plugin."
 kind: "package-reference"
@@ -85,7 +85,6 @@ Multiple `tools/execute` listeners compose by Cordis registration order, which c
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: `TOOL_TIMEOUT`, `name`/`inject`/`apply`, the `tools/execute` wrapper |
-| — | No runtime invariant companion is published; this stateless policy plugin owns no package-local event history or mutable data relation beyond the seam it intercepts. |
 
 </details>
 
@@ -157,7 +156,7 @@ The `src/index.ts` FIXME asks to settle a `@deepseek-ai/dsh-timeout-guard` renam
 {
   "name": "@deepseek-ai/dsh-tool-call-timeout-policy",
   "description": "Tool-call timeout policy: a tools/execute wrapper that arms a per-tool deadline on exec.signal and returns TOOL_TIMEOUT when it wins",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

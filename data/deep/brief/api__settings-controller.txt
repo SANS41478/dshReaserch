@@ -2,10 +2,10 @@
 path: packages/api/settings-controller
 desc: Remote owner for the configuration surfaces over the settings-domain seams
 deps: @deepseek-ai/schemastery
-peers: @deepseek-ai/cordis, @deepseek-ai/dsh-agent-presets, @deepseek-ai/dsh-credentials, @deepseek-ai/dsh-native-command, @deepseek-ai/dsh-session, @deepseek-ai/dsh-settings, @deepseek-ai/dsh-typert-protocol
-srcFiles: 3  srcLoc: 540
+peers: @deepseek-ai/cordis, @deepseek-ai/dsh-agent-preset-registry, @deepseek-ai/dsh-credentials, @deepseek-ai/dsh-native-command, @deepseek-ai/dsh-session, @deepseek-ai/dsh-settings, @deepseek-ai/dsh-typert-protocol
+srcFiles: 3  srcLoc: 462
 
-## README.md (72 行)
+## README.md (70 行)
 ---
 description: "Host Remote owner for settings and credential configuration surfaces, including redacted reads, writes, credential references, and native document opening."
 kind: "package-reference"
@@ -76,8 +76,6 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. The settings and credential seams own storage and update events, while this package only projects their methods onto the wire.
-
 
 ## 源文件与导出符号
 
@@ -102,7 +100,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-api-settings-controller",
   "description": "Remote owner for the configuration surfaces over the settings-domain seams",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -163,4 +161,4 @@ None.
     "@deepseek-ai/dsh-credentials": "workspace:*",
     "@deepseek-ai/dsh-native-command": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
-    "@deepseek-ai/dsh-se
+    "@deepseek-ai/dsh

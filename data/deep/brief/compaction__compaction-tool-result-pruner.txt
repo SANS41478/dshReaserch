@@ -3,9 +3,9 @@ path: packages/compaction/compaction-tool-result-pruner
 desc: Replay-safe model-free head/middle/tail pruning for tool-result surface nodes
 deps: @deepseek-ai/dsh-util-values, @deepseek-ai/schemastery
 peers: @deepseek-ai/cordis, @deepseek-ai/dsh-compaction, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-session, @deepseek-ai/dsh-token-meter
-srcFiles: 3  srcLoc: 308
+srcFiles: 3  srcLoc: 306
 
-## README.md (150 行)
+## README.md (149 行)
 ---
 description: "Tool-output trimming for deployments composing compaction: choosing size limits or debugging why oversized tool results get shortened."
 kind: "package-reference"
@@ -96,7 +96,6 @@ Pruning measures `text` blocks by Unicode code point (non-text blocks cost zero)
 | [`src/index.ts`](src/index.ts) | Plugin entry: `ToolResultPruner` service, `pruneSession` / `pruneContent` / `measureContent` |
 | [`src/config.ts`](src/config.ts) | `PRUNE_MARKER`, defaults, code-point counting, budget validation |
 | [`src/types.ts`](src/types.ts) | `ToolResultPruneConfig`, `ResolvedConfig`, `PrunedEntry`, `PruneResult` |
-| — | No runtime invariant companion is published; Session validates each content-only rewrite and its companion owns cross-event enclosure. |
 
 </details>
 
@@ -183,7 +182,7 @@ This Dev Note is working context for maintainers and is explicitly non-authorita
 {
   "name": "@deepseek-ai/dsh-compaction-tool-result-pruner",
   "description": "Replay-safe model-free head/middle/tail pruning for tool-result surface nodes",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -224,7 +223,6 @@ This Dev Note is working context for maintainers and is explicitly non-authorita
     "@deepseek-ai/cordis-plugin-include": "workspace:~",
     "@deepseek-ai/cordis-plugin-loader": "workspace:~",
     "@deepseek-ai/dsh-compaction": "workspace:*",
-    "@deepseek-ai/dsh-invariants": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-session-projection": "workspace:*",

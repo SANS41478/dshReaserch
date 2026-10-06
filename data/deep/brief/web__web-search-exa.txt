@@ -5,7 +5,7 @@ deps: @deepseek-ai/schemastery
 peers: @deepseek-ai/dsh-launch-environment, @deepseek-ai/dsh-web, @deepseek-ai/cordis
 srcFiles: 3  srcLoc: 273
 
-## README.md (144 行)
+## README.md (143 行)
 ---
 description: "The Exa-backed search provider for ctx.web: how deployments mount vendor-native web search with portable snippets and publication dates."
 kind: "package-reference"
@@ -92,7 +92,6 @@ The provider is a thin adapter over Exa's API with two deliberate rules:
 | [`src/index.ts`](src/index.ts) | Plugin entry: config schema, environment fallback, provider registration |
 | [`src/provider.ts`](src/provider.ts) | The `ExaSearchProvider`: request dispatch, abort classification, result mapping |
 | [`src/types.ts`](src/types.ts) | Exa wire types: `ExaSearchResponse`, `ExaResult`, `ExaError` |
-| — | No runtime invariant companion is published; this package exposes no independent event sequence or mutable data relation beyond contracts enforced at its owning seam. |
 
 ### Request and mapping flow
 
@@ -183,7 +182,7 @@ Exa's livecrawl, category, domain and date filters, and full-text contents stay 
 {
   "name": "@deepseek-ai/dsh-web-search-exa",
   "description": "Exa-backed search provider for the DeepSeek Harness web capability seam (ctx.web)",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

@@ -3,9 +3,9 @@ path: packages/host/open-in-app
 desc: Host half of open-in-app: resolved application catalog, icons, and the launch endpoint as three webServer routes
 deps: @deepseek-ai/dsh-launch-environment, @deepseek-ai/dsh-native-command, @deepseek-ai/dsh-subprocess, @deepseek-ai/schemastery
 peers: @deepseek-ai/cordis
-srcFiles: 6  srcLoc: 1720
+srcFiles: 6  srcLoc: 1674
 
-## README.md (128 行)
+## README.md (126 行)
 ---
 description: "Host half of open-in-app: resolving installed editors, Git GUIs, terminals, and file managers to verified launchers on macOS, Windows, and Linux, and serving the catalog, icons, and launch endpoint as three webServer routes."
 kind: "package-reference"
@@ -128,11 +128,9 @@ None; the package never assembles or sends provider requests.
 <details>
 <summary>Working context for maintainers — click to expand</summary>
 
-The promotion decisions — the host/`ui-` package split, why raw webServer routes instead of a Typert Remote, why the catalog stays compile-time fixed, the resolver redesign (verified launchers, one resolution pass, no per-click re-detection), the three-deadline configuration, and the per-platform icon strategies with their rejected alternatives — are recorded in the [promotion Agent Note](../../../.agents/notes/implemented/feature/2026-08-25-promote-open-anywhere-plugin.md).
+The promotion decisions — the host/`ui-` package split, why raw webServer routes instead of a Typert Remote, why the catalog stays compile-time fixed, the resolver redesign (verified launchers, one resolution pass, no per-click re-detection), the three-deadline configuration, and the per-platform icon strategies with their rejected alternatives — are recorded in the [historical promotion Agent Note](../../../.agents/notes/archived/feature/2026-08-25-promote-open-anywhere-plugin.md).
 
 </details>
-
-**Runtime invariant:** No companion is published. The package serves one host resolution pass over three stateless routes; the route registrations prove disposal through their HMR-safety specs, and no independent observations can diverge.
 
 
 ## 源文件与导出符号
@@ -202,7 +200,7 @@ The promotion decisions — the host/`ui-` package split, why raw webServer rout
 {
   "name": "@deepseek-ai/dsh-host-open-in-app",
   "description": "Host half of open-in-app: resolved application catalog, icons, and the launch endpoint as three webServer routes",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

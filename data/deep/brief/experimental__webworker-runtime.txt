@@ -1,9 +1,9 @@
 # @deepseek-ai/dsh-experimental-webworker-runtime
 path: packages/experimental/webworker-runtime
 desc: Browser-only harness runtime: in-memory VFS, module transform and loader, postMessage tunnel, and the dedicated Web Worker assembly, with the Node-compatibility layer that lets the host tree run unchanged
-deps: @deepseek-ai/dsh-util-crypto
+deps: @deepseek-ai/dsh-util-crypto, @deepseek-ai/dsh-client-web
 peers: @deepseek-ai/cordis, @deepseek-ai/cordis-plugin-loader, @deepseek-ai/dsh-client-connection, @deepseek-ai/dsh-client-modules, @deepseek-ai/dsh-host-webserver
-srcFiles: 79  srcLoc: 13030
+srcFiles: 86  srcLoc: 13500
 
 ## README.md (78 行)
 ---
@@ -35,14 +35,14 @@ The public npm package exposes the runtime library at its root, the self-contain
 
 Three build artifacts and one source-owned process layer:
 
-- **`lib/index.js` (assembly library)** — `createWorkerHost`/`startWorkerHost` mount the base image and any ordered data overlays (`storage/`), install the module loader (`module-system/`) and the `process` shim, boot the tree through the image's own `dsh-app-boot`, and hand the tunnel its serving seams. Overlays may replace files only under `home/` and `workspace/`; they cannot replace the base manifest, configuration, or modules. The image layout contract (`image-layout.ts`: virtual root, config/manifest paths, empty directories, the `lowered` wrapper-contract gate) is shared with the packer. The Worker supplies `profileContext` for an editable profile at `home/profiles/preview/`: the packed rows seed its insertion patch, and ConfigEditor persists overrides in that VFS patch. ConfigEditor reconciles each write and Loader commits live values; package management and Node module HMR stay disabled. Deployment overlays keep JSONL session logs plaintext and preset roots at the image's `config/agent-presets`. Configuration edits last for the current Worker lifetime.
+- **`lib/index.js` (assembly library)** — `createWorkerHost`/`startWorkerHost` mount the base image and any ordered data overlays (`storage/`), install the module loader (`module-system/`) and the `process` shim, boot the tree through the image's own `dsh-app-boot`, and hand the tunnel its serving seams. Overlays may replace files only under `home/` and `workspace/`; they cannot replace the base manifest, configuration, or modules. The image layout contract (`image-layout.ts`: virtual root, config/manifest paths, empty directories, the `lowered` wrapper-contract gate) is shared with the packer. The Worker supplies `profileContext` for an editable profile at `home/profiles/preview/`: the packed rows seed its insertion patch, and ConfigEditor persists overrides in that VFS patch. ConfigEditor reconciles each write and Loader commits live values. The Worker commits `appReady` once the tunnel serves, so HMR loads and queues profile configuration changes; the `process` shim reports no entry script, so HMR performs no Node module-cache classification. Plugin management loads and edits the profile, and its package operations fail with the `execa` refusal. Deployment overlays keep JSONL session logs plaintext and preset roots at the image's `config/agent-presets`. Configuration edits last for the current Worker lifetime.
 - **`lib/worker.js` (worker bundle)** — the assembly plus this package's Node-compatibility layer as one self-contained ES module. The module proxy table (`module-proxies.ts`) is the only platform fork: `node:*` builtins over VFS/tunnel/browser primitives, structural stubs that fail loud on the console for what a browser cannot do, and native/binary package replacements. `node:module` supplies `createRequire().resolve` and `.resolve.paths()` over the image package root, so unchanged packages can discover manifests without evaluating their modules. The `node:util` JSON-data comparator compares own enumerable properties, preserving Node admission decisions for recorded fields such as `__proto__`. The global `process` shim carries Node detection fields including `title`, preventing Worker execution from entering DOM-only branches. The pack-time parser reports statically named module requests, including module-scope direct calls of the form `createRequire(import.meta.url)('pkg')` through a named `node:module` or `module` import, to the packer's reachability walk. Stored, CommonJS-obtained, and rebased `createRequire` calls require image entry seeds. VFS mutations drive `node:fs` callback, polling, and promise watchers; open descriptors retain file identity and access mode across rename, replacement, and unlink, `FileHandle.stat({ bigint: true })` reports the same device and inode identity as a path stat while the name still refers to that file, and `FileHandle.chmod()` updates the opened file identity; `readable-stream` supplies `node:stream/promises` completion and pipeline helpers and the stream state machine used by file streams and unchanged image packages such as Chokidar and readdirp. AsyncLocalStorage carries sync-stack causality across `await` through the snapshot/restore faces the pack-time lowering injects. The worker holds no compiler: an image the packer did not lower is refused at mount. The callback `fs.realpath.native` alias resolves within the mounted VFS and supports `util.promisify`.
-- **`src/shell/` (the worker's own process layer)** — a browser worker cannot fork, so `node:child_process` is not a stub but an implementation: `spawn` starts the command in its own Web Worker — this same bundle, told by its first frame to be a shell process — and reports it through the `ChildProcess` surface the subprocess service consumes. The command runs off the host's thread, `SIGKILL` terminates it whatever it is doing, and it reaches the VFS only by message (the host serves those frames). Worker platform executables preserve native-package protocols such as Landlock without replacing their JavaScript packages or coupling their implementations to `node:child_process`; ordinary commands use the package's evaluator and coreutils command table. The grammar is `@yarnpkg/parsers`' `parseShell`, while `execSync`/`fork` still refuse because they need a real process.
-- **`lib/client.js` (page half)** — startup has two independent stages. `chooseWorkerHostSource({ image?, fixtureManifest? })` optionally owns the boot barrier and fixture manifest: without `preview-fixture` it waits at the source chooser, while a valid query selects directly; either path returns ordered overlays. `connectWorkerHost(worker, { image?, overlays? })` remains the public base-runtime connector; callers that skip the chooser get an empty overlay list. `apps/web` invokes both and supplies its statically bundled Worker. The opening `init` frame carries the base and ordered overlay URLs, the boot payload delivers the structured index-injection table, and `applyIndexInjections` executes it before the shell entry runs. Script preload rows are advisory and skipped because `/plugins` resources resolve only through the tunnel; `loadBundle` fetches each combo on first demand, embeds its tunnel-only source map as a Base64 data URL, and executes the script as a Blob. The tunnel also exposes fetch-shaped transport, the independent file-upload carrier, and the API client. Request frames preserve Blob bodies through structured clone and transfer `ReadableStream<Uint8Array>` ownership. The Host Worker streams both forms into the route, so neither browser thread creates a complete byte array for a generic-file upload. A Remote stream's uplink crosses as `stream-uplink-item` / `stream-uplink-end` frames into an unbounded `TunnelUplink` that drops items arriving after `end`: the page and its worker are one trusted same-origin boundary, so the Host inbox cap does not apply.
+- **`src/shell/` (the worker's own process layer)** — a browser worker cannot fork, so `node:child_process` is not a stub but an implementation: `spawn` starts the command in its own Web Worker — this same bundle, told by its first frame to be a shell process — and reports it through the `ChildProcess` surface the subprocess service consumes. The command runs off the host's thread, `SIGKILL` terminates it whatever it is doing, and it reaches the VFS only by message (the host serves those frames). Worker platform executables preserve native-package protocols such as Landlock without replacing their JavaScript packages or coupling their implementations to `node:child_process`; `xdg-open` sends one VFS text file to the page's read-only viewer, so desktop-opener actions such as **Open configuration file** show the file in the page; ordinary commands use the package's evaluator and coreutils command table. The grammar is `@yarnpkg/parsers`' `parseShell`, while `execSync`/`fork` still refuse because they need a real process.
+- **`lib/client.js` (page half)** — startup has two independent stages. `chooseWorkerHostSource({ image?, fixtureManifest? })` optionally owns the boot barrier and fixture manifest: without `preview-fixture` it waits at the source chooser, while a valid query selects directly; either path returns ordered overlays. `connectWorkerHost(worker, { image?, overlays? })` remains the public base-runtime connector; callers that skip the chooser get an empty overlay list. `apps/web` invokes both and supplies its statically bundled Worker. The opening `init` frame carries the base and ordered overlay URLs, the boot payload delivers the structured index-injection table, and `applyIndexInjections` executes it before the shell entry runs. Script preload rows are advisory and skipped because `/plugins` resources resolve only through the tunnel; `loadBundle` fetches each combo on first demand, embeds its tunnel-only source map as a Base64 data URL, and executes the script as a Blob. The worker's unsolicited `view-text` frame opens the page's modal text viewer. The tunnel also exposes fetch-shaped transport, the independent file-upload carrier, and the API client. Request frames preserve Blob bodies through structured clone and transfer `ReadableStream<Uint8Array>` ownership. The Host Worker streams both forms into the route, so neither browser thread creates a complete byte array for a generic-file upload. A Remote stream's uplink crosses as `stream-uplink-item` / `stream-uplink-end` frames into an unbounded `TunnelUplink` that drops items arriving after `end`: the page and its worker are one trusted same-origin boundary, so the Host inbox cap does not apply.
 
 Acceptance lives in `apps/web/tests/preview-boot.e2e.ts`, which serves the real built pages and drives the pre-boot chooser plus Worker activation in headless Chromium. The empty selection exercises first-run startup. The `vfs-example` overlay supplies ordinary workspace files and plaintext persistence artifacts for cold Workspace/Session discovery, tool presentation, subagent navigation, and history paging without a model request. The [packer](../webworker-packer/README.md) prepares current-generation successors from committed historical logs in Node; those source logs remain byte-identical in the overlay. The fixture generator owns the acceptance test's current projection cache. The chooser reserves WebFS as a separate user-authorized source; that provider does not read the built-in fixture.
 
-The [built-bundle import sweep](tests/compile/transform-corpus-check.ts) checks bare Node imports after the library build. Its Dockkit exception accepts Node’s unknown-`.css`-extension refusal for any stylesheet rather than one pinned path; another extension, error code, or message, and an unexpectedly successful exempt import, remain errors. See the [stylesheet exemption decision](../../../.agents/notes/implemented/bug-fix/2026-09-10-built-bundle-css-exemption.md).
+The [built-bundle import sweep](tests/compile/transform-corpus-check.ts) checks bare Node imports after the library build. Its Dockkit exception accepts Node’s unknown-`.css`-extension refusal for any stylesheet rather than one pinned path; another extension, error code, or message, and an unexpectedly successful exempt import, remain errors.
 
 -----
 
@@ -61,7 +61,9 @@ None; this package neither assembles nor sends a provider request.
 
 - **The worker composition writes plaintext session logs** (`compression: 'none'` boot patch): it carries no Zstandard codec, so exported logs are `.jsonl`, never `.jsonl.zstd`.
 - **`node:dns/promises`, `node:vm`, `node:net`, `node:sqlite`, `node:worker_threads` are structural stubs**: every call reports its refusal on the console and throws. Rows needing native DNS, a real process, or realm isolation cannot run here.
-- **Host package commands are unavailable**: `execa` reports an explicit worker-host refusal; the preview cannot run pnpm or install native dependencies.
+- **`node:assert/strict` supports truthiness assertions only**: for falsy values, the callable default and `ok` throw `ERR_ASSERTION` with the supplied message or generic text, or rethrow a supplied Error unchanged. Other assertion APIs are absent.
+- **Desktop product telemetry is unavailable**: `got.post` reports an explicit worker-host refusal. Got and its Node HTTP dependencies are excluded from the browser image; Desktop reporting remains disabled in the preview composition.
+- **Host package commands are unavailable**: `execa` reports an explicit worker-host refusal; the preview cannot run pnpm, install plugins, or install native dependencies.
 - **PTC Node programs are unavailable**: the process shim exposes `/dsh/bin/node` as its executable identity so the provider can activate, but the Worker has neither a Node executable nor `stripTypeScriptTypes`. Program execution fails before launching a child.
 - **Office conversion requires a Node Host**: the LibreOffice kit replacement rejects converter creation with `unavailable`. The browser image excludes the kit and its engine dependencies; the Office preview reports that conversion is unavailable.
 - **Filesystem watchers observe only the mounted VFS**: image seeding is silent and the VFS has no symlinks or external writers. `persistent`, `ref()`, and `unref()` preserve the Node API but cannot control a dedicated Worker's lifetime because browsers expose no ref-counted event loop.
@@ -82,18 +84,16 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. This package is pre-Cordis platform glue — the tree it boots runs the product packages' own invariants, and the assembly's contracts (image contract gate, tunnel refusals) fail loud at boot rather than drifting at run time.
-
 
 ## 源文件与导出符号
 
 ### packages/experimental/webworker-runtime/src/client/apply-injections.ts  (3 行)
 
-### packages/experimental/webworker-runtime/src/client/client.ts  (564 行)
-  23	iface	BootPayload
-  29	type	TunnelFetch
-  156	class	WorkerTunnel
-      members: L179 constructor, L208 init, L307 pumpUplink, L338 forwardUplink, L358 bootPayload, L375 loadBundle, L401 rejectOnAbort, L423 abortRequest, L442 observeStreamAbort, L449 releaseSignal, L456 cancelStream, L464 abortWorkerOperation, L482 warnRefusal, L486 receive
+### packages/experimental/webworker-runtime/src/client/client.ts  (570 行)
+  25	iface	BootPayload
+  31	type	TunnelFetch
+  158	class	WorkerTunnel
+      members: L181 constructor, L210 init, L309 pumpUplink, L340 forwardUplink, L360 bootPayload, L377 loadBundle, L403 rejectOnAbort, L425 abortRequest, L444 observeStreamAbort, L451 releaseSignal, L458 cancelStream, L466 abortWorkerOperation, L484 warnRefusal, L488 receive
 
 ### packages/experimental/webworker-runtime/src/client/index.ts  (176 行)
   48	iface	WorkerHostConnectOptions
@@ -105,6 +105,9 @@ None.
 
 ### packages/experimental/webworker-runtime/src/client/source-chooser.ts  (265 行)
   196	fn	choosePreviewSource
+
+### packages/experimental/webworker-runtime/src/client/text-viewer.ts  (89 行)
+  61	fn	showTextViewer
 
 ### packages/experimental/webworker-runtime/src/compile/transform.ts  (626 行)
   588	iface	LoweredModule
@@ -130,9 +133,9 @@ None.
 
 ### packages/experimental/webworker-runtime/src/index.ts  (53 行)
 
-### packages/experimental/webworker-runtime/src/module-proxies.ts  (87 行)
+### packages/experimental/webworker-runtime/src/module-proxies.ts  (90 行)
   23	const	MODULE_PROXIES
-  84	const	MODULE_PROXY_PREFIXES
+  87	const	MODULE_PROXY_PREFIXES
 
 ### packages/experimental/webworker-runtime/src/module-system/module-loader.ts  (453 行)
   19	const	DEFAULT_CONDITIONS
@@ -164,6 +167,10 @@ None.
 
 ### packages/experimental/webworker-runtime/src/node/builtin_modules/implemented/abort-error.ts  (15 行)
   8	fn	abortError
+
+### packages/experimental/webworker-runtime/src/node/builtin_modules/implemented/assert/strict.ts  (29 行)
+  9	fn	ok
+  23	const	__esModule
 
 ### packages/experimental/webworker-runtime/src/node/builtin_modules/implemented/async_hooks.ts  (407 行)
   69	class	AsyncLocalStorage
@@ -426,12 +433,15 @@ None.
   37	const	receiveMessageOnPort
   41	const	__esModule
 
-### packages/experimental/webworker-runtime/src/node/builtins.ts  (133 行)
-  109	const	REPLACED_PREFIXES
-  125	fn	createNodeBuiltins
+### packages/experimental/webworker-runtime/src/node/builtins.ts  (137 行)
+  113	const	REPLACED_PREFIXES
+  129	fn	createNodeBuiltins
 
 ### packages/experimental/webworker-runtime/src/node/external_packages/execa.ts  (6 行)
   5	const	execa
+
+### packages/experimental/webworker-runtime/src/node/external_packages/got.ts  (11 行)
+  5	const	__esModule
 
 ### packages/experimental/webworker-runtime/src/node/external_packages/koffi.ts  (156 行)
   153	const	__esModule
@@ -461,7 +471,7 @@ None.
   82	const	openAIResponsesApi
   85	const	__esModule
 
-### packages/experimental/webworker-runtime/src/node/external_packages/replaced-externals.ts  (20 行)
+### packages/experimental/webworker-runtime/src/node/external_packages/replaced-externals.ts  (21 行)
   9	const	REPLACED_EXTERNAL_PACKAGES
 
 ### packages/experimental/webworker-runtime/src/node/external_packages/ripgrep.ts  (16 行)
@@ -482,10 +492,10 @@ None.
 ### packages/experimental/webworker-runtime/src/node/globals/crypto.ts  (20 行)
   11	fn	installCryptoGlobals
 
-### packages/experimental/webworker-runtime/src/node/globals/process.ts  (144 行)
-  13	iface	ProcessShimOptions
-  23	iface	ProcessShim
-  84	fn	installProcessGlobal
+### packages/experimental/webworker-runtime/src/node/globals/process.ts  (147 行)
+  16	iface	ProcessShimOptions
+  26	iface	ProcessShim
+  87	fn	installProcessGlobal
 
 ### packages/experimental/webworker-runtime/src/node/globals/timers.ts  (69 行)
   16	iface	TimerHandle
@@ -563,13 +573,18 @@ None.
   72	type	FromProcessFrame
   80	fn	isShellStartFrame
 
-### packages/experimental/webworker-runtime/src/shell/process/virtual-executables.ts  (62 行)
-  7	iface	VirtualExecutableExit
-  15	iface	VirtualExecutableDelegate
-  23	type	VirtualExecutablePreparation
-  26	type	VirtualExecutableSyncResult
-  29	iface	VirtualExecutable
-  59	fn	virtualExecutable
+### packages/experimental/webworker-runtime/src/shell/process/virtual-executables.ts  (64 行)
+  8	iface	VirtualExecutableExit
+  16	iface	VirtualExecutableDelegate
+  24	type	VirtualExecutablePreparation
+  27	type	VirtualExecutableSyncResult
+  30	iface	VirtualExecutable
+  61	fn	virtualExecutable
+
+### packages/experimental/webworker-runtime/src/shell/process/xdg-open.ts  (47 行)
+  10	type	TextViewer
+  18	fn	setTextViewer
+  27	const	XDG_OPEN_EXECUTABLE
 
 ### packages/experimental/webworker-runtime/src/shell/programs/builtins.ts  (193 行)
   176	const	BUILTIN_PROGRAMS
@@ -644,7 +659,7 @@ None.
   196	iface	VfsMutationSink
   212	iface	Vfs
 
-### packages/experimental/webworker-runtime/src/transport/frames.ts  (199 行)
+### packages/experimental/webworker-runtime/src/transport/frames.ts  (208 行)
   8	type	TunnelRequestId
   11	iface	TunnelRequestFrame
   21	iface	TunnelStreamOpenFrame
@@ -661,8 +676,9 @@ None.
   107	iface	TunnelStreamItemFrame
   114	iface	TunnelStreamEndFrame
   120	iface	TunnelStreamErrorFrame
-  137	type	TunnelOutboundFrame
-  152	fn	parseInboundFrame
+  137	iface	TunnelViewTextFrame
+  145	type	TunnelOutboundFrame
+  161	fn	parseInboundFrame
 
 ### packages/experimental/webworker-runtime/src/transport/synthetic-http.ts  (159 行)
   17	iface	ResponseSink
@@ -670,7 +686,7 @@ None.
   32	iface	SyntheticExchange
   51	fn	createSyntheticExchange
 
-### packages/experimental/webworker-runtime/src/transport/tunnel.ts  (557 行)
+### packages/experimental/webworker-runtime/src/transport/tunnel.ts  (566 行)
   27	const	API_PREFIX
   30	const	SYNTHETIC_HOST
   46	fn	describeFailure
@@ -678,19 +694,19 @@ None.
   86	iface	TunnelSeams
   110	iface	TunnelServerOptions
   226	class	TunnelServer
-      members: L239 constructor, L250 handleMessage, L288 serve, L299 fail, L305 send, L309 refuse, L330 dispatchFrame, L335 serveStream, L367 dropUplink, L373 sinkFor, L401 pathFrame, L410 serveRequest, L427 whenListener, L433 dispatch, L454 serveApi, L485 serveBoot, L499 serveDirect
+      members: L239 constructor, L250 handleMessage, L288 serve, L299 fail, L310 viewText, L314 send, L318 refuse, L339 dispatchFrame, L344 serveStream, L376 dropUplink, L382 sinkFor, L410 pathFrame, L419 serveRequest, L436 whenListener, L442 dispatch, L463 serveApi, L494 serveBoot, L508 serveDirect
 
-### packages/experimental/webworker-runtime/src/worker-host.ts  (463 行)
-  44	const	DEFAULT_PORT
-  51	iface	LogMessage
-  58	iface	LogExporter
-  66	iface	HostContext
-  75	iface	WorkerHostOptions
-  128	iface	WorkerHost
-  169	fn	createWorkerHost
-  290	iface	LogRenderer
-  309	fn	installLogSink
-  452	fn	startWorkerHost
+### packages/experimental/webworker-runtime/src/worker-host.ts  (474 行)
+  45	const	DEFAULT_PORT
+  52	iface	LogMessage
+  59	iface	LogExporter
+  67	iface	HostContext
+  76	iface	WorkerHostOptions
+  129	iface	WorkerHost
+  170	fn	createWorkerHost
+  306	iface	LogRenderer
+  325	fn	installLogSink
+  463	fn	startWorkerHost
 
 ### packages/experimental/webworker-runtime/src/worker.ts  (91 行)
 
@@ -700,7 +716,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-experimental-webworker-runtime",
   "description": "Browser-only harness runtime: in-memory VFS, module transform and loader, postMessage tunnel, and the dedicated Web Worker assembly, with the Node-compatibility layer that lets the host tree run unchanged",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -752,4 +768,4 @@ None.
     "@deepseek-ai/dsh-client-connection": "workspace:*",
     "@deepseek-ai/dsh-client-file-upload": "workspace:*",
     "@deepseek-ai/dsh-client-modules": "workspace:*",
-    "@deepsee
+    "@deep

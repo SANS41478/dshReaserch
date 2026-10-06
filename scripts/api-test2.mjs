@@ -1,8 +1,9 @@
 // Test the improved symbol extraction + traceability endpoint.
 import http from 'node:http'
+import { PORT } from './_paths.mjs'
 
 const get = p => new Promise((resolve, reject) => {
-  const req = http.get({ host: '127.0.0.1', port: 5319, path: p }, res => {
+  const req = http.get({ host: '127.0.0.1', port: PORT, path: p }, res => {
     let s = ''
     res.on('data', d => s += d)
     res.on('end', () => { try { resolve(JSON.parse(s)) } catch (e) { reject(new Error(p + ' -> ' + s.slice(0, 300))) } })

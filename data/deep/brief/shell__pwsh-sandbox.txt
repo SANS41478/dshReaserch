@@ -3,9 +3,9 @@ path: packages/shell/pwsh-sandbox
 desc: Sandbox-consuming implementation of the DeepSeek Harness PowerShell executor seam (confines every command via ctx.sandbox, reports denial/enforcement result facts)
 deps: -
 peers: @deepseek-ai/dsh-shell, @deepseek-ai/dsh-pwsh-local, @deepseek-ai/dsh-sandbox, @deepseek-ai/dsh-sandbox-policy, @deepseek-ai/cordis
-srcFiles: 2  srcLoc: 312
+srcFiles: 2  srcLoc: 322
 
-## README.md (154 行)
+## README.md (153 行)
 ---
 description: "The sandbox-consuming PowerShell executor for deployments and maintainers choosing, configuring, or debugging confined PowerShell command execution with denial facts."
 kind: "package-reference"
@@ -91,7 +91,6 @@ The executor is the pwsh twin of `dsh-bash-sandbox`: it inherits `dsh-pwsh-local
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: `SandboxPwshExecutor`, per-process fact retention, execution preparation |
 | [`src/helpers.ts`](src/helpers.ts) | Denial, runner-failure, and runner-spawn-failure classification |
-| — | No runtime invariant companion is published; this package exposes no independent event sequence or mutable data relation beyond contracts enforced at its owning seams. Classification is observable in results. |
 | `tests/` | Exercised behavior across the ACL and platform runners |
 
 ### Main flow
@@ -180,7 +179,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-pwsh-sandbox",
   "description": "Sandbox-consuming implementation of the DeepSeek Harness PowerShell executor seam (confines every command via ctx.sandbox, reports denial/enforcement result facts)",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

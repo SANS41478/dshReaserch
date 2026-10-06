@@ -5,7 +5,7 @@ deps: -
 peers: @deepseek-ai/dsh-agent, @deepseek-ai/dsh-brand, @deepseek-ai/cordis
 srcFiles: 2  srcLoc: 655
 
-## README.md (153 行)
+## README.md (152 行)
 ---
 description: "Persistent terminal sessions for deployments and consumers choosing, composing, or extending the owner-scoped ctx.terminals service."
 kind: "package-reference"
@@ -83,7 +83,6 @@ The service owns everything except terminal mechanics: session identity, publica
 |---|---|
 | [`src/index.ts`](src/index.ts) | `TerminalSessionService`: backend registry, spawn/send/read/signal/kill/list, owner cleanups, disposal |
 | [`src/types.ts`](src/types.ts) | Shared contracts: backend interface, session types, wait reasons, signal set, error codes |
-| — | No runtime invariant companion is published; backend and owner-scoped session registries are private mutable state, and the service exposes neither an independent lifecycle stream nor an unscoped snapshot. |
 
 ### Data model and lifecycle
 
@@ -199,7 +198,7 @@ This Dev Note is working context for maintainers and is explicitly non-authorita
 {
   "name": "@deepseek-ai/dsh-terminal",
   "description": "Persistent PTY session seam for the DeepSeek Harness — owner-scoped ids, backend registry, interactive sends, reads, signals, and awaited cleanup",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

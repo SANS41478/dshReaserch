@@ -3,9 +3,9 @@ path: packages/client/ui-reference
 desc: Unified Web @file and @session reference source
 deps: -
 peers: @deepseek-ai/cordis
-srcFiles: 3  srcLoc: 296
+srcFiles: 3  srcLoc: 342
 
-## README.md (109 行)
+## README.md (107 行)
 ---
 description: "Web @file and @session reference source for the composer: candidates, ordering, and atomic inline references (unified file/session picking)."
 kind: "package-reference"
@@ -113,8 +113,6 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. A single slash-source registration whose disposal is proven by the HMR-safety spec — it emits no cordis events and owns no cross-plugin mutable state.
-
 
 ## 源文件与导出符号
 
@@ -139,7 +137,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-client-ui-reference",
   "description": "Unified Web @file and @session reference source",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -197,4 +195,4 @@ None.
     "@deepseek-ai/dsh-session-reference": "workspace:*",
     "@deepseek-ai/dsh-typert-protocol": "workspace:*",
     "@deepseek-ai/dsh-util-workspace-path": "workspace:*",
-    "@deepseek-ai/cordis": "worksp
+    "@deepseek-ai/cordis": "wor

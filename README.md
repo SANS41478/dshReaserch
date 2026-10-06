@@ -12,8 +12,9 @@
 分层讲解、服务总表、事件矩阵、包清单这些都内嵌在站点里，不需要服务。
 只有「源码浏览器」和「读全文」这两个功能需要服务（浏览器不允许网页直接读本地文件）。
 
-> 服务默认端口 `5319`，仓库路径和端口都在 `config.json` 里改。
+> 服务默认端口 `5319`，仓库路径和端口**只在 `config.json` 里配**。
 > 也可以用环境变量覆盖：`DSH_REPO` / `PORT`。
+> 代码里没有任何写死的仓库路径——换盘符、换目录、把站点整个搬到别处，都只改这一处。
 
 ## 两条阅读路径
 
@@ -28,10 +29,10 @@
 |---|---|
 | `#/` | 首页：一句话定位、关键数字、核心脊柱六包 |
 | `#/layer/<id>` | **分层深入**，18 层，由浅入深。这是教学主线 |
-| `#/map` | 全站地图：50 个分组 × 265 个包的全量清单 |
-| `#/seams` | 71 个核心服务总表（定义者 / 提供者 / 消费者） |
-| `#/events` | 68 个事件的生产者 × 消费者矩阵 |
-| `#/tools` | 25 个模型面向工具的目录 |
+| `#/map` | 全站地图：54 个能力域 × 319 个包的全量清单（标注哪些包已精读、哪些待精读） |
+| `#/seams` | 92 个核心服务总表（定义者 / 提供者 / 消费者） |
+| `#/events` | 81 个事件的生产者 × 消费者矩阵 |
+| `#/tools` | 30 个模型面向工具的目录 |
 | `#/composition` | 组合层：profile / bundle / 补丁语义 + 600+ 配置行 |
 | `#/pkg/<group>/<dir>` | 单包详情：**逐包精读**（一句话定位 / 为什么必须有它 / 系统位置 / 内部结构 / 职责边界 / 带行号的源码带读 / 坑 / 通俗复述，带**吸顶页内小目录**、正文**按句成列**、`上游：`/`数据流：` 这类领句提为小标题、正文里的行号引用可点开右栏源码）+ 依赖、被依赖、源码入口 |
 | `#/svc/<key>` | 单服务详情：三角色拆解 + 为什么这样设计 |
@@ -160,12 +161,14 @@ assets/style.css        设计系统（深色 IDE 主题）
 assets/app.js           路由、搜索、架构页面渲染
 assets/source.js        源码浏览器（文件树、查看器、溯源面板、高亮器）
 assets/deepfmt.js       逐包精读正文的结构化渲染器（分句 / 领句小标题 / 行号引用转链接），浏览器与校验脚本共用同一份实现
-data/bundle.js          ★ 架构数据（≈2.1 MB，含 265 包精读正文 + 每包文件清单，由下面脚本生成，离线可用）
+data/bundle.js          ★ 架构数据（≈1.5 MB，含 253 包精读正文 + 每包文件清单 + 快照元信息，由下面脚本生成，离线可用）
 data/*.json             中间产物，便于人工检查
+data/deep-missing.json  还没有精读的包清单（deepmerge.mjs 自动产出，就是下一轮要补的作业单）
+scripts/_paths.mjs      ★ 路径唯一事实源：站点根 / 数据目录 / 仓库根 / 端口 / playwright 装载，全部从这里推导
 scripts/extract.mjs     从源码仓库抽取包/服务/工具/事件/配置行
 scripts/enrich.mjs      18 层的手写知识层 + 源码片段抽取（带行号）
 scripts/deepfacts.mjs   为每包生成「精读底料」（README+符号表+inject，data/deep/brief/）
-scripts/deepmerge.mjs   合并 37 批逐包精读解读 → data/deep.json
+scripts/deepmerge.mjs   合并逐包精读解读 → data/deep.json（顺手剔除已消失包的解读，并统计缺口）
 scripts/filemap.mjs     从精读底料提取每包文件清单 → data/filemap.json（正文行号引用解析用）
 scripts/verify-deep.mjs 精读页回归：抽样章节断言 + 带读链接分屏 + 全量零报错扫查
 scripts/verify-deep-fmt.mjs 零删减校验：渲染结果与 deep.json 逐字符一致 + 每条行号链接指向真实文件
@@ -193,18 +196,38 @@ scripts/inventory.mjs   仓库构成统计
 
 服务**实时读磁盘**，你在编辑器里改完保存，网页刷新即最新（文件树有 4 秒缓存，其余无缓存）。
 
+## 维护：源码更新后怎么重新对齐
+
+```bash
+npm run gen            # 重新抽取 + 重建底料文件表 + 合并精读 + 打包（一条龙，几秒）
+npm run brief          # 单独重建 319 包的精读底料（data/deep/brief/）
+npm run test:deep-fmt  # 零删减校验：不必起浏览器，最快的一次体检
+npm start              # 起服务，页面上直接验证
+```
+
+`npm run gen` 会顺手做三件容易漏的事：剔除指向已消失文件的文件表条目、剔除已消失包的解读、
+把「有源码但没有精读」的包写成 `data/deep-missing.json`。
+
+浏览器类回归（`test:site` / `test:deep` / `test:src` / `test:split`）需要 playwright：
+脚本会把托管工作区里的 playwright 找来用（`scripts/_paths.mjs`），找不到就先启动本机已装的 Edge，
+所以**不需要下载 chromium**；要固定渠道就设 `PW_CHANNEL=msedge`。
+
 ## 关于准确性
 
 - 「包清单 / 服务 / 工具 / 事件 / 配置行」是**脚本从仓库真实文件里抽的**，不是手写。
-- **逐包精读（265/265 全覆盖）**：每个包页的「为什么必须有它 / 系统位置 / 内部结构 / 职责边界 / 源码带读 / 坑 / 通俗复述」是**人写的深度解读**，
+- **逐包精读（253 / 319 个包）**：每个包页的「为什么必须有它 / 系统位置 / 内部结构 / 职责边界 / 源码带读 / 坑 / 通俗复述」是**人写的深度解读**，
   由多个阅读代理基于 `data/deep/brief/` 的符号索引 + 实际打开源码写成，
   其中 1276 条「源码带读」的行号逐条打开文件核对过。它们是解释，不是规范；权威定义仍在仓库 `docs/`。
   正文的**排版**在前端按句重排（分句列表 + `上游：`/`数据流：` 领句提为小标题 + 行号引用转可点链接 + 吸顶页内小目录），**不删不改一个字**：
-  `node scripts/verify-deep-fmt.mjs` 会把 265 包 × 6 字段的渲染结果剥掉标签后与 `data/deep.json` 逐字符比对，并校验每条行号链接都指向真实存在的文件。
-  已知的数据快照问题（写在对应包页的「坑」里）：`code-runtime` 两包、`settings-file`、`agent-presets`、e2b 三包在本地快照只有编译产物没有 `src/`；
-  `workflow-worker-thread` 已在上游最新提交中删除（解读基于 git 历史）。
+  `node scripts/verify-deep-fmt.mjs` 会把 253 包 × 6 字段的渲染结果剥掉标签后与 `data/deep.json` 逐字符比对，并校验每条行号链接都指向真实存在的文件。
+- **精读与包清单不是同一版产物**：精读是一批一批写的，上游新增包会先以「待精读」角标出现在地图与包页里（详情页会明说"这个包还没有逐包精读"），
+  数量与清单在 `data/deep-missing.json`；已消失的包（`code-runtime/*`、`e2b/*`、`settings-file`、`agent-presets`、`runtime-diagnostics/invariants`、
+  `workflow-worker-thread`、`client/ui-sidebar-textpreview`、`experimental/agent-team-web-profile`、`experimental/code-runtime-python`）
+  其解读在 `deepmerge.mjs` 里按「当前源码是否存在」自动剔除，不会留下幽灵页。
+- 页面上的**版本号不是写死的**：`scripts/bundle.mjs` 打包时现读仓库 `package.json` 与 `git rev-parse`，
+  把 `版本 / HEAD / 生成时间 / 仓库路径` 写进 `data/bundle.js` 的 `meta`，页面从快照读，仓库升级后重新 `npm run gen` 即可同步。
 - 源码浏览器的文件内容、行号、符号、inject 声明，都是**从磁盘现读现扫**的。
-- 符号索引是**正则扫描**建的（约 2900 个源文件 / 1.8 万个符号），不是真正的 TypeScript 语言服务。
+- 符号索引是**正则扫描**建的（约 2950 个源文件 / 1.85 万个符号），不是真正的 TypeScript 语言服务。
   它能准确抓出类、方法、函数、接口、`static inject`、`declare module`，
   但**不做类型推断、不做跨文件引用解析**。要精确的跳转定义，仍需编辑器或 `tsserver`。
 - 「18 层叙述、机制表、通俗复述」是**人写的解释**，基于对源码的阅读；它们是导航，不是规范。

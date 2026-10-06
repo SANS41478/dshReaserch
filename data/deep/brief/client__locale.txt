@@ -3,9 +3,9 @@ path: packages/client/locale
 desc: Locale plugin: Host-backed preference, extensible language catalog, browser fallback, and typed built-in dictionaries
 deps: @deepseek-ai/schemastery
 peers: @deepseek-ai/cordis
-srcFiles: 10  srcLoc: 878
+srcFiles: 11  srcLoc: 967
 
-## README.md (151 行)
+## README.md (149 行)
 ---
 description: "Localization for the web GUI: the zh/en preference, browser-derived fallback, typed namespace dictionaries, and the framework translation seat, for users and plugin authors."
 kind: "package-reference"
@@ -120,7 +120,7 @@ The typed object form requires complete dictionaries for both built-in locales. 
 Read these when the locale contract is not enough: the slot face it implements, the settings surface it rides, and the persistence decision behind the preference.
 
 - [Client slot system](../ui-slots/README.md) — the slot model and the `LocaleFace` seat this package implements.
-- [Host-backed preferences decision](../../../.agents/notes/implemented/bug-fix/2026-08-06-host-backed-web-preferences.md) — why the preference persists in Host settings instead of the browser.
+- [historical Host-backed preferences decision](../../../.agents/notes/archived/bug-fix/2026-08-06-host-backed-web-preferences.md) — why the preference persists in Host settings instead of the browser.
 - [Settings group map](../../settings/README.md) — the settings service that stores the preference.
 - [Client group map](../README.md) — the browser half this package belongs to.
 
@@ -154,8 +154,6 @@ These limits define where localization is incomplete or frozen at registration t
 None.
 
 </details>
-
-**Runtime invariant:** No companion is published. The locale catalog and dictionaries have no independent runtime source to compare against; registration disposal, preference resolution, and fallback lookup are asserted by behavior specs.
 
 
 ## 源文件与导出符号
@@ -228,7 +226,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-client-locale",
   "description": "Locale plugin: Host-backed preference, extensible language catalog, browser fallback, and typed built-in dictionaries",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -290,5 +288,4 @@ None.
     "lib/index.js",
     "lib/client.js",
     "lib/types/**/*.d.ts"
-  ],
-
+  

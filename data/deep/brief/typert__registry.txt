@@ -3,9 +3,9 @@ path: packages/typert/registry
 desc: Runtime registry for generated package reflection and Zod schemas
 deps: -
 peers: @deepseek-ai/cordis
-srcFiles: 4  srcLoc: 882
+srcFiles: 4  srcLoc: 913
 
-## README.md (132 行)
+## README.md (131 行)
 ---
 description: "The runtime Typert registry: stores generated package reflection, lazy Zod schema factories, and Remote invocation descriptors, and resolves them for consumers."
 kind: "package-reference"
@@ -89,7 +89,6 @@ Keys are stable: `<package>#<face>` for reflection, `<package>#<name>` for schem
 | [`src/service.ts`](src/service.ts) | `TypertRegistry` service, stores, validation, effect wiring |
 | [`src/types.ts`](src/types.ts) | Contribution, record, and filter types |
 | [`src/client/index.ts`](src/client/index.ts) | Client face installing the same registry |
-| — | No runtime invariant companion is published; schema and package-reflection records mutate together inside register/dispose, with no independent event or second data source to cross-check; duplicate identities fail at the owning operation boundary. |
 
 </details>
 
@@ -178,7 +177,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-typert-registry",
   "description": "Runtime registry for generated package reflection and Zod schemas",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

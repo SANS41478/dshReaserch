@@ -2,10 +2,10 @@
 path: packages/core/agent
 desc: Agent interface, registry, initiator scope, and event vocabulary for the DeepSeek Harness
 deps: -
-peers: @deepseek-ai/dsh-invariants, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-scope, @deepseek-ai/dsh-session, @deepseek-ai/dsh-session-projection, @deepseek-ai/dsh-system-prompt, @deepseek-ai/dsh-typert-protocol, @deepseek-ai/dsh-util-values, @deepseek-ai/cordis
-srcFiles: 8  srcLoc: 1652
+peers: @deepseek-ai/dsh-llm, @deepseek-ai/dsh-scope, @deepseek-ai/dsh-session, @deepseek-ai/dsh-session-projection, @deepseek-ai/dsh-system-prompt, @deepseek-ai/dsh-typert-protocol, @deepseek-ai/dsh-util-values, @deepseek-ai/dsh-workspace, @deepseek-ai/cordis
+srcFiles: 8  srcLoc: 1662
 
-## README.md (190 行)
+## README.md (189 行)
 ---
 description: "The Agent handle, live registry, process-local initiator scope, and agent/* event vocabulary for plugins, UI, and orchestrators building or extending agents."
 kind: "package-reference"
@@ -61,7 +61,7 @@ handle.agent.followup({
 })
 handle.agent.steer({
   content: [{ type: 'text', text: 'Focus on the tests.' }],
-  source: { kind: 'plugin', plugin: 'my-plugin' },
+  source: { kind: 'my-plugin' },
 })
 await handle.agent.whenIdle()
 ```
@@ -108,7 +108,6 @@ The package is built on one separation: the public `Agent` surface and registry 
 | [`src/dispatch.ts`](src/dispatch.ts) | `agentEvents` fused dispatcher and `assembleContextFor(agent)` |
 | [`src/consumed-work.ts`](src/consumed-work.ts) | `foldConsumedWork(events)`: what the log's consumed work became |
 | [`src/model-selection.ts`](src/model-selection.ts) | `installModelSelection`: coupling one selection to assembly and routing |
-| [`src/invariant.ts`](src/invariant.ts) | Invariant companion: no-op `agent/status` transitions fail |
 | [`src/archive-admission.ts`](src/archive-admission.ts) | The `turn` family of the Workspace registry's archive admission: a running turn and its user-cause cancel |
 
 ### Registry and lifecycle
@@ -225,11 +224,6 @@ This Dev Note is working context for maintainers; it is explicitly non-authorita
   245	class	AgentRegistry
       members: L255 constructor, L295 currentInitiator, L308 requireInitiator, L327 withInitiator, L342 withoutInitiator, L358 setFactory, L377 requireFactory, L391 create, L410 resume, L437 register, L459 enter, L497 detachEntered, L513 emitDisposed, L537 announce, L566 get, L578 isOwnedBy, L586 list, L596 roots, L603 closeInitiators, L608 disposeInitiators, L623 runWithInitiator, L656 hasLifecycleAncestor, L666 assertInitiatorsReadable, L671 releaseReentrantInitiatorRuns, L679 releaseInitiatorRun
 
-### packages/core/agent/src/invariant.ts  (33 行)
-  10	const	name
-  12	const	inject
-  31	const	apply
-
 ### packages/core/agent/src/model-selection.ts  (133 行)
   declare module: declare module '@deepseek-ai/dsh-llm' {
   22	iface	ModelSelection
@@ -264,7 +258,7 @@ This Dev Note is working context for maintainers; it is explicitly non-authorita
 {
   "name": "@deepseek-ai/dsh-agent",
   "description": "Agent interface, registry, initiator scope, and event vocabulary for the DeepSeek Harness",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -281,10 +275,6 @@ This Dev Note is working context for maintainers; it is explicitly non-authorita
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
-    "./invariant": {
-      "types": "./lib/types/invariant.d.ts",
-      "default": "./lib/invariant.js"
-    },
     "./types": {
       "types": "./lib/types/types.d.ts",
       "default": "./lib/types/types.js"
@@ -294,13 +284,11 @@ This Dev Note is working context for maintainers; it is explicitly non-authorita
   },
   "files": [
     "lib/index.js",
-    "lib/invariant.js",
     "lib/types/**/*.js",
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-invariants": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-scope": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
@@ -317,11 +305,16 @@ This Dev Note is working context for maintainers; it is explicitly non-authorita
     }
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-invariants": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-scope": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-session-projection": "workspace:*",
     "@deepseek-ai/dsh-system-prompt": "workspace:*",
     "@deepseek-ai/dsh-typert-protocol": "workspace:*",
-    "@deepseek-ai/dsh-ty
+    "@deepseek-ai/dsh-typert-registry": "workspace:*",
+    "@deepseek-ai/dsh-util-values": "workspace:*",
+    "@deepseek-ai/dsh-workspace": "workspace:*",
+    "@deepseek-ai/cordis": "workspace:~"
+  }
+}
+

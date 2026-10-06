@@ -1,12 +1,20 @@
 {
  "base": [
   {
+   "id": "tool-plugin-manager",
+   "name": "@deepseek-ai/dsh-plugin-manager/tools"
+  },
+  {
+   "id": "plugin-manager",
+   "name": "@deepseek-ai/dsh-plugin-manager"
+  },
+  {
    "id": "timer",
    "name": "@deepseek-ai/cordis-plugin-timer"
   },
   {
    "id": "hmr",
-   "name": "@deepseek-ai/cordis-plugin-hmr"
+   "name": "@deepseek-ai/dsh-hmr"
   },
   {
    "id": "llm",
@@ -69,8 +77,20 @@
    "name": "@deepseek-ai/dsh-llm-retry"
   },
   {
+   "id": "config-editor",
+   "name": "@deepseek-ai/dsh-config-editor"
+  },
+  {
    "id": "settings",
-   "name": "@deepseek-ai/dsh-settings-file"
+   "name": "@deepseek-ai/dsh-settings"
+  },
+  {
+   "id": "authorization",
+   "name": "@deepseek-ai/dsh-authorization"
+  },
+  {
+   "id": "deepseek-account",
+   "name": "@deepseek-ai/dsh-deepseek-account-platform"
   },
   {
    "id": "credentials",
@@ -111,6 +131,10 @@
   {
    "id": "session-projection-cache",
    "name": "@deepseek-ai/dsh-session-projection-cache"
+  },
+  {
+   "id": "otel",
+   "name": "@deepseek-ai/dsh-otel"
   },
   {
    "id": "session-telemetry-otel",
@@ -257,8 +281,12 @@
    "name": "@deepseek-ai/dsh-tool-subagent"
   },
   {
-   "id": "workflow-worker-thread",
-   "name": "@deepseek-ai/dsh-workflow-worker-thread"
+   "id": "ptc-runtime",
+   "name": "@deepseek-ai/dsh-ptc-runtime-node"
+  },
+  {
+   "id": "workflow-ptc",
+   "name": "@deepseek-ai/dsh-workflow-ptc"
   },
   {
    "id": "tool-workflow",
@@ -283,6 +311,10 @@
   {
    "id": "tool-result-pruner",
    "name": "@deepseek-ai/dsh-compaction-tool-result-pruner"
+  },
+  {
+   "id": "image-offload",
+   "name": "@deepseek-ai/dsh-compaction-image-offload"
   },
   {
    "id": "tool-todo",
@@ -317,6 +349,10 @@
    "name": "@deepseek-ai/dsh-tool-web"
   },
   {
+   "id": "mcp-resources",
+   "name": "@deepseek-ai/dsh-mcp-resources"
+  },
+  {
    "id": "tools",
    "name": "@deepseek-ai/dsh-tools"
   },
@@ -334,17 +370,25 @@
   },
   {
    "id": "llm-deepseek",
-   "name": "@deepseek-ai/dsh-llm-deepseek"
+   "name": "@deepseek-ai/dsh-llm-deepseek-api-key"
+  },
+  {
+   "id": "llm-deepseek-account",
+   "name": "@deepseek-ai/dsh-llm-deepseek-account"
   }
  ],
  "web-app": [
   {
-   "id": "subagent-model-selection-settings",
-   "name": "@deepseek-ai/dsh-tool-subagent/model-selection-settings"
+   "id": "desktop-product-telemetry",
+   "name": "@deepseek-ai/dsh-host-product-telemetry-otel"
   },
   {
-   "id": "code-runtime",
-   "name": "@deepseek-ai/dsh-code-runtime-worker-thread"
+   "id": "product-analytics",
+   "name": "@deepseek-ai/dsh-client-product-analytics"
+  },
+  {
+   "id": "subagent-model-selection-settings",
+   "name": "@deepseek-ai/dsh-tool-subagent/model-selection-settings"
   },
   {
    "id": "message-feedback",
@@ -395,8 +439,28 @@
    "name": "@deepseek-ai/dsh-api-session-controller"
   },
   {
+   "id": "job-controller",
+   "name": "@deepseek-ai/dsh-api-job-controller"
+  },
+  {
+   "id": "terminal-controller",
+   "name": "@deepseek-ai/dsh-api-terminal-controller"
+  },
+  {
    "id": "workspace-files",
    "name": "@deepseek-ai/dsh-api-workspace-files"
+  },
+  {
+   "id": "schedule",
+   "name": "@deepseek-ai/dsh-schedule"
+  },
+  {
+   "id": "ui-settings-account",
+   "name": "@deepseek-ai/dsh-client-ui-settings-account"
+  },
+  {
+   "id": "account-controller",
+   "name": "@deepseek-ai/dsh-api-account-controller"
   },
   {
    "id": "settings-controller",
@@ -409,6 +473,10 @@
   {
    "id": "cordis-host-runner",
    "name": "@deepseek-ai/dsh-cordis-host-runner"
+  },
+  {
+   "id": "cordis-inspect-providers",
+   "name": "@deepseek-ai/dsh-tool-cordis/host"
   },
   {
    "id": "web-startup",
@@ -455,6 +523,14 @@
    "name": "@deepseek-ai/dsh-client-locale"
   },
   {
+   "id": "shortcuts",
+   "name": "@deepseek-ai/dsh-client-shortcuts"
+  },
+  {
+   "id": "ui-shortcuts",
+   "name": "@deepseek-ai/dsh-client-ui-shortcuts"
+  },
+  {
    "id": "ui-layout",
    "name": "@deepseek-ai/dsh-client-ui-layout"
   },
@@ -479,8 +555,20 @@
    "name": "@deepseek-ai/dsh-client-ui-sidebar-right"
   },
   {
-   "id": "ui-sidebar-textpreview",
-   "name": "@deepseek-ai/dsh-client-ui-sidebar-textpreview"
+   "id": "office-to-pdf",
+   "name": "@deepseek-ai/dsh-office-to-pdf"
+  },
+  {
+   "id": "ui-sidebar-documentpreview",
+   "name": "@deepseek-ai/dsh-client-ui-sidebar-documentpreview"
+  },
+  {
+   "id": "ui-sidebar-browser",
+   "name": "@deepseek-ai/dsh-client-ui-sidebar-browser"
+  },
+  {
+   "id": "ui-sidebar-terminal",
+   "name": "@deepseek-ai/dsh-client-ui-sidebar-terminal"
   },
   {
    "id": "ui-sidebar-files",
@@ -497,6 +585,10 @@
   {
    "id": "ui-settings-models",
    "name": "@deepseek-ai/dsh-client-ui-settings-models"
+  },
+  {
+   "id": "ui-plugin-manager",
+   "name": "@deepseek-ai/dsh-client-ui-plugin-manager"
   },
   {
    "id": "ui-settings-plugin-inventory",
@@ -531,16 +623,20 @@
    "name": "@deepseek-ai/dsh-client-ui-cordis"
   },
   {
-   "id": "ui-workflow-run",
-   "name": "@deepseek-ai/dsh-client-ui-workflow-run"
-  },
-  {
    "id": "ui-deliverables",
    "name": "@deepseek-ai/dsh-client-ui-deliverables"
   },
   {
+   "id": "workspace-changes",
+   "name": "@deepseek-ai/dsh-workspace-changes"
+  },
+  {
    "id": "ui-workspace",
    "name": "@deepseek-ai/dsh-client-ui-workspace"
+  },
+  {
+   "id": "ui-workflow-run",
+   "name": "@deepseek-ai/dsh-client-ui-workflow-run"
   },
   {
    "id": "ui-input-trigger",
@@ -563,12 +659,12 @@
    "name": "@deepseek-ai/dsh-client-ui-reference"
   },
   {
-   "id": "ui-schedule",
-   "name": "@deepseek-ai/dsh-client-ui-schedule"
-  },
-  {
    "id": "ui-jobs",
    "name": "@deepseek-ai/dsh-client-ui-jobs"
+  },
+  {
+   "id": "ui-schedule",
+   "name": "@deepseek-ai/dsh-client-ui-schedule"
   },
   {
    "id": "ui-goal",
@@ -591,8 +687,28 @@
    "name": "@deepseek-ai/dsh-client-ui-agent-preset"
   },
   {
+   "id": "ui-settings-session-log",
+   "name": "@deepseek-ai/dsh-client-ui-settings-session-log"
+  },
+  {
    "id": "ui-settings-plugins",
    "name": "@deepseek-ai/dsh-client-ui-settings-plugins"
+  },
+  {
+   "id": "ui-settings-shell",
+   "name": "@deepseek-ai/dsh-client-ui-settings-shell"
+  },
+  {
+   "id": "ui-settings-agent-loop",
+   "name": "@deepseek-ai/dsh-client-ui-settings-agent-loop"
+  },
+  {
+   "id": "ui-settings-subagent",
+   "name": "@deepseek-ai/dsh-client-ui-settings-subagent"
+  },
+  {
+   "id": "ui-settings-web-search",
+   "name": "@deepseek-ai/dsh-client-ui-settings-web-search"
   },
   {
    "id": "ui-plan",
@@ -607,15 +723,11 @@
    "name": "@deepseek-ai/dsh-client-ui-trajectory"
   },
   {
-   "id": "agent-presets",
-   "name": "@deepseek-ai/dsh-agent-presets"
+   "id": "agent-preset-registry",
+   "name": "@deepseek-ai/dsh-agent-preset-registry"
   }
  ],
  "headless": [
-  {
-   "id": "code-runtime",
-   "name": "@deepseek-ai/dsh-code-runtime-worker-thread"
-  },
   {
    "id": "headless-startup",
    "name": "@deepseek-ai/dsh-headless/startup"
@@ -633,6 +745,14 @@
   {
    "id": "sdk-jsonrpc-server",
    "name": "@deepseek-ai/dsh-sdk-jsonrpc-server"
+  },
+  {
+   "id": "workspace-dependencies",
+   "name": "@deepseek-ai/dsh-tool-workspace-dependencies"
+  },
+  {
+   "id": "skill-office",
+   "name": "@deepseek-ai/dsh-skill-office"
   }
  ],
  "acp-app": [
@@ -668,7 +788,7 @@
   },
   {
    "id": "llm-deepseek",
-   "name": "@deepseek-ai/dsh-llm-deepseek"
+   "name": "@deepseek-ai/dsh-llm-deepseek-api-key"
   },
   {
    "id": "sandbox",
@@ -699,10 +819,6 @@
    "name": "@deepseek-ai/dsh-terminal-bash"
   },
   {
-   "id": "fs-local",
-   "name": "@deepseek-ai/dsh-fs-local"
-  },
-  {
    "id": "timer",
    "name": "@deepseek-ai/cordis-plugin-timer"
   },
@@ -727,6 +843,10 @@
    "name": "@deepseek-ai/dsh-tools"
   },
   {
+   "id": "mcp-resources",
+   "name": "@deepseek-ai/dsh-mcp-resources"
+  },
+  {
    "id": "agent",
    "name": "@deepseek-ai/dsh-agent"
   },
@@ -739,26 +859,6 @@
    "name": "@deepseek-ai/dsh-jobs-local"
   },
   {
-   "id": "invariants",
-   "name": "@deepseek-ai/dsh-invariants"
-  },
-  {
-   "id": "session-invariant",
-   "name": "@deepseek-ai/dsh-session/invariant"
-  },
-  {
-   "id": "agent-invariant",
-   "name": "@deepseek-ai/dsh-agent/invariant"
-  },
-  {
-   "id": "scope-invariant",
-   "name": "@deepseek-ai/dsh-scope/invariant"
-  },
-  {
-   "id": "agent-loop-invariant",
-   "name": "@deepseek-ai/dsh-agent-loop/invariant"
-  },
-  {
    "id": "agent-loop",
    "name": "@deepseek-ai/dsh-agent-loop"
   },
@@ -769,10 +869,6 @@
   {
    "id": "persistent-pwsh",
    "name": "@deepseek-ai/dsh-tool-pwsh-persistent"
-  },
-  {
-   "id": "str-replace-editor",
-   "name": "@deepseek-ai/dsh-tool-str-replace-editor"
   },
   {
    "id": "sessions",

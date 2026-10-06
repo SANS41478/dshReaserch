@@ -5,7 +5,7 @@ deps: @deepseek-ai/schemastery
 peers: @deepseek-ai/cordis, @deepseek-ai/dsh-timeout, @deepseek-ai/dsh-web, @deepseek-ai/dsh-http-proxy
 srcFiles: 4  srcLoc: 788
 
-## README.md (147 行)
+## README.md (146 行)
 ---
 description: "The anonymous public HTTP(S) fetch backend for ctx.web: how deployments mount bounded, safe URL retrieval with same-origin redirects and text-only decoding."
 kind: "package-reference"
@@ -100,7 +100,6 @@ The package is built on one separation and one layered timeout:
 | [`src/provider.ts`](src/provider.ts) | The `HttpFetchProvider`: pinned transport, redirect following, capped reads, charset decoding |
 | [`src/network.ts`](src/network.ts) | Public-address resolution, DNS64 discovery, and connection pinning |
 | [`src/policy.ts`](src/policy.ts) | URL validation, same-origin checks, content-type classification, charset parsing |
-| — | No runtime invariant companion is published; this package exposes no independent event sequence or mutable data relation beyond contracts enforced at its owning seam. |
 
 ### Read path
 
@@ -199,7 +198,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-web-fetch-http",
   "description": "Anonymous public HTTP(S) fetch provider for the DeepSeek Harness web capability seam (ctx.web)",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

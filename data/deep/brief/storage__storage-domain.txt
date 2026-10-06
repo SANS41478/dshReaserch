@@ -2,10 +2,10 @@
 path: packages/storage/storage-domain
 desc: Domain data form (ctx.storage.domain): schema-validated, event-emitting KV domains over storage backends for the DeepSeek Harness
 deps: @deepseek-ai/schemastery
-peers: @deepseek-ai/dsh-invariants, @deepseek-ai/dsh-storage, @deepseek-ai/cordis
-srcFiles: 6  srcLoc: 933
+peers: @deepseek-ai/dsh-storage, @deepseek-ai/cordis
+srcFiles: 5  srcLoc: 863
 
-## README.md (164 行)
+## README.md (159 行)
 ---
 description: "Domain data form (ctx.storageDomain) for hosts and maintainers choosing, mounting, or debugging schema-validated, change-emitting KV domains over storage backends."
 kind: "package-reference"
@@ -110,11 +110,6 @@ The domain layer is a single implementation, not an abstracted seam: consumers d
 | [`src/domain.ts`](src/domain.ts) | Open-domain runtime: write chain, table and global handles, close |
 | [`src/events.ts`](src/events.ts) | The `domain/changed` event vocabulary |
 | [`src/error.ts`](src/error.ts) | `DomainError` codes |
-| [`src/invariant.ts`](src/invariant.ts) | Invariant companion: every `domain/changed` agrees with in-memory state |
-
-### Invariant
-
-The `storage-domain-invariant` companion registers the owned relationship: every `domain/changed` event must agree with the emitting domain's authoritative in-memory state at emission — a divergence means a write path skipped the chain or emitted a stale value.
 
 </details>
 
@@ -195,20 +190,15 @@ None.
   28	iface	DomainChangedDeleted
   34	type	DomainChanged
 
-### packages/storage/storage-domain/src/index.ts  (240 行)
+### packages/storage/storage-domain/src/index.ts  (238 行)
   declare module: declare module '@deepseek-ai/dsh-storage' { | declare module '@deepseek-ai/cordis' {
   42	const	name
   44	const	inject
   52	iface	Config
   59	const	Config
   69	class	DomainFacility
-      members: L79 constructor, L103 open, L184 get, L194 closeAll
-  219	fn	apply
-
-### packages/storage/storage-domain/src/invariant.ts  (68 行)
-  19	const	name
-  21	const	inject
-  66	const	apply
+      members: L79 constructor, L103 open, L182 get, L192 closeAll
+  217	fn	apply
 
 ### packages/storage/storage-domain/src/spec.ts  (164 行)
   15	iface	DomainGlobalSpec
@@ -227,7 +217,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-storage-domain",
   "description": "Domain data form (ctx.storage.domain): schema-validated, event-emitting KV domains over storage backends for the DeepSeek Harness",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -244,21 +234,15 @@ None.
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
-    "./invariant": {
-      "types": "./lib/types/invariant.d.ts",
-      "default": "./lib/invariant.js"
-    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
   "files": [
     "lib/index.js",
-    "lib/invariant.js",
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-invariants": "workspace:*",
     "@deepseek-ai/dsh-storage": "workspace:*",
     "@deepseek-ai/cordis": "workspace:~"
   },
@@ -267,7 +251,6 @@ None.
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-invariants": "workspace:*",
     "@deepseek-ai/dsh-storage": "workspace:*",
     "@deepseek-ai/cordis": "workspace:~"
   }

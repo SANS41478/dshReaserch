@@ -2,8 +2,8 @@
 path: packages/session/session-title
 desc: Log-backed session title service and provider registry for the DeepSeek Harness
 deps: @deepseek-ai/dsh-util-values, @deepseek-ai/schemastery
-peers: @deepseek-ai/cordis, @deepseek-ai/dsh-agent, @deepseek-ai/dsh-brand, @deepseek-ai/dsh-invariants, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-session, @deepseek-ai/dsh-session-projection
-srcFiles: 5  srcLoc: 1096
+peers: @deepseek-ai/cordis, @deepseek-ai/dsh-agent, @deepseek-ai/dsh-brand, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-session, @deepseek-ai/dsh-session-projection
+srcFiles: 4  srcLoc: 1017
 
 ## README.md (150 行)
 ---
@@ -177,11 +177,6 @@ None.
   295	class	SessionTitleService
       members: L310 constructor, L385 get, L401 rename, L430 refresh, L471 register, L499 onUserMessage, L526 onRequestHeader, L539 onMainRequest, L555 startPending, L578 startProvider, L588 runProvider, L624 validateResult, L674 assertCurrent, L689 activate, L704 supersede, L712 stateFor, L721 titleInputOf, L726 defer, L735 track, L747 drain, L752 serviceActive, L759 assertServiceActive, L764 validateProvider, L787 appendFallback, L798 ensureFallback
 
-### packages/session/session-title/src/invariant.ts  (83 行)
-  15	const	name
-  17	const	inject
-  80	const	apply
-
 ### packages/session/session-title/src/normalize.ts  (75 行)
   39	fn	truncateTitleUtf8
   59	fn	normalizeSessionTitle
@@ -204,7 +199,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-session-title",
   "description": "Log-backed session title service and provider registry for the DeepSeek Harness",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -221,10 +216,6 @@ None.
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
-    "./invariant": {
-      "types": "./lib/types/invariant.d.ts",
-      "default": "./lib/invariant.js"
-    },
     "./types": {
       "types": "./lib/types/types.d.ts",
       "default": "./lib/types/types.js"
@@ -238,7 +229,6 @@ None.
   },
   "files": [
     "lib/index.js",
-    "lib/invariant.js",
     "lib/types/**/*.js",
     "lib/types/**/*.d.ts"
   ],
@@ -247,7 +237,6 @@ None.
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/dsh-agent": "workspace:*",
     "@deepseek-ai/dsh-brand": "workspace:*",
-    "@deepseek-ai/dsh-invariants": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-session-projection": "workspace:*"
@@ -262,7 +251,10 @@ None.
     "@deepseek-ai/dsh-agent": "workspace:*",
     "@deepseek-ai/dsh-agent-loop": "workspace:*",
     "@deepseek-ai/dsh-brand": "workspace:*",
-    "@deepseek-ai/dsh-invariants": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
-    "@deepseek-ai/dsh-session-persistence-jsonl": "wor
+    "@deepseek-ai/dsh-session-persistence-jsonl": "workspace:*",
+    "@deepseek-ai/dsh-session-projection": "workspace:*"
+  }
+}
+

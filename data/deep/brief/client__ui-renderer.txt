@@ -3,7 +3,7 @@ path: packages/client/ui-renderer
 desc: Browser UI renderer: React slot bindings, ctx.uiRenderer, and the assembled application root
 deps: -
 peers: @deepseek-ai/cordis
-srcFiles: 9  srcLoc: 1929
+srcFiles: 9  srcLoc: 2440
 
 ## README.md (106 行)
 ---
@@ -77,7 +77,7 @@ These pages cover the surrounding machinery and the composition model.
 - [ui-slots](../ui-slots/README.md) — the slot registry pure core this renderer binds to React.
 - [web](../web/README.md) — the shell that loads the roster and calls `mount`.
 - [ui-session](../ui-session/README.md) — the adapter that supplies the standard Session sources and hooks this renderer binds.
-- [Web client architecture](../../../.agents/notes/implemented/architecture/2026-07-19-gui-web-client-architecture.md) — the loading chain, object layer, and layering red lines.
+- [Web client architecture](../../../docs/subsystems/web-client.md) — the loading chain, object layer, and layering red lines.
 - [Slot system standard](../../../.agents/notes/implemented/architecture/2026-07-22-slot-type-chain-implementation.md) — the definitive composition model.
 - [Component Factories](../../../.agents/notes/implemented/architecture/2026-09-10-component-factories-and-local-slots.md) — reusable definitions, local Component selection, and occurrence lifetimes.
 
@@ -160,18 +160,13 @@ None.
 ### packages/client/ui-renderer/src/index.ts  (5 行)
   4	fn	apply
 
-### packages/client/ui-renderer/src/invariant.ts  (48 行)
-  17	const	name
-  19	const	inject
-  45	const	apply
-
 ## 其它关键文件
 
 ### package.json
 {
   "name": "@deepseek-ai/dsh-client-ui-renderer",
   "description": "Browser UI renderer: React slot bindings, ctx.uiRenderer, and the assembled application root",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -187,10 +182,6 @@ None.
     ".": {
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
-    },
-    "./invariant": {
-      "types": "./lib/types/invariant.d.ts",
-      "default": "./lib/invariant.js"
     },
     "./client": {
       "types": "./lib/types/client/index.d.ts",
@@ -217,7 +208,6 @@ None.
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/dsh-client-test-runtime": "workspace:*",
     "@deepseek-ai/dsh-client-ui-slots": "workspace:*",
-    "@deepseek-ai/dsh-invariants": "workspace:*",
     "@types/react": "~18.3.1",
     "@types/react-dom": "~18.3.0",
     "@types/use-sync-external-store": "^1.5.0",
@@ -227,7 +217,6 @@ None.
   },
   "files": [
     "lib/index.js",
-    "lib/invariant.js",
     "lib/client.js",
     "lib/types/**/*.d.ts"
   ]

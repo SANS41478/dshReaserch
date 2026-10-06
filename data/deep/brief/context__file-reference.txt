@@ -5,7 +5,7 @@ deps: -
 peers: @deepseek-ai/dsh-agent, @deepseek-ai/cordis
 srcFiles: 3  srcLoc: 116
 
-## README.md (113 行)
+## README.md (112 行)
 ---
 description: "File-reference discovery and @file mention grammar for host-backed UIs, for users and maintainers choosing the seam or pairing it with a provider."
 kind: "package-reference"
@@ -68,7 +68,6 @@ The package separates an abstract discovery service from a shared, browser-safe 
 | [`src/index.ts`](src/index.ts) | Abstract `FileReferenceService` and `FILE_REFERENCE_PROMPT` |
 | [`src/grammar.ts`](src/grammar.ts) | `activeAtToken` recognition and `formatFileMention` rendering |
 | [`src/types.ts`](src/types.ts) | `FileReferenceCandidate` path-only result type |
-| — | No runtime invariant companion is published; the interface retains no candidate or lifecycle state; concrete providers own their cache and invalidation relationships. |
 
 ### Main flow
 
@@ -142,7 +141,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-file-reference",
   "description": "File-reference discovery contract and shared @file grammar",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

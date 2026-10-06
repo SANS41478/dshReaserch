@@ -2,10 +2,10 @@
 path: packages/interaction/permission-presets
 desc: User-facing permission presets (ctx.permissionPresets) for the DeepSeek Harness: one product-level Permissions select bundling the sandbox-mode and approval-policy knobs, written through to their own session events
 deps: @deepseek-ai/schemastery
-peers: @deepseek-ai/dsh-shell, @deepseek-ai/dsh-commands, @deepseek-ai/dsh-invariants, @deepseek-ai/dsh-sandbox, @deepseek-ai/dsh-sandbox-policy, @deepseek-ai/dsh-session, @deepseek-ai/dsh-session-projection, @deepseek-ai/dsh-settings, @deepseek-ai/dsh-user-approval, @deepseek-ai/cordis
-srcFiles: 4  srcLoc: 529
+peers: @deepseek-ai/dsh-shell, @deepseek-ai/dsh-commands, @deepseek-ai/dsh-sandbox, @deepseek-ai/dsh-sandbox-policy, @deepseek-ai/dsh-session, @deepseek-ai/dsh-session-projection, @deepseek-ai/dsh-typert-protocol, @deepseek-ai/dsh-user-approval, @deepseek-ai/cordis
+srcFiles: 3  srcLoc: 557
 
-## README.md (149 行)
+## README.md (148 行)
 ---
 description: "User-facing permission presets for users and maintainers choosing, configuring, or debugging the Permissions selector that bundles sandbox mode with an approval policy."
 kind: "package-reference"
@@ -87,7 +87,6 @@ The observable behavior is covered in [Use this package](#use-this-package); thi
 |---|---|
 | [`src/index.ts`](src/index.ts) | `PermissionPresetService`: configured table, fixed Auto registration, write path, settings namespace, session pinning, children |
 | [`src/types.ts`](src/types.ts) | Process catalog, catalog-change event, and `permissions` current-selection types |
-| [`src/invariant.ts`](src/invariant.ts) | Invariant companion validating configured preset names; Auto restore is checked before publication |
 
 ### Write path
 
@@ -117,7 +116,7 @@ The service requires `ctx.sessionProjections` and registers a `permissions` proj
 Read these pages when the package-level contract is not enough. They move from the preset vocabulary to the enforcement knobs and the design rationale.
 
 - [Permission presets subsystem reference](../../../docs/subsystems/permission-presets.md) — the preset table, process catalog, current selection, and `ctx.permissionPresets` Cordis API.
-- [Sandbox switching design Agent Note](../../../.agents/notes/implemented/feature/2026-07-06-sandbox.md) — how sandbox mode and approval policy compose and switch.
+- [historical Sandbox switching design Agent Note](../../../.agents/notes/archived/feature/2026-07-06-sandbox.md) — how sandbox mode and approval policy compose and switch.
 - [Approval subsystem reference](../../../docs/subsystems/approval.md) — the approval policy knob this service bundles.
 - [Interaction group map](../README.md) — adjacent command, approval, and question packages.
 
@@ -172,11 +171,6 @@ None.
   180	class	PermissionPresetService
       members: L207 constructor, L284 names, L293 catalog, L307 registerAuto, L324 defaultPreset, L328 permissionState, L343 current, L348 derive, L369 resolve, L384 optionOf, L398 set, L403 apply, L428 pinInitialPermission, L459 emitCatalogChanged, L475 specOf
 
-### packages/interaction/permission-presets/src/invariant.ts  (44 行)
-  11	const	name
-  13	const	inject
-  42	const	apply
-
 ### packages/interaction/permission-presets/src/types.ts  (64 行)
   declare module: declare module '@deepseek-ai/cordis' { | declare module '@deepseek-ai/dsh-session-projection/types' {
   13	iface	PresetOption
@@ -189,7 +183,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-permission-presets",
   "description": "User-facing permission presets (ctx.permissionPresets) for the DeepSeek Harness: one product-level Permissions select bundling the sandbox-mode and approval-policy knobs, written through to their own session events",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -205,10 +199,6 @@ None.
     ".": {
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
-    },
-    "./invariant": {
-      "types": "./lib/types/invariant.d.ts",
-      "default": "./lib/invariant.js"
     },
     "./types": {
       "types": "./lib/types/types.d.ts",
@@ -231,7 +221,6 @@ None.
   },
   "files": [
     "lib/index.js",
-    "lib/invariant.js",
     "lib/types/**/*.js",
     "lib/types/**/*.d.ts",
     "lib/typert.host.js",
@@ -243,9 +232,13 @@ None.
   "peerDependencies": {
     "@deepseek-ai/dsh-shell": "workspace:*",
     "@deepseek-ai/dsh-commands": "workspace:*",
-    "@deepseek-ai/dsh-invariants": "workspace:*",
     "@deepseek-ai/dsh-sandbox": "workspace:*",
     "@deepseek-ai/dsh-sandbox-policy": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-session-projection": "workspace:*",
-    "@deepseek-ai/dsh-
+    "@deepseek-ai/dsh-typert-protocol": "workspace:*",
+    "@deepseek-ai/dsh-user-approval": "workspace:*",
+    "@deepseek-ai/cordis": "workspace:~"
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery"

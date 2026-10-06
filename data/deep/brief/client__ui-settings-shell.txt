@@ -1,0 +1,189 @@
+# @deepseek-ai/dsh-client-ui-settings-shell
+path: packages/client/ui-settings-shell
+desc: Settings page of the shell executor on the dsh web client's Plugins page: the command timeout and the per-stream output cap of the shell namespace
+deps: -
+peers: @deepseek-ai/cordis
+srcFiles: 6  srcLoc: 250
+
+## README.md (78 行)
+---
+description: "The shell executor's settings page on the dsh web client's Plugins page: the command timeout and the per-stream output cap of the shell namespace."
+kind: "package-reference"
+---
+
+# @deepseek-ai/dsh-client-ui-settings-shell
+
+English | [中文](README.zh.md)
+
+## Summary
+
+Open **Plugins** in the sidebar and select **Shell** in the Official group to set how long one command may run and how much of each output stream stays in memory. The page stages what is typed and writes it only on save, marks the values the user overrode, and offers to reset each back to the deployment's default. The page exists while the Host serves the `shell` namespace, so a deployment without a local shell executor shows no trace of it.
+
+## Table of Contents
+
+- [Use this package](#use-this-package)
+- [Understand the implementation](#understand-the-implementation)
+- [Further Exploration](#further-exploration)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="use-this-package"></a>
+## Use this package
+
+The **Shell** card in the Official group opens the page. **Command timeout (ms)** ends a command that runs longer; **Output cap per stream (bytes)** spills output beyond it to a temporary file. Both render the effective value — the user's override over the composed default — and a field the user overrode carries an **Overridden** badge with **Reset to default** beside it. Nothing is written until **Save**; leaving the page drops the drafts, an empty field saves as a reset, and text that is not a number blocks the save and says so under the field.
+
+-----
+
+<a id="understand-the-implementation"></a>
+## Understand the implementation
+
+<details>
+<summary>Implementation internals — click to expand</summary>
+
+The Host half is an empty `apply`, present only so the package holds a Loader row the client module system serves the browser half for. The browser half binds the composed shell executor entry (`bash-sandbox` off Windows, `pwsh-sandbox` on it) through `ctx.configForms.get`, keeps the staged form in `ShellCardController` over the shared `SettingsFormModel` of `ui-primitives`, and registers `ShellCard` into the Plugins page's `plugins.item` slot through `ctx.configForms.whileServed`, which registers while the Host serves either entry and withdraws when it stops. The page's copy lives in this package's `settings.shell` dictionary; the `SettingsForm` frame takes its copy as props.
+
+</details>
+
+-----
+
+<a id="further-exploration"></a>
+## Further Exploration
+
+- [ui-plugin-manager](../ui-plugin-manager/README.md) — the Plugins page and the `plugins.item` slot the page registers into.
+- [ui-settings](../ui-settings/README.md) — the settings scope and the served-namespace watch the page rides.
+- [ui-primitives](../ui-primitives/README.md) — the settings form model and fields the page renders.
+- [bash-local](../../shell/bash-local/README.md) — the executor that registers the `shell` namespace.
+
+-----
+
+<a id="model-experience"></a>
+## Model Experience
+
+None, as the package is a browser-side settings surface that registers no model surface.
+
+#### KV Cache effect
+
+None; this package neither assembles nor sends a provider request.
+
+## Known Limitations and Deferred Work
+
+<a id="known-limitations-and-deferred-work"></a>
+
+- **The page follows the composed executor** — the POSIX and PowerShell executor families share the `shell` namespace because a host composes exactly one of them, so the served schema differs by platform (PowerShell adds `pwshPath`) while the page edits the same two fields on both.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>
+
+
+## 源文件与导出符号
+
+### packages/client/ui-settings-shell/src/client/ShellCard.tsx  (56 行)
+  10	type	ShellCardProps
+  20	fn	ShellCard
+
+### packages/client/ui-settings-shell/src/client/index.ts  (54 行)
+  declare module: declare module '@deepseek-ai/dsh-client-ui-slots' {
+  34	const	NS
+  37	const	inject
+  43	fn	apply
+
+### packages/client/ui-settings-shell/src/client/locales.ts  (56 行)
+  6	type	ShellSettingsLocaleKey
+  13	const	en
+  31	const	zh
+  53	fn	formLabels
+
+### packages/client/ui-settings-shell/src/client/shell-card-controller.ts  (68 行)
+  10	const	BASH_NS
+  12	const	PWSH_NS
+  15	iface	ShellSettings
+  23	iface	ShellCardState
+  31	iface	ShellCardFace
+  39	class	ShellCardController
+      members: L44 constructor, L49 projection, L61 inject, L66 dispose
+
+### packages/client/ui-settings-shell/src/css-modules.d.ts  (5 行)
+  declare module: declare module '*.module.css' {
+
+### packages/client/ui-settings-shell/src/index.ts  (11 行)
+  10	fn	apply
+
+## 其它关键文件
+
+### package.json
+{
+  "name": "@deepseek-ai/dsh-client-ui-settings-shell",
+  "description": "Settings page of the shell executor on the dsh web client's Plugins page: the command timeout and the per-stream output cap of the shell namespace",
+  "version": "0.2.1-alpha.1",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/client/ui-settings-shell"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-plugin-manager"
+      ],
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "bundle": "tsdown",
+    "watch": "tsdown --watch"
+  },
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:~"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/dsh-api-remotes": "workspace:*",
+    "@deepseek-ai/dsh-client-locale": "workspace:*",
+    "@deepseek-ai/dsh-client-store": "workspace:*",
+    "@deepseek-ai/dsh-client-test-runtime": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-plugin-manager": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-primitives": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-renderer": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-settings": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-slots": "workspace:*",
+    "@types/react": "~18.3.1",
+    "react": "^18.2.0"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/client.js",
+    "lib/types/**/*.d.ts"
+  ]
+}
+

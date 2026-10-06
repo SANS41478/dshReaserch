@@ -3,9 +3,9 @@ path: packages/subprocess/subprocess
 desc: Subprocess seam (ctx.subprocess) for the DeepSeek Harness — managed process groups, bounded spill-backed output, and escalated kills behind one abstract service
 deps: -
 peers: @deepseek-ai/cordis, @deepseek-ai/dsh-http-proxy
-srcFiles: 2  srcLoc: 420
+srcFiles: 3  srcLoc: 501
 
-## README.md (165 行)
+## README.md (164 行)
 ---
 description: "The subprocess service (ctx.subprocess) for composition authors and capability consumers starting, observing, and terminating managed child processes and terminal sessions."
 kind: "package-reference"
@@ -111,7 +111,6 @@ The seam is built on one separation: the service owns process coordinates and li
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: abstract `SubprocessRuntime`, `ctx.subprocess` registration, the shared `scrubbedParentEnv` scrub |
 | [`src/types.ts`](src/types.ts) | Vocabulary: spawn spec, stdio modes, handles, readers, outcomes, `DSH_*` namespace |
-| — | No runtime invariant companion is published; this stateless Service Definition owns spawn-spec/handle types, while Service Providers own observations. |
 
 ### Data model and flow
 
@@ -216,7 +215,7 @@ Future: non-shell runners. The seam was split so a direct-argv executor or worke
 {
   "name": "@deepseek-ai/dsh-subprocess",
   "description": "Subprocess seam (ctx.subprocess) for the DeepSeek Harness \u2014 managed process groups, bounded spill-backed output, and escalated kills behind one abstract service",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

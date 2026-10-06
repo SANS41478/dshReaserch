@@ -2,10 +2,10 @@
 path: packages/context/session-reference
 desc: Cross-session snapshot references and durable untrusted model context (ctx.sessionReferenceResolver)
 deps: @deepseek-ai/dsh-brand, @deepseek-ai/dsh-util-values, @deepseek-ai/schemastery
-peers: @deepseek-ai/cordis, @deepseek-ai/dsh-agent, @deepseek-ai/dsh-compaction, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-output-retention, @deepseek-ai/dsh-session, @deepseek-ai/dsh-session-projection, @deepseek-ai/dsh-session-projection-cache, @deepseek-ai/dsh-session-query, @deepseek-ai/dsh-session-title, @deepseek-ai/dsh-spill, @deepseek-ai/dsh-system-prompt, @deepseek-ai/dsh-typert-protocol
-srcFiles: 7  srcLoc: 982
+peers: @deepseek-ai/cordis, @deepseek-ai/dsh-agent, @deepseek-ai/dsh-compaction, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-output-retention, @deepseek-ai/dsh-session, @deepseek-ai/dsh-session-projection, @deepseek-ai/dsh-session-projection-cache, @deepseek-ai/dsh-session-query, @deepseek-ai/dsh-session-title, @deepseek-ai/dsh-spill, @deepseek-ai/dsh-subagent, @deepseek-ai/dsh-system-prompt, @deepseek-ai/dsh-typert-protocol
+srcFiles: 7  srcLoc: 986
 
-## README.md (149 行)
+## README.md (148 行)
 ---
 description: "Cross-session snapshot references and durable untrusted model context, for users and maintainers enabling or debugging ctx.sessionReferenceResolver."
 kind: "package-reference"
@@ -91,7 +91,6 @@ The budget uses the provider and model captured after `system-prompt/assemble` c
 | [`src/serialization.ts`](src/serialization.ts) | Tag-safe JSON escaping for snapshot payloads |
 | [`src/spill.ts`](src/spill.ts) | Full transcript serialization and model-visible omission notices |
 | [`src/types.ts`](src/types.ts) | `SessionReferenceInput`/`Candidate` and source types |
-| — | No runtime invariant companion is published; preparation returns immutable per-call snapshots validated while they are built, and the agent/session layers own durable context admission, freezing, and replay. |
 
 ### Main flow
 
@@ -107,7 +106,7 @@ The outer `agent/pre-step` listener accepts the step, parses canonical mentions 
 Read these pages when the package-level contract is not enough. They move from the shared reference surface to the design decision and the read service behind it.
 
 - [Session-reference subsystem](../../../docs/subsystems/session-reference.md) — canonical URIs, projection rules, and the stable error taxonomy.
-- [Session-reference spill reuse](../../../.agents/notes/implemented/bug-fix/2026-09-05-session-reference-spill-reuse.md) — snapshot identity, omission notices, storage ownership, and alternatives.
+- [historical Session-reference spill reuse](../../../.agents/notes/archived/bug-fix/2026-09-05-session-reference-spill-reuse.md) — snapshot identity, omission notices, storage ownership, and alternatives.
 - [Session-query subsystem](../../../docs/subsystems/session-query.md) — the read service that supplies session surfaces.
 - [Context group map](../README.md) — sibling request-context packages.
 - [Generated configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-session-reference) — every accepted config field and its source declaration.
@@ -208,7 +207,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-session-reference",
   "description": "Cross-session snapshot references and durable untrusted model context (ctx.sessionReferenceResolver)",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -267,4 +266,4 @@ None.
     "@deepseek-ai/dsh-session-projection-cache": "workspace:*",
     "@deepseek-ai/dsh-session-query": "workspace:*",
     "@deepseek-ai/dsh-session-title": "workspace:*",
-    "@deepseek-ai/dsh-spill": "work
+    "@deepseek-ai/dsh-spill": "w

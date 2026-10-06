@@ -1,9 +1,9 @@
 # @deepseek-ai/dsh-subagent
 path: packages/subagent/subagent
 desc: Abstract subagent seam (ctx.subagents): named-provider registry for delegating to child agents
-deps: @deepseek-ai/dsh-brand, @deepseek-ai/dsh-util-values
-peers: @deepseek-ai/cordis, @deepseek-ai/dsh-agent, @deepseek-ai/dsh-agent-presets, @deepseek-ai/dsh-attachment, @deepseek-ai/dsh-invariants, @deepseek-ai/dsh-jobs, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-sandbox, @deepseek-ai/dsh-sandbox-policy, @deepseek-ai/dsh-scope, @deepseek-ai/dsh-session, @deepseek-ai/dsh-session-persistence, @deepseek-ai/dsh-session-projection, @deepseek-ai/dsh-session-projection-cache, @deepseek-ai/dsh-session-query, @deepseek-ai/dsh-system-prompt, @deepseek-ai/dsh-tools, @deepseek-ai/dsh-typert-protocol, @deepseek-ai/dsh-user-approval, @deepseek-ai/dsh-util-time
-srcFiles: 22  srcLoc: 5184
+deps: @deepseek-ai/dsh-brand, @deepseek-ai/dsh-chunked-list, @deepseek-ai/dsh-util-values, @deepseek-ai/schemastery
+peers: @deepseek-ai/cordis, @deepseek-ai/dsh-agent, @deepseek-ai/dsh-agent-preset-registry, @deepseek-ai/dsh-attachment, @deepseek-ai/dsh-jobs, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-sandbox, @deepseek-ai/dsh-sandbox-policy, @deepseek-ai/dsh-scope, @deepseek-ai/dsh-session, @deepseek-ai/dsh-session-persistence, @deepseek-ai/dsh-session-projection, @deepseek-ai/dsh-session-query, @deepseek-ai/dsh-system-prompt, @deepseek-ai/dsh-tools, @deepseek-ai/dsh-typert-protocol, @deepseek-ai/dsh-user-approval, @deepseek-ai/dsh-util-time, @deepseek-ai/dsh-permission-presets, @deepseek-ai/dsh-workspace
+srcFiles: 23  srcLoc: 5148
 
 ## README.md (211 行)
 ---
@@ -138,7 +138,7 @@ Successful local child creation appends a `subagent/catalog` fact to the parent 
 Read these pages when the package-level contract is not enough. They move from the shared seam to the backends, the model-facing tools, and the design decisions.
 
 - [Subagent subsystem](../../../docs/subsystems/subagent.md) — the service contract, provider contract, and terminal result semantics.
-- [Subagent capability seam](../../../.agents/notes/implemented/feature/2026-06-21-subagent-capability-seam.md) — the design record for the delegation capability family.
+- [historical Subagent capability seam](../../../.agents/notes/archived/feature/2026-06-21-subagent-capability-seam.md) — the design record for the delegation capability family.
 - [Continuable subagents](../../../.agents/notes/implemented/feature/2026-07-28-continuable-subagent-conversations.md) — durable children that accept follow-up turns.
 - [In-process spawn backend](../subagent-spawn-in-process/README.md) — the simplest provider to compose.
 - [Auto review](../../experimental/auto-review/README.md) — the current-session authorization mode inherited only by in-process DSH children.
@@ -315,11 +315,11 @@ This Dev Note is working context for maintainers: open questions and undecided d
   16	class	SubagentInbox
       members: L23 constructor, L29 closing, L37 hasPending, L46 deliver, L62 close
 
-### packages/subagent/subagent/src/index.ts  (664 行)
+### packages/subagent/subagent/src/index.ts  (662 行)
   declare module: declare module '@deepseek-ai/cordis' {
-  192	iface	Config
-  200	class	SubagentRuntime
-      members: L214 constructor, L244 resolveMaxDepth, L261 startContinuable, L279 sendMessage, L328 interrupt, L342 drainContinuableDescendants, L359 drainContinuableChildren, L374 listChildren, L393 listDescendants, L416 prompt, L483 interruptByParent, L512 registerProvider, L535 getProvider, L543 list, L559 start, L596 prepareContinuable, L612 expectProvider, L621 requireContinuations, L635 observeActivation, L644 assertCapabilities
+  190	iface	Config
+  198	class	SubagentRuntime
+      members: L212 constructor, L242 resolveMaxDepth, L259 startContinuable, L277 sendMessage, L326 interrupt, L340 drainContinuableDescendants, L357 drainContinuableChildren, L372 listChildren, L391 listDescendants, L414 prompt, L481 interruptByParent, L510 registerProvider, L533 getProvider, L541 list, L557 start, L594 prepareContinuable, L610 expectProvider, L619 requireContinuations, L633 observeActivation, L642 assertCapabilities
 
 ### packages/subagent/subagent/src/internal.ts  (111 行)
   15	const	adjacentAgentSendMessageTool
@@ -329,11 +329,6 @@ This Dev Note is working context for maintainers: open questions and undecided d
   45	iface	HostPromptDeliverer
   66	fn	queueHostSubagentPrompt
   94	fn	steerHostSubagentPrompt
-
-### packages/subagent/subagent/src/invariant.ts  (93 行)
-  10	const	name
-  12	const	inject
-  91	const	apply
 
 ### packages/subagent/subagent/src/lifecycle.ts  (273 行)
   32	iface	ActivationTerminal
@@ -400,7 +395,7 @@ This Dev Note is working context for maintainers: open questions and undecided d
 {
   "name": "@deepseek-ai/dsh-subagent",
   "description": "Abstract subagent seam (ctx.subagents): named-provider registry for delegating to child agents",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -421,10 +416,6 @@ This Dev Note is working context for maintainers: open questions and undecided d
       "types": "./lib/types/internal.d.ts",
       "default": "./lib/types/internal.js"
     },
-    "./invariant": {
-      "types": "./lib/types/invariant.d.ts",
-      "default": "./lib/invariant.js"
-    },
     "./client": {
       "types": "./lib/types/client.d.ts",
       "default": "./lib/types/client.js"
@@ -442,7 +433,6 @@ This Dev Note is working context for maintainers: open questions and undecided d
   },
   "files": [
     "lib/index.js",
-    "lib/invariant.js",
     "lib/types/**/*.js",
     "lib/types/**/*.d.ts",
     "lib/typert.host.js",
@@ -463,5 +453,8 @@ This Dev Note is working context for maintainers: open questions and undecided d
     "@deepseek-ai/dsh-agent": "workspace:*",
     "@deepseek-ai/dsh-agent-preset-registry": "workspace:*",
     "@deepseek-ai/dsh-attachment": "workspace:*",
-    "@deepseek-ai/dsh-invariants": "workspace:*",
-    "@deepseek-ai
+    "@deepseek-ai/dsh-jobs": "workspace:*",
+    "@deepseek-ai/dsh-llm": "workspace:*",
+    "@deepseek-ai/dsh-sandbox": "workspace:*",
+    "@deepseek-ai/dsh-sandbox-policy": "workspace:*",
+    "@deeps

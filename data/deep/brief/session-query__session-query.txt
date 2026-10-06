@@ -1,11 +1,11 @@
 # @deepseek-ai/dsh-session-query
 path: packages/session-query/session-query
 desc: Combined session query service contract with concrete reads, traces, and filters
-deps: -
+deps: @deepseek-ai/dsh-session-format-catalog
 peers: @deepseek-ai/dsh-brand, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-session, @deepseek-ai/dsh-session-title, @deepseek-ai/dsh-tool-todo, @deepseek-ai/dsh-session-persistence, @deepseek-ai/dsh-session-projection, @deepseek-ai/dsh-session-projection-cache, @deepseek-ai/cordis
-srcFiles: 12  srcLoc: 2190
+srcFiles: 12  srcLoc: 2205
 
-## README.md (168 行)
+## README.md (167 行)
 ---
 description: "The unified session-history query service for consumers and backend authors: exact reads, relationship traces, and provider-independent filters over live and durable session logs."
 kind: "package-reference"
@@ -108,7 +108,6 @@ The decision history lives in the [unified service decision](../../../.agents/no
 | [`src/documents.ts`](src/documents.ts) | Surface-aware semantic document projection |
 | [`src/tracing.ts`](src/tracing.ts) | One-shot session-lineage and event-relationship tracing |
 | [`src/sources.ts`](src/sources.ts) | Immutable-header compatibility check |
-| — | No runtime invariant companion is published; query results are immutable per-call projections whose lineage and event relations are validated while they are built; the service retains no observable result state. |
 
 ### Corpus resolution
 
@@ -271,7 +270,7 @@ Recursive traversal through cited source events, extractor and search-provider r
 {
   "name": "@deepseek-ai/dsh-session-query",
   "description": "Combined session query service contract with concrete reads, traces, and filters",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -330,4 +329,4 @@ Recursive traversal through cited source events, extractor and search-provider r
     "@deepseek-ai/cordis": "workspace:~"
   },
   "dependencies": {
-    "@d
+    

@@ -2,10 +2,10 @@
 path: packages/goal/goal-round-driver
 desc: Race-fenced same-session goal-round driver
 deps: -
-peers: @deepseek-ai/dsh-agent, @deepseek-ai/dsh-goal, @deepseek-ai/dsh-invariants, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-session, @deepseek-ai/cordis
-srcFiles: 3  srcLoc: 570
+peers: @deepseek-ai/dsh-agent, @deepseek-ai/dsh-goal, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-session, @deepseek-ai/cordis
+srcFiles: 2  srcLoc: 488
 
-## README.md (141 行)
+## README.md (140 行)
 ---
 description: "The same-session continuation driver for users and maintainers choosing, composing, or debugging automatic goal rounds."
 kind: "package-reference"
@@ -58,7 +58,7 @@ With an exact live agent idle, an active armed goal, and remaining capacity, the
 
 ### When continuation stops
 
-A round starts only at whole-agent idle, and completion, pause, and blocking suppress continuation; a host-initiated pause also aborts the turn already running, while a model-initiated pause inside its own turn finishes normally. An edit only invalidates an in-flight round through the revision fence, and the driver continues the new revision. The driver also stops on its own when a turn ends on max tokens, a durability write fails, the agent is cancelled, the plugin unloads, or the round cap is exhausted — at the cap it records a blocker with the stable code `round-limit`. Cancellation never auto-restarts a round: a goal whose round was under way or already queued is paused at the next idle point, and a cancellation unrelated to a goal attempt only disarms continuation.
+A round starts only at whole-agent idle, and completion, pause, and blocking suppress continuation; a host-initiated pause also aborts the turn already running, while a model-initiated pause inside its own turn finishes normally. An edit only invalidates an in-flight round through the revision fence, and the driver continues the new revision. The driver also stops on its own when a turn ends on max tokens, a durability write fails, the agent is cancelled, the plugin unloads, or the round cap is exhausted — at the cap it records a blocker with the stable code `round-limit`. Cancellation never auto-restarts a round: a goal whose round was under way is paused at the next idle point, and a cancellation unrelated to a goal attempt only disarms continuation. A round prompt still queued when the agent reaches idle is removed from the inbox, so later human input does not wait behind it; when the cancelled turn belonged to other work, continuation is disarmed rather than paused.
 
 ### After resume, fork, or unload
 
@@ -87,11 +87,10 @@ This section explains how the driver schedules rounds without races; the observa
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: driver state machine, race fences, teardown |
 | [`src/prompt.ts`](src/prompt.ts) | The retained `<goal_round>` continuation prompt |
-| [`src/invariant.ts`](src/invariant.ts) | Invariant companion: goal-round messages must match the package-owned prompt |
 
 ### The round prompt
 
-The retained prompt is one text block: the JSON-quoted objective and `round/maxGoalRounds` on the first lines, then the working instructions. The invariant companion reconstructs the goal from the durable prefix and rejects any goal-sourced message whose content does not match the prompt exactly.
+The retained prompt is one text block: the JSON-quoted objective and `round/maxGoalRounds` on the first lines, then the working instructions.
 
 </details>
 
@@ -150,15 +149,10 @@ This Dev Note is working context for maintainers; it is explicitly non-authorita
 
 ## 源文件与导出符号
 
-### packages/goal/goal-round-driver/src/index.ts  (457 行)
+### packages/goal/goal-round-driver/src/index.ts  (461 行)
   18	const	name
   19	const	inject
   76	fn	apply
-
-### packages/goal/goal-round-driver/src/invariant.ts  (87 行)
-  13	const	name
-  15	const	inject
-  84	const	apply
 
 ### packages/goal/goal-round-driver/src/prompt.ts  (27 行)
   12	fn	renderGoalRoundPrompt
@@ -169,7 +163,7 @@ This Dev Note is working context for maintainers; it is explicitly non-authorita
 {
   "name": "@deepseek-ai/dsh-goal-round-driver",
   "description": "Race-fenced same-session goal-round driver",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -186,23 +180,17 @@ This Dev Note is working context for maintainers; it is explicitly non-authorita
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
-    "./invariant": {
-      "types": "./lib/types/invariant.d.ts",
-      "default": "./lib/invariant.js"
-    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
   "files": [
     "lib/index.js",
-    "lib/invariant.js",
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",
   "peerDependencies": {
     "@deepseek-ai/dsh-agent": "workspace:*",
     "@deepseek-ai/dsh-goal": "workspace:*",
-    "@deepseek-ai/dsh-invariants": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/cordis": "workspace:~"
@@ -212,7 +200,6 @@ This Dev Note is working context for maintainers; it is explicitly non-authorita
     "@deepseek-ai/dsh-agent-loop": "workspace:*",
     "@deepseek-ai/dsh-agent-loop-testkit": "workspace:*",
     "@deepseek-ai/dsh-goal": "workspace:*",
-    "@deepseek-ai/dsh-invariants": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-system-prompt": "workspace:*",

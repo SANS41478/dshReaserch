@@ -2,10 +2,10 @@
 path: packages/llm/plugin-package-inventory-deepseek
 desc: Active Loader-backed plugin package inventory for official DeepSeek LLM API requests
 deps: @deepseek-ai/dsh-brand, @deepseek-ai/schemastery
-peers: @deepseek-ai/cordis, @deepseek-ai/cordis-plugin-loader, @deepseek-ai/dsh-agent, @deepseek-ai/dsh-agent-presets, @deepseek-ai/dsh-deepseek-llm-api-extensions, @deepseek-ai/dsh-session
-srcFiles: 2  srcLoc: 220
+peers: @deepseek-ai/cordis, @deepseek-ai/cordis-plugin-loader, @deepseek-ai/dsh-agent, @deepseek-ai/dsh-agent-preset-registry, @deepseek-ai/dsh-deepseek-llm-api-extensions, @deepseek-ai/dsh-session
+srcFiles: 2  srcLoc: 225
 
-## README.md (81 行)
+## README.md (79 行)
 ---
 description: "Active Loader package inventory metadata for deployments sending official DeepSeek requests."
 kind: "package-reference"
@@ -85,17 +85,15 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. Each request reads authoritative Loader fiber state and package manifests directly; the plugin retains no independently mutable inventory.
-
 
 ## 源文件与导出符号
 
-### packages/llm/plugin-package-inventory-deepseek/src/index.ts  (206 行)
+### packages/llm/plugin-package-inventory-deepseek/src/index.ts  (205 行)
   27	const	name
   29	const	inject
   32	iface	Config
   38	const	Config
-  192	fn	apply
+  191	fn	apply
 
 ### packages/llm/plugin-package-inventory-deepseek/src/types.ts  (20 行)
   declare module: declare module '@deepseek-ai/dsh-deepseek-llm-api-extensions/types' {
@@ -108,7 +106,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-plugin-package-inventory-deepseek",
   "description": "Active Loader-backed plugin package inventory for official DeepSeek LLM API requests",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -165,4 +163,4 @@ None.
     "@deepseek-ai/dsh-deepseek-llm-api-extensions": "workspace:*",
     "@deepseek-ai/dsh-scope": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
-    "@deepseek-ai/dsh-session-projectio
+    "@deepseek-ai/dsh-session-projec

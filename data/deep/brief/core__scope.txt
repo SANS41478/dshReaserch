@@ -2,10 +2,10 @@
 path: packages/core/scope
 desc: Scoped-context registration primitive (scope tags, scope-filtered event dispatch) for the DeepSeek Harness
 deps: -
-peers: @deepseek-ai/dsh-invariants, @deepseek-ai/cordis
-srcFiles: 4  srcLoc: 567
+peers: @deepseek-ai/cordis
+srcFiles: 2  srcLoc: 473
 
-## README.md (114 行)
+## README.md (111 行)
 ---
 description: "The scoped-registration library for plugin authors and maintainers building registries or event surfaces that isolate contributions per agent or per group."
 kind: "package-library"
@@ -73,8 +73,6 @@ The registration context determines both visibility and ownership: a registratio
 |---|---|
 | [`src/index.ts`](src/index.ts) | `createScope`, `scopeOf`, `scopeTarget`, `bindScopeParent`/`scopeParentOf`/`scopeChainOf`, carrier marks |
 | [`src/store.ts`](src/store.ts) | `ScopedLayers`, `NamedEntries`, `AnonymousEntries`, `ScopeLayer` |
-| [`src/invariant.ts`](src/invariant.ts) | Invariant companion over the generated scoped-event map |
-| [`src/scoped-events.generated.ts`](src/scoped-events.generated.ts) | Generated resolver map of declared scoped events |
 
 ### The parent chain
 
@@ -94,8 +92,7 @@ One relation powers both directions: registration views inherit DOWN the chain (
 The package-level contract is enough for most consumers; read these when you need the surrounding domain and the design rationale.
 
 - [Scoped registration subsystem](../../../docs/subsystems/scope.md) — the identity, carrier, and layer types.
-- [Agent-scope contexts Agent Note](../../../.agents/notes/implemented/architecture/2026-07-08-agent-scope-contexts.md) — the security non-goals and context design.
-- [Agent-scope runtime design Agent Note](../../../.agents/notes/implemented/architecture/2026-07-12-agent-scope-runtime-design.md) — how the loop builds per-agent scopes.
+- [Agent-scope runtime design reference](../agent-loop/README.md) — how the loop builds per-agent scopes.
 - [Core group map](../README.md) — how the core packages compose.
 
 -----
@@ -138,14 +135,6 @@ None.
   192	fn	isScopeCarrier
   201	fn	carrierKeyOf
 
-### packages/core/scope/src/invariant.ts  (42 行)
-  11	const	name
-  13	const	inject
-  40	const	apply
-
-### packages/core/scope/src/scoped-events.generated.ts  (51 行)
-  48	fn	scopedSubjectResolverFor
-
 ### packages/core/scope/src/store.ts  (268 行)
   12	iface	ScopeLayer
   30	class	NamedEntries
@@ -161,7 +150,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-scope",
   "description": "Scoped-context registration primitive (scope tags, scope-filtered event dispatch) for the DeepSeek Harness",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -178,25 +167,18 @@ None.
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
-    "./invariant": {
-      "types": "./lib/types/invariant.d.ts",
-      "default": "./lib/invariant.js"
-    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
   "files": [
     "lib/index.js",
-    "lib/invariant.js",
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-invariants": "workspace:*",
     "@deepseek-ai/cordis": "workspace:~"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-invariants": "workspace:*",
     "@deepseek-ai/cordis": "workspace:~"
   }
 }

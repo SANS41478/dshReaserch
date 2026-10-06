@@ -3,9 +3,9 @@ path: packages/test-support/session-snapshot
 desc: Session-log snapshot core with an ACP protocol adapter, expected-output normalization, and fixture invariants
 deps: @deepseek-ai/cordis-plugin-include, @deepseek-ai/dsh-llm-replay, @deepseek-ai/dsh-loader-smoke, @deepseek-ai/dsh-session-format
 peers: @deepseek-ai/cordis, @deepseek-ai/dsh-session, @deepseek-ai/dsh-http-proxy
-srcFiles: 9  srcLoc: 4653
+srcFiles: 9  srcLoc: 4734
 
-## README.md (178 行)
+## README.md (177 行)
 ---
 description: "Session-log snapshot support for keyless profile tests: manifests, identity redaction, normalization, workspace checks, and protocol adapters."
 kind: "package-library"
@@ -100,7 +100,7 @@ A scenario requiring a non-Windows host declares `posixOnly`, which skips its ru
 
 ### What can go wrong
 
-- **A child turn wait fails** — `waitForSubagentTurnEnd` identifies the child, requested turn, and deadline even when the first log harvest exceeds that deadline, and retains the underlying failure as the error cause.
+- **A turn-end wait fails** — `waitForTurnEnd` and `waitForSubagentTurnEnd` identify the session or child and deadline even when the first log harvest exceeds that deadline. Child waits also name the requested turn. Both retain the underlying failure as the error cause.
 - **A fixture guard rejects the committed files** — orphan scenario dirs, missing files, multiple pins for one header class, duplicate sidecar content, unscrubbed prompt text or tool schemas, a `request/header` with no preceding `system/message`, and malformed pinning headers all fail the suite before comparisons run.
 - **The session harvest needs raw JSONL mode** — snapshot configs set the JSONL backend's `compression: 'none'`; compressed JSONL has no snapshot-harvest path.
 - **Built mode needs current artifacts** — run `pnpm run build` before selecting `DSH_EXAMPLE_MODE=lib`; source mode remains the zero-build path.
@@ -132,7 +132,6 @@ The shared core owns manifests, generation-qualified role selection, workspace s
 | [`src/workspace.ts`](src/workspace.ts) | Scenario workspace setup and complete expected-state comparison |
 | [`src/suite.ts`](src/suite.ts) | Scenario-table suite factory, fixture guards, record/refresh write-back |
 | [`src/index.ts`](src/index.ts) | Package entry re-exporting the four layers |
-| — | No runtime invariant companion is published; this test-support package owns no production event stream or mutable data; consuming test suites exercise its behavior. |
 
 ### Data flow
 
@@ -187,7 +186,7 @@ None.
 
 ## 源文件与导出符号
 
-### packages/test-support/session-snapshot/src/harness.ts  (816 行)
+### packages/test-support/session-snapshot/src/harness.ts  (820 行)
   79	type	InputStep
   103	iface	InputScript
   121	iface	PermissionAnswer
@@ -308,7 +307,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-session-snapshot",
   "description": "Session-log snapshot core with an ACP protocol adapter, expected-output normalization, and fixture invariants",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

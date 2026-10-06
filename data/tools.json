@@ -1,5 +1,20 @@
 [
  {
+  "pkg": "@deepseek-ai/dsh-plugin-manager",
+  "names": "plugin_manager",
+  "requires": "ctx.tools, ctx.pluginManager, ctx.sandboxPolicy"
+ },
+ {
+  "pkg": "@deepseek-ai/dsh-mcp-resources",
+  "names": "list_mcp_resource_templates, list_mcp_resources, read_mcp_resource",
+  "requires": "ctx.tools, ctx.mcpResources"
+ },
+ {
+  "pkg": "@deepseek-ai/dsh-experimental-browser-use-stagehand-native",
+  "names": "stagehand_act, stagehand_extract, stagehand_navigate, stagehand_observe, stagehand_screenshot, stagehand_tabs",
+  "requires": "ctx.browserUse, ctx.agents, ctx.tools, ctx.systemPrompt"
+ },
+ {
   "pkg": "@deepseek-ai/dsh-tool-ask-user",
   "names": "ask_user_question",
   "requires": "ctx.tools, ctx.userQuestions"
@@ -7,7 +22,7 @@
  {
   "pkg": "@deepseek-ai/dsh-tools",
   "names": "run_code",
-  "requires": "ctx.tools, ctx.codeRuntime (execution time), ctx.systemPrompt"
+  "requires": "ctx.tools, ctx.ptcRuntime (execution time), ctx.systemPrompt"
  },
  {
   "pkg": "@deepseek-ai/dsh-plan-mode",
@@ -17,17 +32,22 @@
  {
   "pkg": "@deepseek-ai/dsh-tool-bash",
   "names": "bash",
-  "requires": "ctx.tools, ctx.shell, ctx.systemPrompt, ctx.shellEnv, ctx.jobs at call time for run_in_background"
+  "requires": "ctx.tools, ctx.shell, ctx.systemPrompt, ctx.shellEnv, ctx.jobs for run_in_background and the job-backed foreground path"
+ },
+ {
+  "pkg": "@deepseek-ai/dsh-tool-present",
+  "names": "present",
+  "requires": "ctx.tools, ctx.fs, ctx.sessionProjections"
  },
  {
   "pkg": "@deepseek-ai/dsh-tool-pwsh",
   "names": "pwsh",
-  "requires": "ctx.tools, ctx.shell, ctx.systemPrompt, ctx.shellEnv, ctx.jobs at call time for run_in_background"
+  "requires": "ctx.tools, ctx.shell, ctx.systemPrompt, ctx.shellEnv, ctx.jobs for run_in_background and the job-backed foreground path"
  },
  {
   "pkg": "@deepseek-ai/dsh-tool-cordis",
-  "names": "cordis_define, cordis_inspect_list, cordis_inspect_query, cordis_inspect_self, cordis_run, cordis_stop, cordis_undefine",
-  "requires": "ctx.tools, ctx.dynamicCordisRunner"
+  "names": "cordis_inspect_list, cordis_inspect_query",
+  "requires": "ctx.tools, ctx.cordisInspect"
  },
  {
   "pkg": "@deepseek-ai/dsh-tool-bash-persistent",
@@ -65,9 +85,9 @@
   "requires": "ctx.tools, ctx.agents, ctx.goals, ctx.systemPrompt, a calling Agent in an authorized open turn"
  },
  {
-  "pkg": "@deepseek-ai/dsh-schedule",
-  "names": "schedule_create, schedule_delete, schedule_list",
-  "requires": "ctx.tools, ctx.sessions, Session persistence, a future live root Agent"
+  "pkg": "@deepseek-ai/dsh-tool-schedule",
+  "names": "schedule_create, schedule_delete, schedule_list, schedule_update",
+  "requires": "ctx.tools, ctx.schedule"
  },
  {
   "pkg": "@deepseek-ai/dsh-tool-lsp",
@@ -118,6 +138,11 @@
   "pkg": "@deepseek-ai/dsh-tool-workflow",
   "names": "workflow",
   "requires": "ctx.tools, ctx.workflowEngine, ctx.systemPrompt, a calling Agent (exec.agent parents the script children)"
+ },
+ {
+  "pkg": "@deepseek-ai/dsh-tool-workspace-dependencies",
+  "names": "load_workspace_dependencies",
+  "requires": "ctx.tools"
  },
  {
   "pkg": "@deepseek-ai/dsh-tool-web",

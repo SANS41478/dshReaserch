@@ -2,10 +2,10 @@
 path: packages/session/session-log-deepseek
 desc: Incremental lossless session-log request extension for the official DeepSeek LLM API
 deps: @deepseek-ai/dsh-brand, @deepseek-ai/dsh-util-values, @deepseek-ai/schemastery
-peers: @deepseek-ai/cordis, @deepseek-ai/dsh-deepseek-llm-api-extensions, @deepseek-ai/dsh-invariants, @deepseek-ai/dsh-session
-srcFiles: 3  srcLoc: 359
+peers: @deepseek-ai/cordis, @deepseek-ai/dsh-deepseek-llm-api-extensions, @deepseek-ai/dsh-session
+srcFiles: 2  srcLoc: 336
 
-## README.md (86 行)
+## README.md (88 行)
 ---
 description: "Incremental canonical session-log upload for deployments enabling official DeepSeek request metadata."
 kind: "package-reference"
@@ -35,10 +35,12 @@ Incremental canonical session-log upload for official DeepSeek LLM API requests.
 
 | Key | Default | Meaning |
 |---|---:|---|
-| `enabled` | `true` | Register the `dsh_session_log` contribution. Set it to `false` to stop Session-log upload. |
+| `enabled` | `true` | Send the `dsh_session_log` contribution. Changes apply to the next request; `false` stops Session-log upload. |
 | `maxBytes` | 8 MiB | Largest serialized `dsh_session_log` field, in UTF-8 bytes, that one request carries. |
 
-Shipped profiles mount the plugin, so the default configuration registers the request field and appends the acceptance watermark; an overlay opts out with `enabled: false`.
+Shipped profiles mount the plugin, so the default configuration registers the request field and appends the acceptance watermark; `enabled: false` stops the contribution. The Web switch can override bundle defaults through the active profile; home patches and command-line overlays retain precedence and reject conflicting form writes.
+
+The Web **Settings → General → Upload Session Log when using the official model API** switch persists `enabled` through the Host configuration. In-flight requests keep their prepared payload. Re-enabling resumes the unaccepted suffix, including events recorded while disabled. OpenTelemetry feedback uploads have a separate setting.
 
 <a id="request-field"></a>
 ## Request field
@@ -103,11 +105,6 @@ None.
   141	fn	acceptedThrough
   182	fn	apply
 
-### packages/session/session-log-deepseek/src/invariant.ts  (76 行)
-  12	const	name
-  14	const	inject
-  74	const	apply
-
 ### packages/session/session-log-deepseek/src/types.ts  (91 行)
   declare module: declare module '@deepseek-ai/dsh-deepseek-llm-api-extensions/types' { | declare module '@deepseek-ai/dsh-session/types' {
   7	iface	DeepSeekSessionLogWireHeader
@@ -121,7 +118,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-session-log-deepseek",
   "description": "Incremental lossless session-log request extension for the official DeepSeek LLM API",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -138,10 +135,6 @@ None.
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
-    "./invariant": {
-      "types": "./lib/types/invariant.d.ts",
-      "default": "./lib/invariant.js"
-    },
     "./types": {
       "types": "./lib/types/types.d.ts",
       "default": "./lib/types/types.js"
@@ -151,7 +144,6 @@ None.
   },
   "files": [
     "lib/index.js",
-    "lib/invariant.js",
     "lib/types/**/*.js",
     "lib/types/**/*.d.ts"
   ],
@@ -164,7 +156,6 @@ None.
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/dsh-deepseek-llm-api-extensions": "workspace:*",
-    "@deepseek-ai/dsh-invariants": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*"
   },
   "devDependencies": {
@@ -173,9 +164,13 @@ None.
     "@deepseek-ai/cordis-plugin-loader": "workspace:~",
     "@deepseek-ai/dsh-command-feedback": "workspace:*",
     "@deepseek-ai/dsh-deepseek-llm-api-extensions": "workspace:*",
-    "@deepseek-ai/dsh-invariants": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-llm-deepseek": "workspace:*",
     "@deepseek-ai/dsh-llm-deepseek-api-key": "workspace:*",
     "@deepseek-ai/dsh-llm-mock-server": "workspace:*",
-    "@deepseek-ai/dsh-messa
+    "@deepseek-ai/dsh-message-feedback": "workspace:*",
+    "@deepseek-ai/dsh-session": "workspace:*",
+    "@deepseek-ai/dsh-session-persistence-jsonl": "workspace:*"
+  }
+}
+

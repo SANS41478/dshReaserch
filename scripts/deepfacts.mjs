@@ -2,14 +2,14 @@
 // 输出到 data/deep/brief/<group>__<dir>.txt ，供后续逐包精读使用。
 import { readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
+import { REPO as ROOT, DATA, dataPath } from './_paths.mjs'
 
-const ROOT = 'D:/下载的软件在这里！/deepseek-harness源码/deepseek-harness'
-const OUT = 'D:/临时/dsh研究/data/deep/brief'
+const OUT = join(DATA, 'deep', 'brief')
 mkdirSync(OUT, { recursive: true })
 
 const read = p => { try { return readFileSync(p, 'utf8') } catch { return '' } }
 
-const pkgs = JSON.parse(read('D:/临时/dsh研究/data/packages.json'))
+const pkgs = JSON.parse(read(dataPath('packages.json')))
 
 const SYM_RE = [
   [/^\s*export\s+(?:default\s+)?(?:declare\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)/, 'class'],

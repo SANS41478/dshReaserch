@@ -3,9 +3,9 @@ path: packages/fs/fs-local
 desc: Local-filesystem implementation of the DeepSeek Harness filesystem seam (ctx.fs)
 deps: @deepseek-ai/schemastery
 peers: @deepseek-ai/dsh-fs, @deepseek-ai/cordis
-srcFiles: 3  srcLoc: 1230
+srcFiles: 3  srcLoc: 1274
 
-## README.md (152 行)
+## README.md (150 行)
 ---
 description: "The host-filesystem backend for ctx.fs for deployments and maintainers choosing or debugging local file access."
 kind: "package-reference"
@@ -156,8 +156,6 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. This package exposes no independent event sequence or mutable data relation beyond contracts enforced at its owning seam.
-
 
 ## 源文件与导出符号
 
@@ -198,7 +196,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-fs-local",
   "description": "Local-filesystem implementation of the DeepSeek Harness filesystem seam (ctx.fs)",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -229,7 +227,7 @@ None.
   },
   "dependencies": {
     "chokidar": "^4.0.3",
-    "koffi": "^3.1.0",
+    "koffi": "3.1.1",
     "@deepseek-ai/schemastery": "workspace:~"
   },
   "devDependencies": {

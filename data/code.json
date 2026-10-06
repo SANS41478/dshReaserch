@@ -7,7 +7,7 @@
  "surface 折叠": {
   "file": "packages/core/session/src/surface.ts",
   "code": "export function foldSurface(events: readonly SessionEvent[], projections: readonly SessionMessageProjection[] = []): SurfaceFoldResult {\n  const state = createFoldState()\n  const replacements: SurfaceFoldReplacement[] = []\n  for (const [index, event] of events.entries()) {\n    const replacement = applySurfaceEvent(\n      state,\n      event,\n      SessionSeq(index),\n      events,\n      SessionLogOffset(0),\n      projections,\n    )\n    if (replacement !== undefined) replacements.push(replacement)\n  }\n  return { nodes: [...state.nodes], replacements, projectedMessages: new Map(state.projectedMessages) }\n}\n\n/** Incremental ordered surface view and append-boundary validator. */\nexport class SurfaceManager implements SessionSurface {\n  /** Shared transition state; replacement history is not retained. */\n  private _state = createFoldState()\n  /** Last processed absolute seq. */",
-  "line": 600
+  "line": 594
  },
  "ToolRuntime 服务": {
   "file": "packages/core/tools/src/index.ts",
@@ -23,5 +23,10 @@
   "file": "packages/core/agent/src/types.ts",
   "code": "export interface Agent {\n  /** Session-backed Agent identity. */\n  readonly id: SessionId\n}\n\ndeclare module '@deepseek-ai/dsh-workspace/types' {\n  interface SessionActivityKindMap {\n    /** The session's own Agent is inside a turn, including one waiting for an approval or an answer. */\n    turn: true\n  }\n}\n\ndeclare module '@deepseek-ai/dsh-typert-protocol' {\n  interface TypertLookupMap {\n    agent: TypertLookup<Agent, SessionId>\n  }\n\n  interface TypertContextMap {\n    /** Agent Context identity shared by Host and Client adapters. */\n    agent: TypertContext<SessionId>",
   "line": 15
+ },
+ "Cordis 核心": {
+  "file": "vendor/cordis/src/context.ts",
+  "code": "export class Context {\n  /** Symbol key under which a disposer exposes its {@link EffectMeta} diagnostics tree. */\n  static readonly effect: unique symbol = symbols.effect\n  /** Symbol key for a context's listener filter, consulted on every event dispatch. */\n  static readonly filter: unique symbol = symbols.filter\n  /** Symbol key of the isolation map (see the `Context[symbols.isolate]` property). */\n  static readonly isolate: unique symbol = symbols.isolate\n  /** Symbol key of the intercept map (see the `Context[symbols.intercept]` property). */\n  static readonly intercept: unique symbol = symbols.intercept\n\n  /**\n   * Returns true for Cordis context proxies and context prototypes.\n   *\n   * Works across realms and across multiple copies of cordis, because the\n   * brand is keyed by a global symbol rather than by `instanceof`.\n   *\n   * @param value — the value to test.\n   * @returns `true` if `value` is a Cordis context, narrowing its type.\n   */\n  static is(value: any): value is Context {\n    return !!value?.[Context.is as any]\n  }\n\n  static {",
+  "line": 42
  }
 }

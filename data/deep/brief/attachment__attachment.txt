@@ -3,9 +3,9 @@ path: packages/attachment/attachment
 desc: Durable immutable attachment storage seam for the DeepSeek Harness
 deps: -
 peers: @deepseek-ai/dsh-brand, @deepseek-ai/cordis
-srcFiles: 6  srcLoc: 654
+srcFiles: 6  srcLoc: 683
 
-## README.md (140 行)
+## README.md (139 行)
 ---
 description: "Durable image and file attachments for users and maintainers attaching, reusing, or debugging uploads in prompts and commands."
 kind: "package-reference"
@@ -91,7 +91,6 @@ The service family runs one admission-and-storage flow: every entry point enforc
 | [`src/admission.ts`](src/admission.ts) | Canonical-base64 enforcement and store delegation for encoded image and file uploads |
 | [`src/error.ts`](src/error.ts) | `AttachmentError` class and the `isImageAdmissionError` runtime subset |
 | [`src/brand.ts`](src/brand.ts) | `AttachmentId` branded opaque identifier |
-| — | No runtime invariant companion is published; this stateless seam owns types while implementations enforce immutable-store checks. |
 
 </details>
 
@@ -200,7 +199,7 @@ Audio and video would need dedicated lifecycle and provider contracts beyond the
 {
   "name": "@deepseek-ai/dsh-attachment",
   "description": "Durable immutable attachment storage seam for the DeepSeek Harness",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

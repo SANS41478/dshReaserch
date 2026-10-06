@@ -3,9 +3,9 @@ path: packages/host/directory-picker-native
 desc: Native-OS-chooser backend of the directory-picker seam for the DeepSeek Harness web GUI host
 deps: @deepseek-ai/dsh-host-directory-picker, @deepseek-ai/dsh-native-command
 peers: @deepseek-ai/cordis
-srcFiles: 7  srcLoc: 721
+srcFiles: 7  srcLoc: 751
 
-## README.md (114 行)
+## README.md (112 行)
 ---
 description: "Native-OS-chooser backend of the directory-picker seam: opens one platform chooser per pick for operators sitting at the web GUI host's display."
 kind: "package-reference"
@@ -118,8 +118,6 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. Each pick is one stateless subprocess round trip; the chooser outcome is only the returned path.
-
 
 ## 源文件与导出符号
 
@@ -164,7 +162,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-host-directory-picker-native",
   "description": "Native-OS-chooser backend of the directory-picker seam for the DeepSeek Harness web GUI host",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -197,7 +195,7 @@ None.
   "dependencies": {
     "@deepseek-ai/dsh-host-directory-picker": "workspace:*",
     "@deepseek-ai/dsh-native-command": "workspace:*",
-    "koffi": "^3.1.0"
+    "koffi": "3.1.1"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~"

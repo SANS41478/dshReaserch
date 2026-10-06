@@ -2,10 +2,10 @@
 path: packages/host/plugin-inventory
 desc: Read-only Remote projection of current Cordis Loader plugin state
 deps: -
-peers: @deepseek-ai/cordis-plugin-loader, @deepseek-ai/dsh-agent-presets, @deepseek-ai/dsh-brand, @deepseek-ai/dsh-typert-protocol, @deepseek-ai/cordis
-srcFiles: 2  srcLoc: 164
+peers: @deepseek-ai/cordis-plugin-loader, @deepseek-ai/dsh-agent-preset-registry, @deepseek-ai/dsh-brand, @deepseek-ai/dsh-typert-protocol, @deepseek-ai/cordis
+srcFiles: 2  srcLoc: 191
 
-## README.md (116 行)
+## README.md (115 行)
 ---
 description: "Read-only projection of the current Cordis Loader plugin state with each agent preset's composition beside it: the pluginInventory service and its pluginInventory/list Remote for web GUI host clients."
 kind: "package-reference"
@@ -73,7 +73,6 @@ Fiber states map onto the public phase vocabulary, with `disposed` folding into 
 |---|---|
 | [`src/index.ts`](src/index.ts) | `PluginInventoryGateway`: the `pluginInventory` Remote service and the Loader projection |
 | [`src/types.ts`](src/types.ts) | Public payload types: `PluginInventoryEntry`, `PluginInventorySnapshot`, `PluginFiberPhase` |
-| — | No runtime invariant companion is published; every snapshot is projected directly from Loader-owned state. |
 
 Typert generates the Host and Client Remote artifacts exposed by `./typert` and `./remote`.
 
@@ -147,7 +146,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-host-plugin-inventory",
   "description": "Read-only Remote projection of current Cordis Loader plugin state",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -211,4 +210,4 @@ None.
     "@deepseek-ai/dsh-agent-preset-registry": "workspace:*",
     "@deepseek-ai/dsh-brand": "workspace:*",
     "@deepseek-ai/dsh-typert-protocol": "workspace:*",
-    "@d
+    

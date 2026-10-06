@@ -1,9 +1,9 @@
 // Capture a page scrolled to a given anchor/heading, for below-the-fold review.
-import { chromium } from 'playwright'
-import { pathToFileURL } from 'node:url'
+import { mkdirSync } from 'node:fs'
+import { SHOTS as OUT, siteUrl, launchBrowser } from './_paths.mjs'
 
-const url = pathToFileURL('D:/临时/dsh研究/index.html').href
-const OUT = 'D:/临时/dsh研究/.shots'
+const url = siteUrl()
+mkdirSync(OUT, { recursive: true })
 
 // [name, hash, heading-text-to-scroll-to (or null = full page)]
 const shots = [
@@ -15,7 +15,7 @@ const shots = [
   ['composition-layers', '#/composition', '叠加顺序（重要）'],
 ]
 
-const browser = await chromium.launch()
+const browser = await launchBrowser()
 const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } })
 
 for (const [name, hash, heading] of shots) {

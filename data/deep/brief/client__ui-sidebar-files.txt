@@ -3,9 +3,9 @@ path: packages/client/ui-sidebar-files
 desc: Workspace file tree tab type for the right Sidebar: lazy directory listing over the workspaceFiles Remote namespace, opening files into the Sidebar
 deps: -
 peers: @deepseek-ai/cordis
-srcFiles: 8  srcLoc: 669
+srcFiles: 10  srcLoc: 1050
 
-## README.md (80 行)
+## README.md (78 行)
 ---
 description: "The right Sidebar's file-tree tab type for the dsh web client: the session workspace root listed one level at a time over the wire, opening files into the Sidebar by resource address."
 kind: "package-reference"
@@ -35,7 +35,7 @@ Browse a Session's workspace tree and open files in Sidebar previews. The root a
 The `workspace.files` command opens or focuses the file page in the focused pane; from the conversation it uses the current Session's active dock pane. A guide gives way to the file page, and repeated opens retain one file page per pane. Desktop defaults to Mod+P. The guide entry displays the effective shortcut; Windows and macOS Web use the [shortcut service’s platform defaults](../shortcuts/README.md); Linux Web leaves this command unbound by default.
 
 - **The type** — `ctx.sidebarRightTabs.register(...)` with kind `files`, id `@deepseek-ai/dsh-client-ui-sidebar-files`, band `builtin`, no patterns, and one guide entry (order 10, its title and description from the `sidebarFiles` namespace, its glyph a yellow folder) that opens the type.
-- **The body** — the keyed `sidebar.right.pane.tab` seat under that id: a header row under the strip, then the tree. The shared [`PathLabel`](../ui-primitives/README.md#component-catalog) displays the root path with subdued directories and a primary final segment. A clipped path retains its trailing characters with a left-edge fade; hovering reveals the full path. The reload control stays at its right.
+- **The body** — the keyed `sidebar.right.pane.tab` seat under that id: a header row under the strip, then the tree. The shared [`PathLabel`](../ui-primitives/README.md#component-catalog) displays the root path with subdued directories and a primary final segment. A clipped path retains its trailing characters with a left-edge fade; hovering reveals the full path. The reload control and the Session-scoped `sidebar.right.tab.files.actions` list stay at its right, with the displayed root passed as `absolutePath`; [`ui-open-in-app`](../ui-open-in-app/README.md) contributes the workspace directory opener.
 - **The chip title** — the keyed `sidebar.right.pane.tab.title` seat under that id: a shared `FileTypeIcon` folder glyph at 16px before the type's label. The tree's own rows never draw this sheet.
 
 Source files under `src/client/`: `definition.tsx` (the type), `store.ts` (what it keeps), `face.ts` (Remote reads and watches), `directory-node.ts` (open directories and their lifetimes), `FilesBody.tsx` (what it draws, with its ordering and failure-line helpers), `FilesTitle.tsx` (the chip title), `locales.ts` (what it says), and `index.ts` (the wiring).
@@ -84,16 +84,14 @@ The page refresh shortcut refreshes the focused file tree through its ordinary d
 
 </details>
 
-**Runtime invariant:** No companion is published. The tab-owned face keeps directory reads and watches private, and writes displayed state through its Slot store; tab cancellation releases both. The package exposes no independent observation for a runtime comparison.
-
 
 ## 源文件与导出符号
 
-### packages/client/ui-sidebar-files/src/client/FilesBody.tsx  (225 行)
-  29	type	FilesBodyProps
-  45	fn	orderEntries
-  58	fn	failureLine
-  137	fn	FilesBody
+### packages/client/ui-sidebar-files/src/client/FilesBody.tsx  (232 行)
+  31	type	FilesBodyProps
+  48	fn	orderEntries
+  61	fn	failureLine
+  140	fn	FilesBody
 
 ### packages/client/ui-sidebar-files/src/client/FilesTitle.tsx  (26 行)
   17	fn	FilesTitle
@@ -117,9 +115,10 @@ The page refresh shortcut refreshes the focused file tree through its ordinary d
   116	iface	FilesInjected
   152	fn	filesFace
 
-### packages/client/ui-sidebar-files/src/client/index.ts  (81 行)
-  38	const	inject
-  44	fn	apply
+### packages/client/ui-sidebar-files/src/client/index.ts  (98 行)
+  declare module: declare module '@deepseek-ai/dsh-client-ui-slots' {
+  52	const	inject
+  58	fn	apply
 
 ### packages/client/ui-sidebar-files/src/client/locales.ts  (65 行)
   declare module: declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -146,7 +145,7 @@ The page refresh shortcut refreshes the focused file tree through its ordinary d
 {
   "name": "@deepseek-ai/dsh-client-ui-sidebar-files",
   "description": "Workspace file tree tab type for the right Sidebar: lazy directory listing over the workspaceFiles Remote namespace, opening files into the Sidebar",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -202,4 +201,4 @@ The page refresh shortcut refreshes the focused file tree through its ordinary d
     "@deepseek-ai/dsh-client-ui-renderer": "workspace:*",
     "@deepseek-ai/dsh-client-ui-session": "workspace:*",
     "@deepseek-ai/dsh-client-ui-sidebar-right": "workspace:*",
-    "@deepseek-ai/dsh-client-ui-slots": "workspace:*
+    "@deepseek-ai/dsh-client-ui-slots": "workspac

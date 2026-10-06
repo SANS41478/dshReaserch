@@ -1,11 +1,11 @@
 # @deepseek-ai/dsh-client-ui-message-feedback
 path: packages/client/ui-message-feedback
-desc: Per-message feedback controls contributed to the assistant-message action strip, backed by the messageFeedback Host Remote
+desc: The Web feedback surface: per-message Like/Dislike in the assistant-message action strip and the feedback dialog behind both ratings and /feedback, backed by the messageFeedback and sessionFeedback Host Remotes
 deps: -
 peers: @deepseek-ai/cordis
-srcFiles: 7  srcLoc: 879
+srcFiles: 10  srcLoc: 1046
 
-## README.md (94 行)
+## README.md (92 行)
 ---
 description: "The Web feedback surface: the Like/Dislike pair in the finalized assistant message's action row, the feedback dialog behind both ratings and `/feedback`, and its acknowledgement and failure toasts; for users and maintainers of the feedback experience."
 kind: "package-reference"
@@ -98,8 +98,6 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. The plugin owns two slot registrations, one command decoration, the `feedbackUi` service, and one per-session controller-pair map, all released with the owning plugin fiber. The lifecycle spec verifies that the registrations and service are withdrawn and every controller pair is dropped when the fiber is disposed, so no second authority exists to check at runtime.
-
 
 ## 源文件与导出符号
 
@@ -159,7 +157,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-client-ui-message-feedback",
   "description": "The Web feedback surface: per-message Like/Dislike in the assistant-message action strip and the feedback dialog behind both ratings and /feedback, backed by the messageFeedback and sessionFeedback Host Remotes",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -214,4 +212,4 @@ None.
     "@deepseek-ai/dsh-client-ui-slots": "workspace:*",
     "@deepseek-ai/dsh-message-feedback": "workspace:*",
     "@deepseek-ai/dsh-remote-mock": "workspace:*",
-    "@deepseek-ai/dsh-session": "wor
+    "@deepseek-ai/dsh-session": "

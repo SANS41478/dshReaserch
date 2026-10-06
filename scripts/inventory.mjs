@@ -1,8 +1,8 @@
 // Inventory the source repo by top-level area: file count, size, extension mix.
 import fs from 'node:fs'
 import path from 'node:path'
+import { REPO as ROOT } from './_paths.mjs'
 
-const ROOT = 'D:/下载的软件在这里！/deepseek-harness源码/deepseek-harness'
 const SKIP = new Set(['node_modules', '.git', '.turbo', 'dist', 'lib', 'coverage', '.shots', 'tsbuildinfo'])
 
 function walk(dir, acc) {

@@ -1,11 +1,11 @@
 # @deepseek-ai/dsh-api-remotes
 path: packages/api/remotes
 desc: Remote BFF assembly for application-selected Host capabilities
-deps: @deepseek-ai/dsh-deque, @deepseek-ai/dsh-session, @deepseek-ai/dsh-util-values
+deps: @deepseek-ai/dsh-deque, @deepseek-ai/dsh-util-values
 peers: @deepseek-ai/cordis, @deepseek-ai/dsh-scope
-srcFiles: 4  srcLoc: 393
+srcFiles: 4  srcLoc: 439
 
-## README.md (93 行)
+## README.md (91 行)
 ---
 description: "Application Remote assembly: selects typed Host capabilities and forwarded events for Client consumers."
 kind: "package-reference"
@@ -35,7 +35,7 @@ Two-sided BFF for Host Remote capabilities selected by this application. The Hos
 <a id="use-this-package"></a>
 ## Use this package
 
-[`@deepseek-ai/dsh-api-session-controller`](../session-controller/README.md) owns Agent and Session identity policy, including the Typert lookup resolvers used by other namespaces. This package only selects and mounts that generated Session contribution; it does not duplicate activation policy.
+[`@deepseek-ai/dsh-api-session-controller`](../session-controller/README.md) owns Agent and Session identity policy, including the Typert lookup resolvers used by other namespaces. This package selects and mounts that generated Session contribution without a direct runtime dependency on `@deepseek-ai/dsh-session`; activation policy stays with Session Controller.
 
 The Client assembly mounts Office conversion, Commands, credentials, settings, Goal, Schedule, dynamic Cordis, file and Session references, read-only Host plugin inventory, plugin-installation registry response comparison, message feedback, permission presets, Session Controller, subagents, and Workspace Controller contributions. The `permissionPresets` namespace returns the complete process-level catalog used by current-session controls. Cordis effect ownership withdraws every contribution when this assembly unloads, while `@deepseek-ai/dsh-api-gateway/client` owns descriptor validation, traced namespace Services, direct and scoped methods, invocation, streams, and cancellation. The Client entry consumes the shared `TypertClientRemote` interface through Cordis and does not import the concrete Gateway. It re-exports the Gateway Client face's declaration merges type-only, so a consumer reaching the forwarded-event vocabulary through this facade gains no runtime edge to the Gateway implementation.
 
@@ -95,17 +95,15 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. Typert and the Agent/Session registries own the observed relationships.
-
 The Client assembly includes the account namespace for login commands and reconnectable account snapshots.
 
 
 ## 源文件与导出符号
 
-### packages/api/remotes/src/client/index.ts  (199 行)
+### packages/api/remotes/src/client/index.ts  (201 行)
   declare module: declare module '@deepseek-ai/cordis' {
-  169	const	inject
-  176	fn	apply
+  171	const	inject
+  178	fn	apply
 
 ### packages/api/remotes/src/index.ts  (169 行)
   37	const	inject
@@ -124,7 +122,7 @@ The Client assembly includes the account namespace for login commands and reconn
 {
   "name": "@deepseek-ai/dsh-api-remotes",
   "description": "Remote BFF assembly for application-selected Host capabilities",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -174,7 +172,6 @@ The Client assembly includes the account namespace for login commands and reconn
   ],
   "dependencies": {
     "@deepseek-ai/dsh-deque": "workspace:*",
-    "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-util-values": "workspace:*"
   },
   "peerDependencies": {
@@ -190,4 +187,5 @@ The Client assembly includes the account namespace for login commands and reconn
     "@deepseek-ai/dsh-api-settings-controller": "workspace:*",
     "@deepseek-ai/dsh-api-workspace-controller": "workspace:*",
     "@deepseek-ai/dsh-api-workspace-files": "workspace:*",
-    "@deepseek-ai/dsh-client-connection": "wor
+    "@deepseek-ai/dsh-client-connection": "workspace:*",
+    "@deepseek-ai/dsh-client-file

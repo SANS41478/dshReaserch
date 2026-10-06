@@ -1,12 +1,9 @@
 // Render key pages of the site headlessly and capture screenshots + console errors.
-import { createRequire } from 'node:module'
-const require = createRequire(import.meta.url)
-const { chromium } = require('C:/Users/admin/.workbuddy/binaries/node/workspace/node_modules/playwright/index.js')
-import { pathToFileURL } from 'node:url'
+import { mkdirSync } from 'node:fs'
+import { SHOTS as OUT, siteUrl, launchBrowser } from './_paths.mjs'
 
-const SITE = 'D:/临时/dsh研究/index.html'
-const OUT = 'D:/临时/dsh研究/.shots'
-const url = pathToFileURL(SITE).href
+const url = siteUrl()
+mkdirSync(OUT, { recursive: true })
 
 const ROUTES = [
   ['home', '#/'],
@@ -33,13 +30,14 @@ const ROUTES = [
   ['about', '#/about'],
 ]
 
-const browser = await chromium.launch()
+const browser = await launchBrowser()
 const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
 
 const errors = []
 page.on('console', m => { if (m.type() === 'error') errors.push(`[console] ${m.text()}`) })
 page.on('pageerror', e => errors.push(`[pageerror] ${e.message}`))
 
+const badRoutes = []
 for (const [name, hash] of ROUTES) {
   await page.goto(url + hash, { waitUntil: 'load' })
   await page.waitForTimeout(220)
@@ -53,9 +51,16 @@ for (const [name, hash] of ROUTES) {
     }
   })
   await page.screenshot({ path: `${OUT}/${name}.png`, fullPage: false })
-  console.log(`${name.padEnd(16)} h1="${info.h1}" len=${info.len} navItems=${info.nav}${info.overflow ? ' OVERFLOW!' : ''}`)
+  /* 渲染期异常会被 route() 吞成「出错了」页，控制台不报——必须正面查一遍 */
+  const broken = info.h1 === '出错了' || info.len < 300
+  if (broken) badRoutes.push(`${name} (${hash}) len=${info.len}`)
+  console.log(`${name.padEnd(16)} h1="${info.h1}" len=${info.len} navItems=${info.nav}${info.overflow ? ' OVERFLOW!' : ''}${broken ? '  ← 渲染失败' : ''}`)
 }
 
 console.log('\n--- errors ---')
 console.log(errors.length ? errors.join('\n') : 'none')
+if (badRoutes.length) {
+  console.log('\n--- 落进错误页/正文过短的路由 ---')
+  badRoutes.forEach(r => console.log('  ' + r))
+}
 await browser.close()

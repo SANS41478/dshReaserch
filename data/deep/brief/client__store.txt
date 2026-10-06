@@ -3,9 +3,9 @@ path: packages/client/store
 desc: React-free observable and snapshot-store contracts with the shared Zustand/Immer engine
 deps: -
 peers: @deepseek-ai/cordis
-srcFiles: 2  srcLoc: 396
+srcFiles: 2  srcLoc: 395
 
-## README.md (49 行)
+## README.md (47 行)
 ---
 description: "Observable browser state stores with explicit snapshots, subscriptions, and lifecycle ownership."
 kind: "package-library"
@@ -53,8 +53,6 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. The package exports a library engine and creates no process-global state; each store instance is covered by its owning tests.
-
 
 ## 源文件与导出符号
 
@@ -89,7 +87,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-client-store",
   "description": "React-free observable and snapshot-store contracts with the shared Zustand/Immer engine",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

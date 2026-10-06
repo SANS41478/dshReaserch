@@ -1,11 +1,11 @@
 # @deepseek-ai/dsh-llm-mock-server
 path: packages/test-support/llm-mock-server
-desc: Scriptable OpenAI-compatible HTTP/SSE fault server for LLM recovery tests
+desc: Scriptable Messages HTTP/SSE fault server for LLM recovery tests
 deps: -
 peers: @deepseek-ai/cordis
-srcFiles: 3  srcLoc: 1004
+srcFiles: 3  srcLoc: 1015
 
-## README.md (171 行)
+## README.md (170 行)
 ---
 description: "Scriptable Messages-compatible fault server for testing LLM adapters and recovery policy without a provider key, for test authors and demos."
 kind: "package-library"
@@ -125,7 +125,6 @@ The server is built on one rule: each accepted Messages request consumes exactly
 | [`src/index.ts`](src/index.ts) | `startMockLlmServer`: listener, behavior table, seeded randomness, telemetry, captured request records |
 | [`src/cli.ts`](src/cli.ts) | `--sequence` and timing/content option parsing, JSONL stdout telemetry |
 | [`src/bin.ts`](src/bin.ts) | The `pnpm run mock:llm` source entry |
-| — | No runtime invariant companion is published; this standalone test server owns no Cordis event stream or shared data; its wire behavior and lifecycle are exercised through direct HTTP and assembled-loop tests. |
 
 ### Wire flow
 
@@ -209,7 +208,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-llm-mock-server",
   "description": "Scriptable Messages HTTP/SSE fault server for LLM recovery tests",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

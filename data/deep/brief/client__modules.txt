@@ -3,7 +3,7 @@ path: packages/client/modules
 desc: Client module system, dual-face: node half composes the __DSH_BOOT__ entry graph (incremental dsh.client scan, bundle route, index tap, webPlugins service); browser half is the lazy-CJS module table the vendored cordis Loader consumes as its internal seam
 deps: -
 peers: @deepseek-ai/cordis
-srcFiles: 5  srcLoc: 1774
+srcFiles: 6  srcLoc: 2441
 
 ## README.md (145 行)
 ---
@@ -192,9 +192,9 @@ None.
   385	iface	ClientModuleLoader
   437	iface	ClientModuleSystemOptions
 
-### packages/client/modules/src/client/system.ts  (480 行)
-  90	class	ClientModuleSystem
-      members: L120 constructor, L159 register, L176 loadShared, L202 arrive, L247 arriveGraphRow, L276 arriveDependency, L293 materialize, L318 makeRequire, L344 importChunk, L373 import, L392 prefetch, L400 importError, L410 recordingImportError, L422 updateManifest, L441 prune, L462 invalidate
+### packages/client/modules/src/client/system.ts  (487 行)
+  95	class	ClientModuleSystem
+      members: L125 constructor, L164 register, L181 loadShared, L207 arrive, L252 arriveGraphRow, L281 arriveDependency, L298 materialize, L325 makeRequire, L351 importChunk, L380 import, L399 prefetch, L407 importError, L417 recordingImportError, L429 updateManifest, L448 prune, L469 invalidate
 
 ### packages/client/modules/src/index.ts  (1160 行)
   inject: L597 ['loader']
@@ -205,18 +205,13 @@ None.
   596	class	ClientModuleRegistry
       members: L619 constructor, L663 graph, L672 clientPath, L684 fetchBundle, L701 artifactBaseline, L713 rebuilt, L742 onRebuilt, L753 onGraphChanged, L758 compose, L811 notifyGraphChanged, L823 resolveMeta, L871 locatePkgJson, L908 nearestPackage, L934 sourceKey, L939 captureArtifactBaseline, L956 initialBundleSnapshot, L981 processOne, L1010 resolveSource, L1021 reconcilePackage, L1051 flush, L1080 chunkRequest, L1101 chunkResponse, L1128 bundleResource
 
-### packages/client/modules/src/invariant.ts  (46 行)
-  13	const	name
-  15	const	inject
-  43	const	apply
-
 ## 其它关键文件
 
 ### package.json
 {
   "name": "@deepseek-ai/dsh-client-modules",
   "description": "Client module system, dual-face: node half composes the __DSH_BOOT__ entry graph (incremental dsh.client scan, bundle route, index tap, webPlugins service); browser half is the lazy-CJS module table the vendored cordis Loader consumes as its internal seam",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -237,10 +232,6 @@ None.
       "types": "./lib/types/client/index.d.ts",
       "default": "./lib/client.js"
     },
-    "./invariant": {
-      "types": "./lib/types/invariant.d.ts",
-      "default": "./lib/invariant.js"
-    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
@@ -259,14 +250,12 @@ None.
   "devDependencies": {
     "@deepseek-ai/cordis-plugin-loader": "workspace:~",
     "@deepseek-ai/dsh-host-webserver": "workspace:*",
-    "@deepseek-ai/dsh-invariants": "workspace:*",
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/dsh-package-manifest": "workspace:*",
     "@deepseek-ai/dsh-client-store": "workspace:*"
   },
   "files": [
     "lib/index.js",
-    "lib/invariant.js",
     "lib/client.js",
     "lib/types/**/*.d.ts"
   ],

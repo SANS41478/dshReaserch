@@ -3,9 +3,9 @@ path: packages/context/tmux-context
 desc: Opt-in durable per-step context with this agent's tmux pane and window location
 deps: @deepseek-ai/schemastery
 peers: @deepseek-ai/dsh-agent, @deepseek-ai/dsh-shell, @deepseek-ai/dsh-session, @deepseek-ai/cordis, @deepseek-ai/dsh-session-projection
-srcFiles: 1  srcLoc: 266
+srcFiles: 1  srcLoc: 276
 
-## README.md (142 行)
+## README.md (141 行)
 ---
 description: "Opt-in per-turn tmux location context for users and maintainers enabling or tuning the agent's session, window, and pane awareness."
 kind: "package-reference"
@@ -78,7 +78,6 @@ The plugin prepends an `agent/pre-step` listener that runs only on the first ste
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: first-step listener, shell query, change suppression, scheduling |
-| — | No runtime invariant companion is published; a reading is a per-turn snapshot of external tmux state, so the session holds no cross-event relation to check; scheduling and format are owned by pipeline tests. |
 
 ### Main flow
 
@@ -165,7 +164,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-tmux-context",
   "description": "Opt-in durable per-step context with this agent's tmux pane and window location",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

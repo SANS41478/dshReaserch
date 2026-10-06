@@ -2,10 +2,10 @@
 path: packages/experimental/client-ui-agent-team
 desc: Web Agent Teams roster, task board, and teammate navigation
 deps: -
-peers: @deepseek-ai/dsh-api-remotes, @deepseek-ai/dsh-api-session-controller, @deepseek-ai/dsh-client-locale, @deepseek-ai/dsh-client-ui-conversation, @deepseek-ai/dsh-client-ui-primitives, @deepseek-ai/dsh-client-ui-renderer, @deepseek-ai/dsh-client-ui-session, @deepseek-ai/dsh-client-ui-slots, @deepseek-ai/dsh-experimental-agent-team, @deepseek-ai/dsh-session, @deepseek-ai/dsh-typert-protocol, @deepseek-ai/cordis
-srcFiles: 6  srcLoc: 641
+peers: @deepseek-ai/dsh-api-session-controller, @deepseek-ai/dsh-client-locale, @deepseek-ai/dsh-client-ui-conversation, @deepseek-ai/dsh-client-ui-primitives, @deepseek-ai/dsh-client-ui-renderer, @deepseek-ai/dsh-client-ui-session, @deepseek-ai/dsh-client-ui-slots, @deepseek-ai/dsh-client-ui-workspace, @deepseek-ai/dsh-experimental-agent-team, @deepseek-ai/dsh-session, @deepseek-ai/cordis
+srcFiles: 6  srcLoc: 518
 
-## README.md (105 行)
+## README.md (103 行)
 ---
 description: "Use and debug the experimental Web Agent Teams roster, shared task board, and teammate navigation panel."
 kind: "package-reference"
@@ -109,8 +109,6 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. The Host projection is authoritative and the package owns only one disposable slot registration.
-
 
 ## 源文件与导出符号
 
@@ -145,7 +143,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-experimental-client-ui-agent-team",
   "description": "Web Agent Teams roster, task board, and teammate navigation",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -202,4 +200,4 @@ None.
   },
   "devDependencies": {
     "@deepseek-ai/dsh-api-session-controller": "workspace:*",
-    "@deepseek-ai/dsh-client-locale": "wo
+    "@deepseek-ai/dsh-client-locale": 

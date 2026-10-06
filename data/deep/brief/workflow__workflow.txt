@@ -2,10 +2,10 @@
 path: packages/workflow/workflow
 desc: Workflow capability seam: ctx.workflowEngine service, run vocabulary, and workflow/* events
 deps: -
-peers: @deepseek-ai/dsh-agent, @deepseek-ai/dsh-brand, @deepseek-ai/dsh-invariants, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-session, @deepseek-ai/cordis
-srcFiles: 4  srcLoc: 523
+peers: @deepseek-ai/dsh-agent, @deepseek-ai/dsh-brand, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-session, @deepseek-ai/cordis
+srcFiles: 3  srcLoc: 386
 
-## README.md (144 行)
+## README.md (143 行)
 ---
 description: "The workflow orchestration capability: run a model-written script that fans out subagents, for users and maintainers choosing or building on ctx.workflowEngine."
 kind: "package-reference"
@@ -85,7 +85,6 @@ The package separates the script, run, result, and event contracts from executio
 | [`src/index.ts`](src/index.ts) | Service definition, `workflow/*` event declarations, `WorkflowError` and its fatal flag |
 | [`src/types.ts`](src/types.ts) | Browser-safe vocabulary: `WorkflowMeta`, `WorkflowResult`, run and agent event info |
 | [`src/runtime-types.ts`](src/runtime-types.ts) | Host-only `WorkflowStartRequest` and `WorkflowRun` handles |
-| [`src/invariant.ts`](src/invariant.ts) | Invariant companion: event pairing and identity checks |
 
 ### Lifecycle and ownership
 
@@ -112,7 +111,7 @@ Read these pages when the package-level contract is not enough. They move from t
 - [Group map](../README.md) — the workflow capability family and its packages.
 - [workflow tool](../tool-workflow/README.md) — the model-facing consumer that owns the call schema and result envelope.
 - [PTC workflow engine](../workflow-ptc/README.md) — the current execution engine and its isolation boundary.
-- [Dynamic workflows Agent Note](../../../.agents/notes/implemented/feature/2026-07-05-dynamic-workflows.md) — the seam design and its decisions.
+- [historical Dynamic workflows Agent Note](../../../.agents/notes/archived/feature/2026-07-05-dynamic-workflows.md) — the seam design and its decisions.
 
 -----
 
@@ -163,11 +162,6 @@ Deferred directions: a background start/poll API with spill handles and detached
   157	class	WorkflowEngine
       members: L158 constructor, L168 start, L175 emitWorkflowEvent
 
-### packages/workflow/workflow/src/invariant.ts  (137 行)
-  15	const	name
-  17	const	inject
-  135	const	apply
-
 ### packages/workflow/workflow/src/runtime-types.ts  (50 行)
   19	iface	WorkflowStartRequest
   40	iface	WorkflowRun
@@ -191,7 +185,7 @@ Deferred directions: a background start/poll API with spill handles and detached
 {
   "name": "@deepseek-ai/dsh-workflow",
   "description": "Workflow capability seam: ctx.workflowEngine service, run vocabulary, and workflow/* events",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -208,10 +202,6 @@ Deferred directions: a background start/poll API with spill handles and detached
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
-    "./invariant": {
-      "types": "./lib/types/invariant.d.ts",
-      "default": "./lib/invariant.js"
-    },
     "./types": {
       "types": "./lib/types/types.d.ts",
       "default": "./lib/types/types.js"
@@ -221,7 +211,6 @@ Deferred directions: a background start/poll API with spill handles and detached
   },
   "files": [
     "lib/index.js",
-    "lib/invariant.js",
     "lib/types/**/*.js",
     "lib/types/**/*.d.ts"
   ],
@@ -229,7 +218,6 @@ Deferred directions: a background start/poll API with spill handles and detached
   "peerDependencies": {
     "@deepseek-ai/dsh-agent": "workspace:*",
     "@deepseek-ai/dsh-brand": "workspace:*",
-    "@deepseek-ai/dsh-invariants": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/cordis": "workspace:~"
@@ -237,7 +225,6 @@ Deferred directions: a background start/poll API with spill handles and detached
   "devDependencies": {
     "@deepseek-ai/dsh-agent": "workspace:*",
     "@deepseek-ai/dsh-brand": "workspace:*",
-    "@deepseek-ai/dsh-invariants": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/cordis": "workspace:~"

@@ -3,9 +3,9 @@ path: packages/util/home-paths
 desc: Shared filesystem path helpers for the DeepSeek Harness
 deps: -
 peers: @deepseek-ai/cordis
-srcFiles: 1  srcLoc: 113
+srcFiles: 1  srcLoc: 124
 
-## README.md (114 行)
+## README.md (113 行)
 ---
 description: "Shared resolution of the DeepSeek Harness home and user-data paths for packages that need one consistent root, tilde expansion, and stable watch paths."
 kind: "package-library"
@@ -75,7 +75,6 @@ The package is built on one principle: all harness user data lives under one roo
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Home resolution, path joining, display, tilde expansion, and watch-path canonicalization |
-| — | No runtime invariant companion is published; this pure utility owns no event stream or mutable runtime data; its resolution rules and value algebra are enforced by unit tests. |
 
 ### Resolution rules
 
@@ -141,7 +140,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-home-paths",
   "description": "Shared filesystem path helpers for the DeepSeek Harness",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

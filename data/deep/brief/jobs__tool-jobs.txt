@@ -3,9 +3,9 @@ path: packages/jobs/tool-jobs
 desc: Model-facing background job control tools (job_output, job_list, job_kill) over the ctx.jobs registry
 deps: @deepseek-ai/schemastery
 peers: @deepseek-ai/dsh-agent, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-output-retention, @deepseek-ai/dsh-system-prompt, @deepseek-ai/dsh-jobs, @deepseek-ai/dsh-tools, @deepseek-ai/cordis
-srcFiles: 1  srcLoc: 402
+srcFiles: 2  srcLoc: 501
 
-## README.md (189 行)
+## README.md (188 行)
 ---
 description: "The model-facing background-job controls for users and maintainers choosing, configuring, or debugging job_output, job_list, job_kill, and completion notices."
 kind: "package-reference"
@@ -92,7 +92,6 @@ This section explains the design decisions behind the tools and points at the co
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: tool registrations, the settlement subscription and model-kill set, prompt section, output capping |
 | [`src/render.ts`](src/render.ts) | Model-facing rendering: the public projection, status lines, and the consuming delta (stdout, `[stderr]` section, dropped-output notice) |
-| — | No runtime invariant companion is published; this model-facing adapter has no independent lifecycle stream; execution relations are owned by the capability seam it calls. |
 
 ### Output capping
 
@@ -220,7 +219,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-tool-jobs",
   "description": "Model-facing background job control tools (job_output, job_list, job_kill) over the ctx.jobs registry",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

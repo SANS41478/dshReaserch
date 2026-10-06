@@ -15,16 +15,25 @@ const HERE = path.dirname(fileURLToPath(import.meta.url))
 // server.mjs 就在站点根目录，静态文件也在这里（不是上一级）
 const SITE = HERE
 
-/* ---------- 配置：config.json 可覆盖，环境变量优先级最高 ---------- */
-let REPO = 'D:/下载的软件在这里！/deepseek-harness源码/deepseek-harness'
+/* ---------- 配置：config.json 是唯一事实源，环境变量优先级最高 ---------- */
+/* 仓库路径不再写死在代码里：换盘符 / 换目录只改 config.json。 */
+let REPO = ''
 let PORT = 5319
 try {
   const cfg = JSON.parse(fs.readFileSync(path.join(SITE, 'config.json'), 'utf8'))
   if (cfg.repo) REPO = cfg.repo
   if (cfg.port) PORT = Number(cfg.port)
-} catch { /* 没有 config.json 就用默认 */ }
+} catch { /* 没有 config.json 就等环境变量 */ }
 if (process.env.DSH_REPO) REPO = process.env.DSH_REPO
 if (process.env.PORT) PORT = Number(process.env.PORT)
+
+if (!REPO) {
+  console.log('')
+  console.log('  [配置缺失] 没有找到源码仓库路径。')
+  console.log('  请编辑 config.json 里的 "repo"，或设置环境变量 DSH_REPO。')
+  console.log('')
+  process.exit(1)
+}
 
 /* ---------- 展示范围：默认只开放产品源码 ---------- */
 /* 这些目录整棵排除，任何模式下都不可见。

@@ -5,7 +5,7 @@ deps: -
 peers: @deepseek-ai/dsh-brand, @deepseek-ai/dsh-llm, @deepseek-ai/dsh-session, @deepseek-ai/cordis
 srcFiles: 2  srcLoc: 140
 
-## README.md (156 行)
+## README.md (155 行)
 ---
 description: "The spill storage service: save oversized tool text or captured session references and return a retrievable locator."
 kind: "package-reference"
@@ -97,7 +97,6 @@ The package is built on one separation and a deliberate minimum:
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: the abstract `SpillStore` service and its `saveText` contract |
 | [`src/types.ts`](src/types.ts) | Vocabulary: `SaveTextSpill`, `SpillRef`, branded `SpillLocator`, `SpillOwner`, `SpillSource` |
-| — | No runtime invariant companion is published; this package exposes no independent event sequence or mutable data relation beyond contracts enforced at its owning seam. |
 
 ### Data model
 
@@ -184,7 +183,7 @@ Remote or database backends remain open. The local backend applies its [startup-
 {
   "name": "@deepseek-ai/dsh-spill",
   "description": "Abstract spill storage seam (ctx.spillStore) for the DeepSeek Harness — save oversized tool text and return a retrieval locator",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },

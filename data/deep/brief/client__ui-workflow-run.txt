@@ -3,9 +3,9 @@ path: packages/client/ui-workflow-run
 desc: Durable workflow-run Conversation Node and nested member disclosure for dsh web
 deps: -
 peers: @deepseek-ai/cordis
-srcFiles: 6  srcLoc: 765
+srcFiles: 6  srcLoc: 782
 
-## README.md (103 行)
+## README.md (101 行)
 ---
 description: "Durable workflow-run Conversation Node for the dsh web client: reconstructs top-level workflow runs as independent chat nodes with nested member disclosure."
 kind: "package-reference"
@@ -37,7 +37,7 @@ A top-level workflow run through `dsh-tool-workflow` appears in the conversation
 
 ### Navigating the node
 
-The run uses a 32-pixel row with persistent chevrons, an inline state dot, and status text; phases use disclosure rows with title and member count in the main area and a fixed aggregate-status tail; members use a 16-pixel dot slot, a truncating name area, and a fixed status column. Opening a member's child Session requires both member and child to be running, and the child must belong to the current Session's direct-child catalog. Child activity uses the unified UI status, falling back to the Session summary when unknown. Session summaries do not establish membership; absent, wrong-parent, or terminal catalog entries remain non-interactive.
+Run and phase headers keep 6px gaps between their title, count, and status fields, with the status aligned to the right. The run uses a 32-pixel row with persistent chevrons, an inline state dot, and status text; phases use disclosure rows with title and member count in the main area and a fixed aggregate-status tail; members use a 16-pixel dot slot, a truncating name area, and a fixed status column. Opening a member's child Session requires both member and child to be running, and the child must belong to the current Session's direct-child catalog. Child activity uses the unified UI status, falling back to the Session summary when unknown. Session summaries do not establish membership; absent, wrong-parent, or terminal catalog entries remain non-interactive.
 
 ### State and completion
 
@@ -107,15 +107,13 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. The browser plugin contributes one effect-owned Conversation Definition, keyed renderer, and dictionary; tests prove their disposal and the Host tool package owns the durable event invariant.
-
 
 ## 源文件与导出符号
 
-### packages/client/ui-workflow-run/src/client/WorkflowRunPanel.tsx  (482 行)
+### packages/client/ui-workflow-run/src/client/WorkflowRunPanel.tsx  (486 行)
   21	iface	WorkflowRunInjected
   26	type	WorkflowRunPanelProps
-  343	fn	WorkflowRunPanel
+  347	fn	WorkflowRunPanel
 
 ### packages/client/ui-workflow-run/src/client/index.ts  (38 行)
   declare module: declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -149,7 +147,7 @@ None.
 {
   "name": "@deepseek-ai/dsh-client-ui-workflow-run",
   "description": "Durable workflow-run Conversation Node and nested member disclosure for dsh web",
-  "version": "0.1.7-rc.2",
+  "version": "0.2.1-alpha.1",
   "publishConfig": {
     "access": "public"
   },
@@ -210,4 +208,4 @@ None.
     "@deepseek-ai/dsh-client-ui-primitives": "workspace:*",
     "@deepseek-ai/dsh-client-ui-slots": "workspace:*",
     "@deepseek-ai/dsh-client-ui-renderer": "workspace:*",
-    "@deepseek-ai/dsh-client-ui-sess
+    "@deepseek-ai/dsh-client-ui-s

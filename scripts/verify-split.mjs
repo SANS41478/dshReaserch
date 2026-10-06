@@ -8,11 +8,9 @@
    跑法：node scripts/verify-split.mjs
    ============================================================ */
 
-import { createRequire } from 'node:module'
-const require = createRequire(import.meta.url)
-const { chromium } = require('C:/Users/admin/.workbuddy/binaries/node/workspace/node_modules/playwright/index.js')
+import { PORT, launchBrowser } from './_paths.mjs'
 
-const BASE = 'http://127.0.0.1:5319/'
+const BASE = `http://127.0.0.1:${PORT}/`
 
 let pass = 0
 let fail = 0
@@ -22,7 +20,7 @@ const log = (ok, name, extra = '') => {
 }
 const sec = t => console.log(`\n── ${t} ${'─'.repeat(Math.max(0, 56 - t.length))}`)
 
-const browser = await chromium.launch()
+const browser = await launchBrowser()
 const page = await browser.newPage({ viewport: { width: 1680, height: 950 } })
 
 const errors = []
