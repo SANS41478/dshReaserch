@@ -153,11 +153,14 @@
 ## 目录结构
 
 ```
-index.html              外壳（侧边栏 + 内容区）
+index.html              外壳（顶栏 + 左侧目录索引 + 内容区 / 右侧源码分屏）
 start.bat / start.sh    一键启动（起服务 + 开浏览器）
 config.json             仓库路径与端口配置
 server.mjs              本地服务：静态托管 + /api（文件树/文件/搜索/符号/溯源）
-assets/style.css        设计系统（深色 IDE 主题）
+assets/style.css        设计系统（纸白技术档案风：令牌 / 框架 / 页面 / 组件）
+assets/source.css       源码浏览器、右侧分屏、精读章节样式
+assets/responsive.css   响应式断点、移动抽屉与 reduced-motion
+assets/fonts/           本地字体（Geist / Geist Mono / Noto Sans SC + OFL 切片）
 assets/app.js           路由、搜索、架构页面渲染
 assets/source.js        源码浏览器（文件树、查看器、溯源面板、高亮器）
 assets/deepfmt.js       逐包精读正文的结构化渲染器（分句 / 领句小标题 / 行号引用转链接），浏览器与校验脚本共用同一份实现
@@ -186,6 +189,7 @@ scripts/inventory.mjs   仓库构成统计
 
 | 接口 | 作用 |
 |---|---|
+| `GET /api/ping` | 轻量探活：仓库路径 + 是否存在（不返回文件树） |
 | `GET /api/meta` | 仓库路径 + 完整文件树 |
 | `GET /api/tree` | 只取文件树（4 秒缓存） |
 | `GET /api/file?path=` | 读单个文件全文 |

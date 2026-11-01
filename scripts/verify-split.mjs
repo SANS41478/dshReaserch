@@ -169,7 +169,7 @@ sec('5. 双向链接：右侧 → 左侧')
 const tabs = await page.locator('.ptab .ptab-tx').allInnerTexts()
 log(tabs.length >= 2, '两个标签并存', tabs.join(' | '))
 
-const codeTab = page.locator('.ptab').filter({ hasText: '📄' }).first()
+const codeTab = page.locator('.ptab').filter({ hasText: 'SRC' }).first()
 const codeTabExists = await codeTab.count() > 0
 if (codeTabExists) {
   await codeTab.click()

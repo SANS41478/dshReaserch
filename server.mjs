@@ -319,6 +319,12 @@ const server = http.createServer(async (req, res) => {
       })
     }
 
+    if (p === '/api/ping') {
+      let ok = false
+      try { ok = (await fsp.stat(REPO)).isDirectory() } catch { }
+      return json(res, { repo: REPO, exists: ok, port: PORT })
+    }
+
     if (p === '/api/symbols') {
       const s = await buildSymbols()
       return json(res, {

@@ -38,15 +38,24 @@ async function api(path) {
 
 async function probeServer() {
   try {
-    const m = await api('/meta')
+    let m
+    try { m = await api('/ping') }
+    catch { m = await api('/meta') }
     SRC.online = !!m.exists
     SRC.repo = m.repo
-    SRC.tree = m.tree
+    if (m.tree) SRC.tree = m.tree
     return SRC.online
   } catch {
     SRC.online = false
     return false
   }
+}
+
+/** 文件树按需加载：探活只拿仓库状态，不把 1.7MB 树塞进每次打开源码 */
+async function loadTree() {
+  if (SRC.tree) return SRC.tree
+  SRC.tree = await api('/tree')
+  return SRC.tree
 }
 
 /* ---------- 文件类型 → 图标/颜色 ---------- */
@@ -69,10 +78,10 @@ function renderSourceNav() {
   if (!el) return
   el.innerHTML = `
     <div class="nav-sec">
-      <a class="nav-head" id="ns-code" href="#/code" style="text-decoration:none">📂 源码浏览器</a>
+      <a class="nav-head" id="ns-code" href="#/code">源码浏览器</a>
     </div>
     <div class="nav-sec">
-      <a class="nav-head" id="ns-files" href="#/files" style="text-decoration:none">🌲 仓库文件树</a>
+      <a class="nav-head" id="ns-files" href="#/files">仓库文件树</a>
     </div>`
 }
 
@@ -197,11 +206,11 @@ function initPaneSplit() {
 /* ---- 标签管理 ---- */
 /** 面板里的标签标题：带类型前缀，避免「两个 index.ts」分不清 */
 function paneTabTitle(type, path) {
-  if (type === 'tree') return '🌲 文件树'
+  if (type === 'tree') return 'TREE / 文件树'
   const base = (path || '').split('/').pop() || '源码'
   const parts = (path || '').split('/')
   const owner = parts[0] === 'packages' ? parts[2] : parts[0]
-  return owner ? `📄 ${owner}/${base}` : `📄 ${base}`
+  return owner ? `${owner}/${base}` : base
 }
 
 function paneTabAdd(type, opts = {}) {
@@ -245,7 +254,7 @@ function syncPane() {
 
   tabsEl.innerHTML = SRC.tabs.map(t => `
     <span class="ptab${t.cid === SRC.active ? ' active' : ''}" data-cid="${t.cid}" title="${esc(t.path || '文件树')}">
-      <span class="ptab-ico">${t.type === 'tree' ? '🌲' : '📄'}</span>
+      <span class="ptab-ico">${t.type === 'tree' ? 'TREE' : 'SRC'}</span>
       <span class="ptab-tx">${esc(t.title)}</span>
       <span class="ptab-x" data-x="${t.cid}">✕</span>
     </span>`).join('')
@@ -273,11 +282,11 @@ function syncPane() {
 
 function paneEmptyHtml() {
   return `<div class="pane-empty">
-    <span class="big">📂</span>
+    <span class="big">[ ]</span>
     <p>侧栏里还没有内容。</p>
     <p style="margin-top:10px">
-      <a class="dep" href="#/files">🌲 打开文件树</a>
-      <a class="dep" href="#/">🏁 回首页</a>
+      <a class="dep" href="#/files">打开文件树</a>
+      <a class="dep" href="#/">回首页</a>
     </p>
   </div>`
 }
@@ -387,6 +396,7 @@ async function openTreeAt(focusPath) {
     const ok = await probeServer()
     if (!ok) { location.hash = '#/files'; return false }
   }
+  await loadTree()
   if (focusPath !== undefined) {
     SRC.focusPath = focusPath || null
     SRC.focusLine = null
@@ -533,7 +543,7 @@ function treeNodeHtml(n, depth) {
     return `<div class="tnode">
       <div class="trow tdir ${open ? 'open' : ''}" data-toggle="${esc(n.path)}" ${pad}>
         <span class="tcaret">${open ? '▾' : '▸'}</span>
-        <span class="tico-folder">${isPkg ? '📦' : '📁'}</span>
+        <span class="tico-folder${isPkg ? ' pkg' : ''}"></span>
         <span class="tname">${esc(n.name)}</span>
         ${isPkg ? `<span class="tpkg" title="打开包页">↗</span>` : ''}
       </div>
@@ -600,7 +610,7 @@ function updateFocusNote(host) {
     note.className = 'focus-note'
     bar.insertAdjacentElement('afterend', note)
   }
-  note.innerHTML = `<span>📍 已定位</span><code>${esc(SRC.focusPath)}</code>`
+  note.innerHTML = `<span>已定位</span><code>${esc(SRC.focusPath)}</code>`
 }
 
 /** 定位：展开祖先 → 滚动到位 → 闪烁。 */
@@ -627,7 +637,12 @@ function scrollNodeIntoView(container, path, flash) {
   const node = container.querySelector(`[data-file="${cssEsc(path)}"]`)
   if (!node) return
   node.classList.add('focus')
-  node.scrollIntoView({ block: 'center' })
+  const scroller = container.classList.contains('pane-scroll')
+    ? container
+    : container.querySelector('.pane-scroll') || container.closest('.pane-scroll') || container
+  const scRect = scroller.getBoundingClientRect()
+  const nRect = node.getBoundingClientRect()
+  scroller.scrollTop += (nRect.top - scRect.top) - (scroller.clientHeight - nRect.height) / 2
   if (flash !== false) {
     node.classList.remove('flash')
     void node.offsetWidth
@@ -653,13 +668,29 @@ function cssEsc(s) {
 async function pageFiles() {
   const ok = SRC.online || await probeServer()
   if (!ok) return offlineNotice()
+  await loadTree()
   ensureTree()
 
   const rows = TREE_ROOT.children.map(c => treeNodeHtml(c, 0)).join('')
+  let fileCount = 0
+  const count = nodes => nodes.forEach(n => { if (n.type === 'file') fileCount++; else if (n.children) count(n.children) })
+  count(TREE_ROOT.children)
   return `
   <div class="crumb"><a href="#/">首页</a><span>/</span>仓库文件树</div>
-  <h1>🌲 仓库文件树</h1>
-  <p class="lead">按「包 → 源码 / 测试 / 文档 / 配置」归类，默认展开源码。点任意文件在<strong>右侧面板</strong>里读，左侧这份树不会消失。</p>
+  <div class="page-head">
+    <div class="page-head-inner">
+      <div>
+        <p class="eyebrow">SOURCE / TREE</p>
+        <h1>仓库文件树</h1>
+        <p class="lead">按「包 → 源码 / 测试 / 文档 / 配置」归类，默认展开源码。点任意文件在<strong>右侧面板</strong>里读，左侧这份树不会消失。</p>
+      </div>
+      <aside class="page-head-side">
+        <div class="row"><span>REPO</span><b>${esc(SRC.repo.split(/[\\/]/).pop() || '—')}</b></div>
+        <div class="row"><span>FILES</span><b>${fileCount}</b></div>
+        <div class="row"><span>MODE</span><b>LIVE DISK</b></div>
+      </aside>
+    </div>
+  </div>
   <div class="note ok">
     <span class="t">实时读取</span>
     源码从磁盘现读，路径 <code>${esc(SRC.repo)}</code>。你在编辑器里改完保存，这里刷新即是最新内容。
@@ -673,10 +704,23 @@ async function pageFiles() {
 function offlineNotice() {
   return `
   <div class="crumb"><a href="#/">首页</a><span>/</span>源码浏览器</div>
-  <h1>📂 源码浏览器</h1>
+  <div class="page-head">
+    <div class="page-head-inner">
+      <div>
+        <p class="eyebrow">SOURCE / OFFLINE</p>
+        <h1>源码浏览器</h1>
+        <p class="lead">源码浏览器需要本地服务实时读磁盘（浏览器不允许网页直接读本地文件）。</p>
+      </div>
+      <aside class="page-head-side">
+        <div class="row"><span>STATUS</span><b>OFFLINE</b></div>
+        <div class="row"><span>PORT</span><b>5319</b></div>
+        <div class="row"><span>ACTION</span><b>START SERVER</b></div>
+      </aside>
+    </div>
+  </div>
   <div class="note warn">
     <span class="t">服务未启动</span>
-    源码浏览器需要本地服务实时读磁盘（浏览器不允许网页直接读本地文件）。
+    启动本地服务后，这里会改为实时读取磁盘的仓库文件树与源码查看器。
   </div>
   <h2>怎么启动</h2>
   <div class="mech">
@@ -814,7 +858,9 @@ function flashSourceLine(host, line, keep) {
       host.querySelectorAll('.cl.target').forEach(x => x.classList.remove('target'))
       node.classList.add('target')
     }
-    node.scrollIntoView({ block: 'center' })
+    const scRect = scroller.getBoundingClientRect()
+    const nRect = node.getBoundingClientRect()
+    scroller.scrollTop += (nRect.top - scRect.top) - (scroller.clientHeight - nRect.height) / 2
     node.classList.remove('flash')
     void node.offsetWidth
     node.classList.add('flash')
@@ -877,7 +923,7 @@ async function paneRenderCode(host, tab) {
     ])
   } catch (e) {
     host.innerHTML = `<div class="pane-empty">
-      <span class="big">⚠️</span>
+      <span class="big">!</span>
       <p>读不到文件</p>
       <p style="margin-top:6px"><code>${esc(filePath)}</code></p>
       <p style="margin-top:6px;font-size:11.5px">${esc(String(e.message))}</p>
@@ -916,7 +962,7 @@ function paneTraceInner(tr, filePath, line) {
   return `
   <div class="pt-head">
     <span class="tp-h" style="margin:0">溯源</span>
-    ${pkg ? `<a class="dep" href="#/pkg/${esc(pkg.group)}/${esc(pkg.dir)}" data-arch>📦 ${esc(pkg.dir)}</a>` : `<span class="pt-note">仓库基础设施</span>`}
+    ${pkg ? `<a class="dep" href="#/pkg/${esc(pkg.group)}/${esc(pkg.dir)}" data-arch>${esc(pkg.dir)}</a>` : `<span class="pt-note">仓库基础设施</span>`}
   </div>
   ${tr.injects?.length ? `
     <div class="tp-sec" style="padding:9px 14px">
@@ -976,10 +1022,11 @@ function renderPaneTrace(host, tr, filePath) {
    面板版：文件树视图
    ============================================================ */
 async function paneRenderTree(host) {
+  await loadTree()
   ensureTree()
   host.innerHTML = `
     <div class="pane-bar">
-      <span class="pb-name">🌲 仓库文件树</span>
+      <span class="pb-name">TREE / 仓库文件树</span>
       <span class="pb-meta">${esc(SRC.repo.split(/[\\/]/).pop())}</span>
       <a class="pb-act" href="#/files" title="在整页里打开">整页 ↗</a>
     </div>
@@ -1100,9 +1147,9 @@ function tracePanel(tr, filePath, line) {
     ${pkg ? `
     <div class="tp-sec">
       <div class="tp-h">所属包</div>
-      <a class="dep big" href="#/pkg/${esc(pkg.group)}/${esc(pkg.dir)}">📦 ${esc(pkg.dir)}</a>
+      <a class="dep big" href="#/pkg/${esc(pkg.group)}/${esc(pkg.dir)}">${esc(pkg.dir)}</a>
       ${pkg.name ? `<div class="tp-mono">${esc(pkg.name)}</div>` : ''}
-      <div class="tp-sub">分组 <a class="dep" href="#/map#${esc(pkg.group)}">${esc(pkg.group)}</a></div>
+      <div class="tp-sub">分组 <a class="dep" href="#/map" data-anchor="group-${esc(pkg.group)}">${esc(pkg.group)}</a></div>
       ${pkg.description ? `<p class="tp-desc">${esc(pkg.description)}</p>` : ''}
     </div>` : `
     <div class="tp-sec">
@@ -1218,7 +1265,9 @@ function mountSourcePage() {
   const target = src?.querySelector('.cl.target')
   if (target) {
     requestAnimationFrame(() => {
-      target.scrollIntoView({ block: 'center' })
+      const scRect = src.getBoundingClientRect()
+      const tRect = target.getBoundingClientRect()
+      src.scrollTop += (tRect.top - scRect.top) - (src.clientHeight - tRect.height) / 2
       target.classList.add('flash')
       setTimeout(() => target.classList.remove('flash'), 1400)
     })
